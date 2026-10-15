@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
+import { registerProjectHandlers } from './projects';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -10,8 +11,12 @@ if (started) {
 const createWindow = () => {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1280,
+    height: 820,
+    minWidth: 960,
+    minHeight: 600,
+    backgroundColor: '#f6f5f2',
+    title: 'PawpawBI',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
     },
@@ -26,8 +31,10 @@ const createWindow = () => {
     );
   }
 
-  // Open the DevTools.
-  mainWindow.webContents.openDevTools();
+  // Open the DevTools in their own window during development so they don't squash the layout.
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  }
 };
 
 // This method will be called when Electron has finished
@@ -35,6 +42,7 @@ const createWindow = () => {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   ipcMain.handle('app:get-version', () => app.getVersion());
+  registerProjectHandlers();
 
   createWindow();
 

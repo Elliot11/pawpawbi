@@ -14,6 +14,9 @@
 
 import { createApp } from 'vue';
 import App from './App.vue';
+import '@fontsource-variable/inter/index.css';
+import '@fontsource/archivo/800.css';
+import '@fontsource/archivo/900.css';
 import './index.css';
 
 createApp(App).mount('#app');

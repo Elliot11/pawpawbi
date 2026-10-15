@@ -1,0 +1,354 @@
+<script setup lang="ts">
+import { onMounted, ref } from 'vue';
+import type { Project, RecentProject } from '../shared/types';
+
+const emit = defineEmits<{ open: [project: Project] }>();
+
+const version = ref('');
+const recents = ref<RecentProject[]>([]);
+const busy = ref(false);
+const error = ref('');
+
+onMounted(async () => {
+  [version.value, recents.value] = await Promise.all([
+    window.api.getAppVersion(),
+    window.api.projects.listRecent(),
+  ]);
+});
+
+async function run(action: () => Promise<Project | null>, missingMessage?: string) {
+  if (busy.value) return;
+  busy.value = true;
+  error.value = '';
+  try {
+    const project = await action();
+    if (project) {
+      emit('open', project);
+    } else if (missingMessage) {
+      error.value = missingMessage;
+      recents.value = await window.api.projects.listRecent();
+    }
+  } catch {
+    error.value = "That file couldn't be opened. Check that it's a PawpawBI project.";
+  } finally {
+    busy.value = false;
+  }
+}
+
+const createProject = () => run(window.api.projects.create);
+const openProject = () => run(window.api.projects.open);
+const openRecent = (recent: RecentProject) =>
+  run(
+    () => window.api.projects.openRecent(recent.path),
+    `"${recent.name}" couldn't be found, so it was removed from your recent projects.`,
+  );
+
+const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+
+function timeAgo(iso: string) {
+  const minutes = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (minutes < 60) return relativeTime.format(-minutes, 'minute');
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return relativeTime.format(-hours, 'hour');
+  return relativeTime.format(-Math.round(hours / 24), 'day');
+}
+</script>
+
+<template>
+  <div class="splash">
+    <section class="hero">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M5 20V12M10 20V6M15 20v-9M20 20V4" /></svg>
+        </div>
+        <h1>PawpawBI</h1>
+        <p class="tagline">Turn your data into reports, with an assistant guiding each step.</p>
+      </div>
+
+      <div class="actions">
+        <button class="action primary" :disabled="busy" @click="createProject">
+          <span class="action-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+          </span>
+          <span class="action-text">
+            <strong>New project</strong>
+            <small>Start a blank report</small>
+          </span>
+        </button>
+        <button class="action" :disabled="busy" @click="openProject">
+          <span class="action-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            </svg>
+          </span>
+          <span class="action-text">
+            <strong>Open project</strong>
+            <small>Browse for a .pawpaw file</small>
+          </span>
+        </button>
+      </div>
+
+      <p class="version">Version {{ version }}</p>
+    </section>
+
+    <section class="recents">
+      <h2>Recent projects</h2>
+      <p v-if="error" class="error" role="alert">{{ error }}</p>
+
+      <ul v-if="recents.length" class="recent-list">
+        <li v-for="recent in recents" :key="recent.path">
+          <button class="recent" :disabled="busy" @click="openRecent(recent)">
+            <span class="recent-initial" aria-hidden="true">{{ recent.name.charAt(0) }}</span>
+            <span class="recent-text">
+              <strong>{{ recent.name }}</strong>
+              <small :title="recent.path">{{ recent.path }}</small>
+            </span>
+            <time :datetime="recent.openedAt">{{ timeAgo(recent.openedAt) }}</time>
+          </button>
+        </li>
+      </ul>
+
+      <div v-else class="empty">
+        <strong>No recent projects</strong>
+        <p>Projects you create or open will show up here.</p>
+      </div>
+    </section>
+  </div>
+</template>
+
+<style scoped>
+.splash {
+  display: grid;
+  grid-template-columns: minmax(360px, 5fr) 7fr;
+  height: 100%;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 40px;
+  padding: 56px;
+  background: var(--ink);
+  color: #fff;
+}
+
+.logo {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 28px;
+  border-radius: 14px;
+  background: var(--accent);
+}
+
+.logo svg {
+  width: 28px;
+  height: 28px;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.hero h1 {
+  font-size: 56px;
+  letter-spacing: -0.035em;
+}
+
+.tagline {
+  max-width: 30ch;
+  margin: 14px 0 0;
+  font-size: 16px;
+  color: rgb(255 255 255 / 0.65);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 360px;
+}
+
+.action {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: var(--radius);
+  background: rgb(255 255 255 / 0.04);
+  color: #fff;
+  text-align: left;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.15s;
+}
+
+.action:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.09);
+  border-color: rgb(255 255 255 / 0.24);
+  transform: translateY(-1px);
+}
+
+.action.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.action.primary:hover:not(:disabled) {
+  background: #f06d35;
+  border-color: #f06d35;
+}
+
+.action-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.12);
+}
+
+.action-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.action-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.action-text strong {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 15px;
+}
+
+.action-text small {
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.version {
+  margin: 0;
+  font-size: 12px;
+  color: rgb(255 255 255 / 0.4);
+}
+
+.recents {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 56px;
+  overflow-y: auto;
+}
+
+.recents h2 {
+  margin-bottom: 20px;
+  font-size: 28px;
+}
+
+.error {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: #fbeceb;
+  color: var(--danger);
+}
+
+.recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recent {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.recent:hover:not(:disabled) {
+  border-color: var(--ink-faint);
+  box-shadow: var(--shadow-md);
+}
+
+.recent-initial {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 16px;
+  text-transform: uppercase;
+}
+
+.recent-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.recent-text strong {
+  font-weight: 600;
+}
+
+.recent-text small {
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.recent time {
+  flex: none;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.empty {
+  padding: 40px 24px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+.empty strong {
+  color: var(--ink);
+}
+
+.empty p {
+  margin: 4px 0 0;
+}
+</style>
