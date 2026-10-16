@@ -8,6 +8,10 @@ if (started) {
   app.quit();
 }
 
+const iconPath = app.isPackaged
+  ? path.join(process.resourcesPath, 'icon.png')
+  : path.join(app.getAppPath(), 'assets', 'icon.png');
+
 const createWindow = () => {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
@@ -17,6 +21,7 @@ const createWindow = () => {
     minHeight: 600,
     backgroundColor: '#f6f5f2',
     title: 'PawpawBI',
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
     },

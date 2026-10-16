@@ -58,9 +58,7 @@ function timeAgo(iso: string) {
   <div class="splash">
     <section class="hero">
       <div class="brand">
-        <div class="logo" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M5 20V12M10 20V6M15 20v-9M20 20V4" /></svg>
-        </div>
+        <img class="logo" src="/favicon.svg" alt="" />
         <h1>PawpawBI</h1>
         <p class="tagline">Turn your data into reports, with an assistant guiding each step.</p>
       </div>
@@ -134,22 +132,10 @@ function timeAgo(iso: string) {
 }
 
 .logo {
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
+  display: block;
+  width: 64px;
+  height: 64px;
   margin-bottom: 28px;
-  border-radius: 14px;
-  background: var(--accent);
-}
-
-.logo svg {
-  width: 28px;
-  height: 28px;
-  fill: none;
-  stroke: #fff;
-  stroke-width: 3;
-  stroke-linecap: round;
 }
 
 .hero h1 {

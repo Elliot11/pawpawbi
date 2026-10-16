@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="fruit" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7a04f"/>
+      <stop offset="1" stop-color="#d24c18"/>
+    </linearGradient>
+    <linearGradient id="leaf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7bb03c"/>
+      <stop offset="1" stop-color="#4e8128"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Pawpaw fruit: oblong and kidney-shaped, tilted -->
+  <g transform="rotate(12 128 138)">
+    <path d="M128 30 C129 22 131 14 134 6" stroke="#3b2a1e" stroke-width="8" stroke-linecap="round" fill="none"/>
+    <g transform="translate(132 12) scale(1.5) translate(-132 -12)">
+      <path d="M132 12 C148 -2 170 -2 184 8 C168 22 146 24 132 12Z" fill="url(#leaf)"/>
+      <path d="M137 12 C152 8 166 7 178 8" stroke="#a5cf6a" stroke-width="2" stroke-linecap="round" fill="none"/>
+    </g>
+    <path d="M128 24 C170 22 196 62 194 120 C196 180 188 232 142 248 C112 258 72 248 64 214 C56 184 66 158 66 128 C66 98 60 76 70 52 C78 30 104 25 128 24Z" fill="url(#fruit)"/>
+    <ellipse cx="96" cy="70" rx="11" ry="26" transform="rotate(-8 96 70)" fill="#fff" opacity="0.2"/>
+  </g>
+</svg>

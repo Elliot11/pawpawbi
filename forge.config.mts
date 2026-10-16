@@ -10,10 +10,14 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
+    // Extension is picked per platform (icon.ico on Windows).
+    icon: 'assets/icon',
+    // Copied next to the app so the main process can set the window icon.
+    extraResource: ['assets/icon.png'],
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({}),
+    new MakerSquirrel({ setupIcon: 'assets/icon.ico' }),
     new MakerZIP({}, ['darwin']),
     new MakerRpm({}),
     new MakerDeb({}),
