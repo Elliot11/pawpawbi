@@ -18,6 +18,17 @@ export interface RecentProject {
   openedAt: string;
 }
 
+export interface PythonInfo {
+  version: string;
+  executable: string;
+  dlt: string;
+  pandas: string;
+}
+
+export interface PythonApi {
+  info: () => Promise<PythonInfo>;
+}
+
 export interface ProjectsApi {
   listRecent: () => Promise<RecentProject[]>;
   /** Prompts for a save location and creates a new project. Resolves null if cancelled. */

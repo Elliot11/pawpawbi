@@ -15,7 +15,12 @@
     "release": "electron-forge release",
     "lint": "oxlint && oxfmt --check",
     "lint:fix": "oxlint --fix && oxfmt --write",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "setup:python": "node scripts/setup-python.mjs",
+    "prestart": "npm run setup:python",
+    "prepackage": "npm run setup:python",
+    "premake": "npm run setup:python",
+    "lock:python": "node scripts/setup-python.mjs --lock"
   },
   "devDependencies": {
     "@electron-forge/cli": "^8.0.1",

@@ -12,8 +12,9 @@ const config: ForgeConfig = {
     asar: true,
     // Extension is picked per platform (icon.ico on Windows).
     icon: 'assets/icon',
-    // Copied next to the app so the main process can set the window icon.
-    extraResource: ['assets/icon.png'],
+    // Copied next to the app: the window icon, and the bundled Python runtime + sidecar
+    // (python/runtime is populated by scripts/setup-python.mjs before packaging).
+    extraResource: ['assets/icon.png', 'python'],
   },
   rebuildConfig: {},
   makers: [

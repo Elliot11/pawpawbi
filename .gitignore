@@ -144,3 +144,7 @@ vite.config.ts.timestamp-*
 
 # Electron-Forge
 out/
+
+# Bundled Python runtime (downloaded by scripts/setup-python.mjs)
+python/runtime/
+__pycache__/

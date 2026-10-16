@@ -1,0 +1,11 @@
+# Python packages bundled with the app's Python sidecar, one per line (pip format).
+# Pin exact versions, e.g. dlt==1.2.3. Changing this file reinstalls the runtime on next start.
+# Exact versions of everything they pull in are locked in constraints.txt; regenerate it with
+# `npm run lock:python` after changing this file.
+
+# Data loading (https://dlthub.com). The parquet extra lets pipelines write Parquet files to disk.
+dlt[parquet]==1.30.0
+
+# Data processing
+pandas==3.0.6
+pyarrow==25.0.1

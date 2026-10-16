@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { registerProjectHandlers } from './projects';
+import { registerPythonHandlers } from './python';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -48,6 +49,7 @@ const createWindow = () => {
 app.whenReady().then(() => {
   ipcMain.handle('app:get-version', () => app.getVersion());
   registerProjectHandlers();
+  registerPythonHandlers();
 
   createWindow();
 
