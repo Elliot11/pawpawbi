@@ -1,22 +1,52 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue';
-import { INTRO_MESSAGE, STAGES, replyTo, type ChatMessage, type Stage } from '../workflow';
+import { computed, nextTick, onMounted, ref } from 'vue';
+import { newId } from '../shared/ids';
+import type { ChatMessage, WorkflowStage } from '../shared/types';
+import { INTRO_MESSAGE, STAGES, replyTo } from '../workflow';
 
-const stage = ref<Stage>('data');
-const messages = ref<ChatMessage[]>([{ id: 0, role: 'assistant', text: INTRO_MESSAGE }]);
+const stage = ref<WorkflowStage>('data');
+const messages = ref<ChatMessage[]>([]);
 const draft = ref('');
+const loading = ref(true);
 const thinking = ref(false);
 const scroller = ref<HTMLElement | null>(null);
 
 const stageIndex = computed(() => STAGES.findIndex((s) => s.id === stage.value));
-const canSend = computed(() => draft.value.trim() !== '' && !thinking.value);
+const canSend = computed(() => draft.value.trim() !== '' && !loading.value && !thinking.value);
 
-let nextId = 1;
+// How many of `messages` are already saved in the project. The intro message isn't saved
+// until the user replies, so opening a project and closing it again isn't a change.
+let savedCount = 0;
+
+const createMessage = (role: ChatMessage['role'], text: string): ChatMessage => ({
+  id: newId(),
+  role,
+  text,
+  createdAt: new Date().toISOString(),
+});
+
+onMounted(async () => {
+  const chat = await window.api.projects.loadChat();
+  stage.value = chat.stage;
+  messages.value = chat.messages.length
+    ? chat.messages
+    : [createMessage('assistant', INTRO_MESSAGE)];
+  savedCount = chat.messages.length;
+  loading.value = false;
+  await scrollToBottom('auto');
+});
+
+async function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
+  await nextTick();
+  scroller.value?.scrollTo({ top: scroller.value.scrollHeight, behavior });
+}
 
 async function addMessage(role: ChatMessage['role'], text: string) {
-  messages.value.push({ id: nextId++, role, text });
-  await nextTick();
-  scroller.value?.scrollTo({ top: scroller.value.scrollHeight, behavior: 'smooth' });
+  messages.value.push(createMessage(role, text));
+  const unsaved = messages.value.slice(savedCount);
+  savedCount = messages.value.length;
+  await window.api.projects.appendChat(unsaved, stage.value);
+  await scrollToBottom();
 }
 
 async function send() {

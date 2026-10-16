@@ -1,18 +1,11 @@
 // The guided report-building workflow the assistant walks the user through.
+import type { WorkflowStage } from './shared/types';
 
-export type Stage = 'data' | 'model' | 'visuals';
-
-export const STAGES: { id: Stage; label: string }[] = [
+export const STAGES: { id: WorkflowStage; label: string }[] = [
   { id: 'data', label: 'Get data' },
   { id: 'model', label: 'Model data' },
   { id: 'visuals', label: 'Build visuals' },
 ];
-
-export interface ChatMessage {
-  id: number;
-  role: 'assistant' | 'user';
-  text: string;
-}
 
 export const INTRO_MESSAGE = `Hi! Let's build your report together. We'll work through three steps:
 
@@ -26,7 +19,7 @@ To start, where does your data live? For example, "a CSV export of monthly sales
  * Placeholder responder that just advances through the workflow stages.
  * Replace this with a call to a real model once one is connected.
  */
-export function replyTo(stage: Stage): { text: string; stage: Stage } {
+export function replyTo(stage: WorkflowStage): { text: string; stage: WorkflowStage } {
   switch (stage) {
     case 'data':
       return {

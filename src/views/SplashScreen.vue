@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import type { Project, RecentProject } from '../shared/types';
+import type { OpenResult, Project, RecentProject } from '../shared/types';
 
 const emit = defineEmits<{ open: [project: Project] }>();
 
@@ -22,20 +22,21 @@ onMounted(async () => {
   ]);
 });
 
-async function run(action: () => Promise<Project | null>, missingMessage?: string) {
+async function run(action: () => Promise<OpenResult>) {
   if (busy.value) return;
   busy.value = true;
   error.value = '';
   try {
-    const project = await action();
-    if (project) {
-      emit('open', project);
-    } else if (missingMessage) {
-      error.value = missingMessage;
+    const result = await action();
+    if (result && 'project' in result) {
+      emit('open', result.project);
+    } else if (result) {
+      error.value = result.error;
       recents.value = await window.api.projects.listRecent();
     }
-  } catch {
-    error.value = "That file couldn't be opened. Check that it's a PawpawBI project.";
+  } catch (err) {
+    console.error(err);
+    error.value = 'Something went wrong. Please try again.';
   } finally {
     busy.value = false;
   }
@@ -43,11 +44,7 @@ async function run(action: () => Promise<Project | null>, missingMessage?: strin
 
 const createProject = () => run(window.api.projects.create);
 const openProject = () => run(window.api.projects.open);
-const openRecent = (recent: RecentProject) =>
-  run(
-    () => window.api.projects.openRecent(recent.path),
-    `"${recent.name}" couldn't be found, so it was removed from your recent projects.`,
-  );
+const openRecent = (recent: RecentProject) => run(() => window.api.projects.openRecent(recent.path));
 
 const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
 

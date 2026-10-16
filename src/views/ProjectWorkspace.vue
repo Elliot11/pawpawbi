@@ -1,21 +1,71 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import type { Project } from '../shared/types';
 import ChatPanel from '../components/ChatPanel.vue';
 import ReportCanvas from '../components/ReportCanvas.vue';
 
-defineProps<{ project: Project }>();
-defineEmits<{ close: [] }>();
+const props = defineProps<{ project: Project }>();
+const emit = defineEmits<{ close: [] }>();
+
+const saving = ref(false);
+const saveError = ref('');
+
+async function save() {
+  if (saving.value || !props.project.dirty) return;
+  saving.value = true;
+  saveError.value = '';
+  try {
+    await window.api.projects.save();
+  } catch (error) {
+    console.error(error);
+    saveError.value = "Couldn't save. Check the file isn't open in another program.";
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function close() {
+  try {
+    if (await window.api.projects.close()) emit('close');
+  } catch (error) {
+    console.error(error);
+    saveError.value = "Couldn't save. Check the file isn't open in another program.";
+  }
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+    event.preventDefault();
+    save();
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown));
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 </script>
 
 <template>
   <div class="workspace">
     <header class="topbar">
-      <button class="back" title="Back to projects" @click="$emit('close')">
+      <button class="back" title="Back to projects" @click="close">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
         Projects
       </button>
       <span class="divider" aria-hidden="true"></span>
       <h1 :title="project.path">{{ project.name }}</h1>
+
+      <div class="save-area">
+        <span v-if="saveError" class="save-error" role="alert">{{ saveError }}</span>
+        <span v-else class="save-status">{{ project.dirty ? 'Unsaved changes' : 'Saved' }}</span>
+        <button
+          class="save"
+          :disabled="!project.dirty || saving"
+          title="Save (Ctrl+S)"
+          @click="save"
+        >
+          {{ saving ? 'Saving…' : 'Save' }}
+        </button>
+      </div>
     </header>
 
     <div class="body">
@@ -81,6 +131,42 @@ defineEmits<{ close: [] }>();
   font-size: 18px;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.save-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.save-status {
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+.save-error {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.save {
+  padding: 6px 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+  color: #fff;
+  font-weight: 600;
+}
+
+.save:hover:not(:disabled) {
+  background: #2c2c33;
+}
+
+.save:disabled {
+  background: var(--surface-muted);
+  color: var(--ink-faint);
 }
 
 .body {

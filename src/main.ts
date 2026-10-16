@@ -1,7 +1,7 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
-import { registerProjectHandlers } from './projects';
+import { closeProject, hasOpenProject, registerProjectHandlers } from './projects';
 import { registerPythonHandlers } from './python';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -36,6 +36,20 @@ const createWindow = () => {
       path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
     );
   }
+
+  // Close the open project first, so the user can save unsaved changes or cancel closing.
+  let projectClosed = false;
+  mainWindow.on('close', (event) => {
+    if (projectClosed || !hasOpenProject()) return;
+    event.preventDefault();
+    closeProject(mainWindow)
+      .then((closed) => {
+        if (!closed) return;
+        projectClosed = true;
+        mainWindow.close();
+      })
+      .catch((error: Error) => dialog.showErrorBox("Couldn't save the project", error.message));
+  });
 
   // Open the DevTools in their own window during development so they don't squash the layout.
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
