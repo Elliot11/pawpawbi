@@ -20,7 +20,10 @@
     "prestart": "npm run setup:python",
     "prepackage": "npm run setup:python",
     "premake": "npm run setup:python",
-    "lock:python": "node scripts/setup-python.mjs --lock"
+    "lock:python": "node scripts/setup-python.mjs --lock",
+    "test": "npm run test:node && npm run test:python",
+    "test:node": "node --experimental-strip-types --no-warnings --test \"tests/node/**/*.test.ts\"",
+    "test:python": "node scripts/test-python.mjs"
   },
   "devDependencies": {
     "@electron-forge/cli": "^8.0.1",

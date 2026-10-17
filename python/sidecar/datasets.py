@@ -128,6 +128,8 @@ def describe_tables(params):
 def preview_table(params):
     """Column types, the first rows and the total row count of a loaded table."""
     df = read_table(Path(params["data_dir"]), params["table"])
+    # Hide dlt's own bookkeeping columns, as everywhere else in the app.
+    df = df[[c for c in df.columns if not str(c).startswith("_dlt")]]
     head = df.head(int(params.get("limit", 50)))
     return {
         "columns": [{"name": str(name), "dtype": str(dtype)} for name, dtype in df.dtypes.items()],

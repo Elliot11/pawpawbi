@@ -148,3 +148,7 @@ out/
 # Bundled Python runtime (downloaded by scripts/setup-python.mjs)
 python/runtime/
 __pycache__/
+
+# Python test environment (scripts/test-python.mjs)
+python/.venv-test/
+.pytest_cache/

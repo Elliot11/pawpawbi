@@ -1,0 +1,69 @@
+# PawpawBI: notes for AI coding assistants
+
+Read [README.md](README.md) for what the app is, and [docs/architecture.md](docs/architecture.md)
+before changing how processes talk to each other. These are the rules and traps that aren't
+obvious from the code. Keep this file current when a convention changes.
+
+## Environment
+
+- Windows, PowerShell 5.1 (no `&&`, `||` or `?:` in PowerShell commands; `npm` scripts run in
+  cmd.exe, where `&&` is fine). Git Bash is also available.
+- **Never use the system `python`.** The machine has an unrelated Python install. Use the bundled
+  one: `python/runtime/python.exe`, always with `-E -s -B` (add `-u -X utf8` when piping JSON)
+  and env `RUNTIME__DLTHUB_TELEMETRY=false`. Running the sidecar directly: `cd python/sidecar`
+  then `..\runtime\python.exe -E -s -B main.py`.
+- PowerShell adds a UTF-8 byte-order mark when piping text into a process. The sidecar and runner
+  tolerate it, but prefer Git Bash (`printf ... | ...`) when testing them by hand.
+- Antivirus can briefly lock freshly written files (`EPERM` on rename/delete). Code that renames
+  or deletes new files retries (`maxRetries`, `replaceFile`); keep doing that.
+
+## Commands
+
+- `npm run typecheck` after every TypeScript or Vue change. `npm test` for anything touching
+  connectors, the runner, transforms or the archive format.
+- `npm start` runs the app. Renderer (Vue) changes hot-reload; **main-process changes
+  (`src/*.ts` other than the renderer) and Python sidecar changes need the app restarted**
+  (stop `electron.exe` whose path contains `PawpawBI`, then `npm start`). Connector jobs run in a
+  fresh Python process each time, so `runner.py` and `connectors/` changes apply immediately.
+- After editing `python/requirements.txt`: `npm run lock:python` (reinstalls the runtime and
+  rewrites `constraints.txt`). Stop the app first: it deletes `python/runtime/`.
+
+## Rules
+
+- **Pin every dependency to an exact version released at least 14 days ago** (npm, PyPI,
+  connector `packages`, the Python build, the vendored sources commit). Check release dates;
+  don't take "latest". Applies to version bumps too.
+- **IPC:** the page reaches the main process only through `window.api` (`src/preload.ts`), whose
+  types live in `src/shared/types.ts`. Adding a call means: handler in the main process, entry in
+  `preload.ts`, type in `shared/types.ts`. Never enable `nodeIntegration` or turn off
+  `contextIsolation`.
+- **Wrap Vue state in `plain()` (`src/plain.ts`) before passing it to `window.api`.** Reactive
+  proxies fail with "An object could not be cloned".
+- **Show errors from `window.api` with `errorMessage()` (`src/errors.ts`)**, which strips
+  Electron's "Error invoking remote method…" prefix.
+- **Secrets never go in the project.** Connector fields marked `secret=True` are stored with
+  `src/credentials.ts` (OS encryption), never in `sources/*.json` or anywhere in the `.pawpaw` file.
+- **SQL transforms are one read-only SELECT** run by `python/sidecar/transforms.py` in a locked
+  DuckDB. Don't loosen `_connect()` or `_select()`; see [docs/security.md](docs/security.md).
+  The sandbox tests in `python/tests/` must keep passing.
+- **Anything read from a `.pawpaw` file is untrusted** (projects are shared). Validate IDs and
+  table names before using them in paths (`SAFE_ID`, `SAFE_TABLE`); never execute stored code.
+- **The `.pawpaw` format is specified in [docs/pawpaw-file-format.md](docs/pawpaw-file-format.md).**
+  Update the spec in the same change as the code.
+- **Python stdout is a message channel.** In `main.py` and `runner.py`, log to stderr, never
+  `print()` to stdout.
+- **Connectors:** import connector-specific packages inside `build()`, not at module level (they're
+  installed on first use). Don't edit `python/sidecar/verified_sources/` (vendored, unmodified);
+  adapt in `python/sidecar/connectors/apps/` instead. How-to: [docs/maintenance.md](docs/maintenance.md).
+- The user has said **don't load data into DuckDB**. DuckDB is only a query engine over Parquet
+  files; data lives as Parquet in `data/raw` and `data/model`.
+- Data loads are full refreshes (`write_disposition="replace"`, `refresh="drop_resources"`).
+
+## Style
+
+- UI copy: plain English, sentence case, no jargon. Errors say what happened and what to do.
+- Visual style: tokens in `src/index.css` (orange accent `--accent`, Archivo 800/900 for titles,
+  Inter for text). Reuse them rather than new colours.
+- Match the surrounding code's comment density and naming. Format with `npm run lint:fix`.
+- Record significant design decisions in [docs/decisions.md](docs/decisions.md) and known
+  limitations in [TODO.md](TODO.md) / [docs/connectors.md](docs/connectors.md).

@@ -1,0 +1,163 @@
+# Design decisions
+
+The major choices behind PawpawBI, why they were made, and what was rejected. Before reversing
+one, read its reasoning; if circumstances have changed, add a new entry that supersedes it rather
+than editing history. Newest last.
+
+Each entry: **Decision**, **Why**, **Alternatives considered**, and **Consequences** where useful.
+
+---
+
+## 1. Electron Forge, Vite, TypeScript and Vue
+
+**Decision:** Electron app scaffolded with Electron Forge's Vite + TypeScript template; Vue 3 for
+the UI.
+
+**Why:** Forge is Electron's official tooling and handles packaging, installers and signing.
+Vite gives fast reloads. Vue was the user's choice of UI framework.
+
+**Alternatives:** electron-vite (community; uses electron-builder); a plain JavaScript setup;
+React or Svelte for the UI.
+
+## 2. A bundled, portable Python
+
+**Decision:** Ship a portable CPython 3.12 from
+[python-build-standalone](https://github.com/astral-sh/python-build-standalone) inside the app,
+pinned by release and SHA-256. Use the "stripped" builds. The main process talks to it over
+stdin/stdout.
+
+**Why:** The data tooling we wanted (dlt, pandas) is Python. Relying on the user's own Python is
+fragile (missing, wrong version, missing packages). The standalone builds are what `uv` uses and
+include pip.
+
+**Alternatives:** the user's installed Python (fragile); PyInstaller-frozen executables (often
+flagged by antivirus); `uv` downloading Python on first run (needs internet); Pyodide in the page
+(can't open network connections, so no database drivers).
+
+**Consequences:** about 350 MB of Python in the packaged app, mostly pandas, pyarrow and numpy
+(see [TODO.md](../TODO.md)). The Python files must be code-signed for release.
+
+## 3. dlt for connecting to data
+
+**Decision:** Use [dlt](https://dlthub.com) for all data loading: its built-in `filesystem`,
+`sql_database` and `rest_api` sources, plus 27 of its "verified sources" vendored unmodified
+into `python/sidecar/verified_sources/`.
+
+**Why:** It covers the widest range of sources (files, 30+ databases, cloud storage, many SaaS
+APIs) behind one programming model, and handles pagination, nested data and schemas.
+
+**Alternatives:** DuckDB's own extensions for reading sources (considered first, then rejected in
+favour of dlt plus Python); Knex or individual Node.js drivers (databases only); Airbyte, Singer or
+Meltano (separate services, too heavy for a desktop app).
+
+**Consequences:** verified sources aren't pip packages, so they're vendored from a pinned commit
+and must be refreshed by hand ([maintenance.md](maintenance.md)).
+
+## 4. Data stored as Parquet files, processed with pandas, not loaded into a database
+
+**Decision:** dlt writes to its `filesystem` destination as Parquet (`data/raw/<table>/`). pandas
+and pyarrow read it. **No data is loaded into DuckDB** (an explicit user requirement).
+
+**Why:** Plain files that travel inside the project, readable by many tools, compact and typed.
+
+**Alternatives:** loading into a DuckDB database file (rejected by the user); SQLite.
+
+## 5. `.pawpaw` project files are ZIPs of ordinary files
+
+**Decision:** A project is one ZIP archive of JSON, JSON Lines and Parquet files with a defined
+layout ([pawpaw-file-format.md](pawpaw-file-format.md)). It's opened by extracting to a working
+folder and saved by re-zipping atomically.
+
+**Why:** One file to share or back up; inspectable with everyday tools; data and model travel
+together; the same approach as EPUB and OpenDocument (uncompressed `mimetype` first). Working on an
+extracted folder makes dlt, pandas and DuckDB easy to use, and allows crash recovery.
+
+**Alternatives:** a single JSON file (the first version; can't hold data); a SQLite project file;
+a folder instead of a file.
+
+**Consequences:** opening and saving large projects copies all the data. Unknown files are kept
+on save so newer versions can add files without breaking older ones.
+
+## 6. Secrets in OS-encrypted storage, never in the project
+
+**Decision:** Connector fields marked secret are encrypted with Electron's `safeStorage` (DPAPI on
+Windows) and kept per project and source on the user's computer.
+
+**Why:** Project files are shared; credentials must not travel with them.
+
+**Consequences:** opening a project on another computer requires signing in again before
+refreshing sources.
+
+## 7. Connector packages installed on first use, in separate environments
+
+**Decision:** The installer bundles only core packages. A connector's extra packages (database
+drivers, SaaS SDKs) are pip-installed the first time it's used, into its own virtual environment
+layered on the bundled Python and constrained by `python/constraints.txt`.
+
+**Why:** Bundling every connector's packages would add roughly 250–400 MB and some pin conflicting
+versions of shared libraries. Separate environments keep connectors from breaking each other.
+
+**Alternatives:** bundle everything (works offline, much bigger, version clashes); ship only core
+connectors.
+
+**Consequences:** first use of such a connector needs internet. Environments are rebuilt when the
+app's Python path or the pins change. Per-connector transitive versions aren't locked yet
+([TODO.md](../TODO.md)).
+
+## 8. Each connector job in its own process
+
+**Decision:** "Connect" and "load" run `runner.py` as a new process; the long-running sidecar
+only handles quick requests.
+
+**Why:** Loads can be slow, can need a connector's own environment, and can crash or leak memory.
+A separate process isolates all of that.
+
+## 9. Full refresh on every load
+
+**Decision:** Every load replaces its tables (`write_disposition="replace"`) and resets dlt's
+incremental state (`refresh="drop_resources"`).
+
+**Why:** Simple and predictable. dlt's `filesystem` destination doesn't support merging without
+Delta or Iceberg tables. Incremental cursors combined with replace would silently drop older rows.
+
+**Consequences:** large sources reload everything each time ([TODO.md](../TODO.md)).
+
+## 10. The workflow step drives the main screen
+
+**Decision:** The top bar's steps (Add data → Model data → Build visuals) are the navigation; there
+are no separate tabs. The current step is saved with the project.
+
+**Why:** The app is organised around that guided workflow; tabs duplicated it.
+
+## 11. SQL transforms run by DuckDB, used only as a query engine
+
+**Decision:** A table's transform is one SQL `SELECT` (DuckDB dialect) stored in
+`model/transforms.json`. DuckDB runs it in memory over the raw Parquet files, and the result is
+written to `data/model/<table>/` and used in place of the original. Queries can reference any
+table, always see the original data, and are locked down (see [security.md](security.md)).
+
+**Why:** SQL is widely known and expressive (joins, window functions, dates). DuckDB is fast on
+Parquet and can be confined to the project's data folder, which matters because projects are
+shared. Using it only as a query engine respects decision 4.
+
+**Alternatives:** SQLite via pandas (no new package, but an older dialect and slow because it copies
+data); Polars SQL (bigger package, less complete SQL); pandas-only step lists (the original plan
+in the spec, less flexible).
+
+**Consequences:** adds DuckDB (about 20 MB). Transforms re-run after every load of their table.
+
+## 12. Model view as a free-form canvas
+
+**Decision:** Model data is a pannable, zoomable canvas of draggable table cards, with positions
+saved in `model/diagram.json`.
+
+**Why:** Lays the groundwork for an entity relationship diagram: relationship lines will be drawn
+on the SVG layer under the cards, attached to column rows (`data-table`, `data-column`).
+
+## 13. Dependencies pinned and at least 14 days old
+
+**Decision:** Every dependency (npm, PyPI, connector packages, the Python build, vendored source
+commit) is pinned to an exact version that has been public for at least two weeks.
+
+**Why:** Reproducible builds, and a buffer against compromised or broken releases, which are
+usually caught and pulled within days.

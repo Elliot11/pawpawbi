@@ -46,6 +46,10 @@ def _connect(data_dir: Path) -> duckdb.DuckDBPyConnection:
             f"SELECT {', '.join(map(_identifier, columns))} "
             f"FROM read_parquet({_literal(pattern)}, union_by_name = true)"
         )
+    # DuckDB quietly adds its temp directory (<working dir>/.tmp) to the allowed directories,
+    # which would let a query read files there. Turning it off closes that; the cost is that
+    # queries can't spill to disk, so a very large one fails rather than using a temp file.
+    con.execute("SET temp_directory = ''")
     con.execute(f"SET allowed_directories = [{_literal(data_dir.as_posix())}]")
     con.execute("SET enable_external_access = false")
     con.execute("SET autoinstall_known_extensions = false")
@@ -97,7 +101,7 @@ def apply_transform(params):
 
     con = _connect(data_dir)
     try:
-        reader = con.sql(_select(con, params["sql"])).fetch_record_batch(BATCH_ROWS)
+        reader = con.sql(_select(con, params["sql"])).to_arrow_reader(BATCH_ROWS)
         rows = 0
         with pq.ParquetWriter(staging / "data.parquet", reader.schema) as writer:
             for batch in reader:
