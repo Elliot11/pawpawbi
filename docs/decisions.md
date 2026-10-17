@@ -224,3 +224,36 @@ commit) is pinned to an exact version that has been public for at least two week
 
 **Why:** Reproducible builds, and a buffer against compromised or broken releases, which are
 usually caught and pulled within days.
+
+## 14. Report pages are HTML, run in a sandbox
+
+**Decision:** Each report page is an HTML file in the project, `report/pages/<id>.html`, where
+`<id>` is the page's GUID: a lowercase version 4 UUID such as
+`3f2b8c1e-9a4d-4e7b-b6c2-5d1e8f0a7c94`, generated when the page is created and never changed.
+Renaming a page changes only its name. The app shows each page in a sandboxed frame and adds a
+small library of our own (plain JavaScript and SVG) for querying tables and drawing charts.
+
+**Why:** HTML is what an AI model writes best, so the assistant can build any layout or chart
+without the app first having to support it in a settings format. A page is also ordinary,
+readable and editable by hand. Our own chart code (bars, lines, headline numbers, tables) keeps
+the app free of a charting dependency and lets every chart follow the same rules: a colour-blind
+safe palette in a fixed order, at most eight series, a table view, hover and keyboard tooltips.
+
+**Alternatives considered:**
+
+- Pages described in JSON (chart type, columns, position) and drawn by the app: safer by
+  construction, but every new kind of chart or layout needs app changes, and an AI is limited to
+  what the format can say.
+- A charting library (ECharts, Vega-Lite, Chart.js): more chart types sooner, but a large
+  dependency inside every page, and its own look and accessibility to work around.
+
+**Consequences:**
+
+- Projects now contain code that runs when opened. It's contained by the sandboxed frame, a
+  strict Content Security Policy, a block on all web requests from the app's windows and
+  read-only queries; together they stop a page reaching anything but the project's data on
+  screen. Any loosening of these needs a security review.
+- Pages refer to tables and columns by name inside SQL, so renaming or deleting them breaks
+  charts without warning.
+- New chart types are added to the library, and its documentation is the contract with page
+  authors (people and the assistant).
