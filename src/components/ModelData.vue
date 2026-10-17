@@ -57,6 +57,57 @@ async function load() {
 onMounted(load);
 onActivated(load);
 
+// --- Refreshing every data source ---------------------------------------------------------------
+
+const refreshing = ref(false);
+const refreshStatus = ref('');
+const refreshResult = ref<{ ok: boolean; message: string } | null>(null);
+let refreshingSource: { id: string; label: string } | null = null;
+
+const unsubscribeProgress = window.api.data.onProgress((p) => {
+  if (refreshingSource && p.sourceId === refreshingSource.id) {
+    refreshStatus.value = `${refreshingSource.label}: ${p.message}`;
+  }
+});
+onBeforeUnmount(unsubscribeProgress);
+
+/** Reloads every data source in turn, then the tables on the canvas. */
+async function refreshAll() {
+  if (refreshing.value) return;
+  refreshing.value = true;
+  refreshResult.value = null;
+  const failed: string[] = [];
+  const transformFailed: string[] = [];
+  try {
+    const all = await window.api.data.listSources();
+    for (const [i, source] of all.entries()) {
+      refreshingSource = { id: source.id, label: `${source.name} (${i + 1} of ${all.length})` };
+      refreshStatus.value = `${refreshingSource.label}: starting…`;
+      try {
+        const loaded = await window.api.data.load(source.id, plain(source.resources));
+        transformFailed.push(...loaded.filter((t) => t.transformError).map((t) => t.name));
+      } catch (err) {
+        failed.push(`${source.name}: ${errorMessage(err)}`);
+      }
+    }
+    const problems = [
+      ...failed,
+      ...(transformFailed.length
+        ? [`SQL transform failed for ${transformFailed.join(', ')}; showing original data`]
+        : []),
+    ];
+    refreshResult.value = problems.length
+      ? { ok: false, message: `Some data couldn't be refreshed. ${problems.join('. ')}.` }
+      : { ok: true, message: `Refreshed ${all.length} ${all.length === 1 ? 'data source' : 'data sources'}.` };
+  } catch (err) {
+    refreshResult.value = { ok: false, message: errorMessage(err) };
+  } finally {
+    refreshingSource = null;
+    refreshing.value = false;
+    await load();
+  }
+}
+
 /** Puts tables without a saved position in a grid below the ones that have one. */
 function placeNewTables() {
   const placed = tables.value.filter((t) => positions.value[t.name]);
@@ -455,6 +506,42 @@ function setCardElement(table: string, element: unknown) {
           </p>
         </header>
 
+        <div class="overlay refresh-area" @pointerdown.stop>
+          <button
+            class="refresh"
+            :disabled="refreshing"
+            title="Reload the data from every data source"
+            @click="refreshAll"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              :class="{ spinning: refreshing }"
+            >
+              <path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5" />
+            </svg>
+            {{ refreshing ? 'Refreshing…' : 'Refresh all data' }}
+          </button>
+          <p v-if="refreshing" class="refresh-status" aria-live="polite">
+            {{ refreshStatus }}
+          </p>
+          <p
+            v-else-if="refreshResult"
+            class="refresh-result"
+            :class="{ failed: !refreshResult.ok }"
+            role="status"
+          >
+            {{ refreshResult.message }}
+            <button
+              class="dismiss"
+              aria-label="Dismiss"
+              @click="refreshResult = null"
+            >
+              ×
+            </button>
+          </p>
+        </div>
+
         <div
           class="overlay toolbar"
           role="toolbar"
@@ -731,6 +818,94 @@ function setCardElement(table: string, element: unknown) {
 .title p {
   margin: 0;
   color: var(--ink-muted);
+}
+
+.refresh-area {
+  top: 28px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.refresh {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.refresh:hover:not(:disabled) {
+  border-color: var(--ink-faint);
+}
+
+.refresh:disabled {
+  color: var(--ink-muted);
+}
+
+.refresh svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.refresh-status,
+.refresh-result {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.refresh-status {
+  background: var(--surface);
+  color: var(--ink-muted);
+  box-shadow: var(--shadow-sm);
+}
+
+.refresh-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #eaf6ee;
+  color: #1d6b3a;
+}
+
+.refresh-result.failed {
+  background: #fbeceb;
+  color: var(--danger);
+}
+
+.dismiss {
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .toolbar {
