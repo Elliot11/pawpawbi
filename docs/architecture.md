@@ -102,9 +102,12 @@ Data kept outside the project file, on this computer only:
 ```mermaid
 flowchart LR
   SRC["Data source"] -->|"connector + dlt<br/>(runner.py)"| RAW["data/raw/&lt;table&gt;/*.parquet"]
-  RAW -->|"SQL transform<br/>(DuckDB)"| MOD["data/model/&lt;table&gt;/data.parquet"]
-  RAW -->|"no transform"| USE["Model view, previews,<br/>visuals (future)"]
-  MOD --> USE
+  RAW -->|"in-place transform<br/>(DuckDB)"| MOD["data/model/&lt;table&gt;/data.parquet"]
+  RAW -->|"no transform"| CUR(("Tables as shown"))
+  MOD --> CUR
+  CUR -->|"transformed table<br/>(DuckDB, in dependency order)"| TR["data/transformed/&lt;table&gt;/data.parquet"]
+  TR --> CUR
+  CUR --> USE["Model view, previews,<br/>visuals (future)"]
 ```
 
 1. **Connect.** The user picks a connector in the Add data screen. Its form comes from the
@@ -115,9 +118,15 @@ flowchart LR
 3. **Load.** A connector job runs a dlt pipeline into the project's `data/` folder using dlt's
    `filesystem` destination, writing Parquet into `data/raw/<table>/`. Every load is a full refresh.
    Nested data becomes child tables named `parent__child`.
-4. **Transform** (optional). A table's SQL query runs in DuckDB over the raw Parquet files; the
-   result is written to `data/model/<table>/` and used in place of the raw table everywhere. After
-   each load, the affected transforms are re-run.
+4. **Transform** (optional). There are two kinds of SQL, both run by DuckDB:
+   - **In-place transforms** of loaded tables read the original Parquet files and write to
+     `data/model/<table>/`, which replaces the loaded table everywhere.
+   - **Transformed tables** read any other tables as currently shown and write to
+     `data/transformed/<table>/`.
+
+   After each load, every in-place transform is re-applied, then transformed tables are rebuilt in
+   dependency order (each after the transformed tables it reads). The order and cycle checks are
+   in `src/shared/dependencies.ts`, and the orchestration is in `data.ts` (`rebuildDerived`).
 5. **Use.** The Model view and previews read schemas and rows through the sidecar. Visuals and
    relationships will read the same way.
 
@@ -128,9 +137,10 @@ fresh in-memory DuckDB, creates one view per table over that table's Parquet fil
 the connection down (see [security.md](security.md)). Nothing is stored in DuckDB.
 
 There are two views of the data:
-- **`current`** (previews and table info): a transformed table's result if it has one,
-  otherwise its original data.
-- **`raw`** (SQL transforms): always the original data, so transforms never build on each other.
+- **`current`** (previews, table info and transformed tables): every table as the app shows it,
+  meaning loaded tables (with their in-place transform applied, if any) and transformed tables.
+- **`raw`** (in-place transforms): loaded tables' original data only, so in-place transforms never
+  build on each other.
 
 dlt's `_dlt_*` bookkeeping columns are left out of the views. Values are converted to JSON-safe
 ones (`engine.json_value`) before going to the UI.
@@ -139,9 +149,10 @@ ones (`engine.json_value`) before going to the UI.
 
 Connectors that need extra Python packages declare them in their catalog entry (`packages`). The
 first time one is used, `data.ts` creates `connector-envs\<connector id>\` with
-`python -m venv --system-site-packages` layered on the bundled Python. It shares dlt, DuckDB and
-the rest, and adds only the connector's packages, installed with `python/constraints.txt` as
-constraints so shared packages never change version. A stamp file records the Python path,
+`python -m venv --system-site-packages --without-pip` layered on the bundled Python. It shares
+dlt, DuckDB, pip and the rest, and adds only the connector's packages. They're installed with
+`python/constraints.txt` as constraints, so shared packages never change version, and with
+`--uploaded-prior-to P14D`, so only releases at least 14 days old are used. A stamp file records the Python path,
 packages and constraints, and the environment is rebuilt whenever any of them change (e.g. after
 an app update moves the Python install). That connector's jobs then run with that environment's
 Python.

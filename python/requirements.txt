@@ -18,3 +18,6 @@ duckdb==1.5.6
 
 # Parquet and Arrow data (dlt's Parquet writer; reading schemas)
 pyarrow==25.0.1
+
+# SQL parser, to find the tables a transformed table's query reads (also a dlt dependency)
+sqlglot==30.21.0

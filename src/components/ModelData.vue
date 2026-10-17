@@ -2,7 +2,14 @@
 import { computed, onActivated, onBeforeUnmount, onMounted, ref } from 'vue';
 import { errorMessage } from '../errors';
 import { plain } from '../plain';
-import type { ColumnKind, DataSource, TableSchema } from '../shared/types';
+import {
+  ALL_SOURCES,
+  type ColumnKind,
+  type DataSource,
+  type TableKind,
+  type TableSchema,
+  type TransformedTable,
+} from '../shared/types';
 import TransformEditor from './TransformEditor.vue';
 
 defineEmits<{ addData: [] }>();
@@ -20,6 +27,8 @@ const MAX_ZOOM = 1.6;
 
 const tables = ref<TableSchema[]>([]);
 const sources = ref<DataSource[]>([]);
+/** Transformed tables' definitions, by name. */
+const definitions = ref<Record<string, TransformedTable>>({});
 const loading = ref(true);
 const error = ref('');
 
@@ -35,16 +44,33 @@ const cardElements = new Map<string, HTMLElement>();
 async function load() {
   error.value = '';
   try {
-    const [schemas, sourceList, diagram] = await Promise.all([
+    const [schemas, sourceList, diagram, transformed] = await Promise.all([
       window.api.data.describeTables(),
       window.api.data.listSources(),
       window.api.data.loadDiagram(),
+      window.api.data.listTransformed(),
     ]);
-    tables.value = schemas;
+    definitions.value = Object.fromEntries(transformed.map((t) => [t.name, t]));
+    // A transformed table whose build failed has no data, but still gets a card.
+    const built = new Set(schemas.map((s) => s.name));
+    tables.value = [
+      ...schemas,
+      ...transformed
+        .filter((t) => !built.has(t.name))
+        .map(
+          (t): TableSchema => ({
+            name: t.name,
+            kind: 'transformed',
+            rows: 0,
+            columns: [],
+            transformed: false,
+          }),
+        ),
+    ];
     sources.value = sourceList;
     positions.value = { ...diagram.tables };
     placeNewTables();
-    stacking.value = schemas.map((t) => t.name);
+    stacking.value = tables.value.map((t) => t.name);
   } catch (err) {
     error.value = errorMessage(err);
   } finally {
@@ -62,47 +88,38 @@ onActivated(load);
 const refreshing = ref(false);
 const refreshStatus = ref('');
 const refreshResult = ref<{ ok: boolean; message: string } | null>(null);
-let refreshingSource: { id: string; label: string } | null = null;
 
 const unsubscribeProgress = window.api.data.onProgress((p) => {
-  if (refreshingSource && p.sourceId === refreshingSource.id) {
-    refreshStatus.value = `${refreshingSource.label}: ${p.message}`;
-  }
+  if (refreshing.value && p.sourceId === ALL_SOURCES)
+    refreshStatus.value = p.message;
 });
 onBeforeUnmount(unsubscribeProgress);
 
-/** Reloads every data source in turn, then the tables on the canvas. */
+/**
+ * Reloads every data source, then re-applies transforms and rebuilds transformed tables in
+ * dependency order, then the cards.
+ */
 async function refreshAll() {
   if (refreshing.value) return;
   refreshing.value = true;
   refreshResult.value = null;
-  const failed: string[] = [];
-  const transformFailed: string[] = [];
+  refreshStatus.value = 'Starting…';
   try {
-    const all = await window.api.data.listSources();
-    for (const [i, source] of all.entries()) {
-      refreshingSource = { id: source.id, label: `${source.name} (${i + 1} of ${all.length})` };
-      refreshStatus.value = `${refreshingSource.label}: starting…`;
-      try {
-        const loaded = await window.api.data.load(source.id, plain(source.resources));
-        transformFailed.push(...loaded.filter((t) => t.transformError).map((t) => t.name));
-      } catch (err) {
-        failed.push(`${source.name}: ${errorMessage(err)}`);
-      }
-    }
+    const result = await window.api.data.refreshAll();
     const problems = [
-      ...failed,
-      ...(transformFailed.length
-        ? [`SQL transform failed for ${transformFailed.join(', ')}; showing original data`]
-        : []),
+      ...result.failedSources.map((s) => `${s.name}: ${s.error}`),
+      ...result.failedTables.map((t) => `${t.name}: ${t.error}`),
     ];
+    const count = `${result.sourceCount} ${result.sourceCount === 1 ? 'data source' : 'data sources'}`;
     refreshResult.value = problems.length
-      ? { ok: false, message: `Some data couldn't be refreshed. ${problems.join('. ')}.` }
-      : { ok: true, message: `Refreshed ${all.length} ${all.length === 1 ? 'data source' : 'data sources'}.` };
+      ? {
+          ok: false,
+          message: `Refreshed ${count}, with problems. ${problems.join(' ')}`,
+        }
+      : { ok: true, message: `Refreshed ${count} and rebuilt every table.` };
   } catch (err) {
     refreshResult.value = { ok: false, message: errorMessage(err) };
   } finally {
-    refreshingSource = null;
     refreshing.value = false;
     await load();
   }
@@ -137,9 +154,12 @@ async function saveLayout() {
 
 // --- Table actions ------------------------------------------------------------------------------
 
-/** The table whose SQL transform is open, if any. */
-const transforming = ref<string | null>(null);
+/** The SQL open in the editor: a loaded table's in-place transform, or a transformed table
+ * (table null for a new one). */
+const editing = ref<{ table: string | null; kind: TableKind } | null>(null);
 const confirmingDelete = ref<string | null>(null);
+/** Why a table couldn't be deleted, shown on its card. */
+const deleteErrors = ref<Record<string, string>>({});
 
 async function deleteTable(table: string) {
   confirmingDelete.value = null;
@@ -147,9 +167,20 @@ async function deleteTable(table: string) {
     await window.api.data.deleteTable(table);
     await load();
   } catch (err) {
-    error.value = errorMessage(err);
+    deleteErrors.value = { ...deleteErrors.value, [table]: errorMessage(err) };
   }
 }
+
+function askToDelete(table: string) {
+  const { [table]: _, ...others } = deleteErrors.value;
+  deleteErrors.value = others;
+  confirmingDelete.value = table;
+}
+
+/** The editor's key, so creating a table and then editing another starts afresh. */
+const editorKey = computed(() =>
+  editing.value ? `${editing.value.kind}:${editing.value.table ?? '+new'}` : '',
+);
 
 function tidyUp() {
   positions.value = {};
@@ -350,11 +381,12 @@ function setCardElement(table: string, element: unknown) {
 <template>
   <div class="model">
     <TransformEditor
-      v-if="transforming"
-      :key="transforming"
-      :table="transforming"
+      v-if="editing"
+      :key="editorKey"
+      :table="editing.table"
+      :kind="editing.kind"
       :tables="tables"
-      @back="transforming = null"
+      @back="editing = null"
       @changed="load"
     />
 
@@ -406,6 +438,7 @@ function setCardElement(table: string, element: unknown) {
             :key="t.name"
             :ref="(el) => setCardElement(t.name, el)"
             class="table-card"
+            :class="{ transformed: t.kind === 'transformed' }"
             :data-table="t.name"
             :style="{
               left: `${positions[t.name]?.x ?? 0}px`,
@@ -421,7 +454,14 @@ function setCardElement(table: string, element: unknown) {
               @pointerdown="startTableDrag($event, t.name)"
             >
               <h3 :title="t.name">{{ t.name }}</h3>
-              <small>
+              <small v-if="t.kind === 'transformed'">
+                Transformed
+                <template v-if="definitions[t.name]?.dependsOn.length">
+                  from {{ definitions[t.name].dependsOn.join(', ') }}
+                </template>
+                · {{ t.rows.toLocaleString() }} rows
+              </small>
+              <small v-else>
                 <template v-if="parentOf(t.name)"
                   >Nested in {{ parentOf(t.name) }}</template
                 >
@@ -435,7 +475,11 @@ function setCardElement(table: string, element: unknown) {
               <template v-if="confirmingDelete === t.name">
                 <span
                   class="confirm-text"
-                  title="Refreshing its data source will load it again"
+                  :title="
+                    t.kind === 'loaded'
+                      ? 'Refreshing its data source will load it again'
+                      : undefined
+                  "
                   >Delete this table?</span
                 >
                 <button class="tool danger-solid" @click="deleteTable(t.name)">
@@ -443,6 +487,30 @@ function setCardElement(table: string, element: unknown) {
                 </button>
                 <button class="tool" @click="confirmingDelete = null">
                   Cancel
+                </button>
+              </template>
+              <template v-else-if="t.kind === 'transformed'">
+                <button
+                  class="tool"
+                  title="Edit the SQL that builds this table"
+                  @click="editing = { table: t.name, kind: 'transformed' }"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 6l-6 6 6 6M16 6l6 6-6 6" />
+                  </svg>
+                  Edit SQL
+                </button>
+                <button
+                  class="tool delete"
+                  title="Delete this table"
+                  @click="askToDelete(t.name)"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"
+                    />
+                  </svg>
+                  Delete
                 </button>
               </template>
               <template v-else>
@@ -454,7 +522,7 @@ function setCardElement(table: string, element: unknown) {
                       ? 'A SQL transform is active. Click to edit it.'
                       : 'Transform this table with SQL'
                   "
-                  @click="transforming = t.name"
+                  @click="editing = { table: t.name, kind: 'loaded' }"
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M8 6l-6 6 6 6M16 6l6 6-6 6" />
@@ -464,7 +532,7 @@ function setCardElement(table: string, element: unknown) {
                 <button
                   class="tool delete"
                   title="Delete this table"
-                  @click="confirmingDelete = t.name"
+                  @click="askToDelete(t.name)"
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path
@@ -475,6 +543,16 @@ function setCardElement(table: string, element: unknown) {
                 </button>
               </template>
             </div>
+            <p v-if="deleteErrors[t.name]" class="card-error" role="alert">
+              {{ deleteErrors[t.name] }}
+            </p>
+            <p
+              v-if="t.kind === 'transformed' && definitions[t.name]?.error"
+              class="card-error"
+              role="alert"
+            >
+              Couldn't build this table: {{ definitions[t.name].error }}
+            </p>
             <ul class="columns" :aria-label="`Columns in ${t.name}`">
               <li
                 v-for="c in t.columns"
@@ -507,21 +585,33 @@ function setCardElement(table: string, element: unknown) {
         </header>
 
         <div class="overlay refresh-area" @pointerdown.stop>
-          <button
-            class="refresh"
-            :disabled="refreshing"
-            title="Reload the data from every data source"
-            @click="refreshAll"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              :class="{ spinning: refreshing }"
+          <div class="top-actions">
+            <button
+              class="refresh new-table"
+              title="Create a table from other tables with SQL"
+              @click="editing = { table: null, kind: 'transformed' }"
             >
-              <path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5" />
-            </svg>
-            {{ refreshing ? 'Refreshing…' : 'Refresh all data' }}
-          </button>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              New transformed table
+            </button>
+            <button
+              class="refresh"
+              :disabled="refreshing"
+              title="Reload the data from every data source"
+              @click="refreshAll"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                :class="{ spinning: refreshing }"
+              >
+                <path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5" />
+              </svg>
+              {{ refreshing ? 'Refreshing…' : 'Refresh all data' }}
+            </button>
+          </div>
           <p v-if="refreshing" class="refresh-status" aria-live="polite">
             {{ refreshStatus }}
           </p>
@@ -818,6 +908,36 @@ function setCardElement(table: string, element: unknown) {
 .title p {
   margin: 0;
   color: var(--ink-muted);
+}
+
+.top-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.new-table {
+  border-color: var(--transformed);
+  color: var(--transformed);
+}
+
+.new-table:hover:not(:disabled) {
+  border-color: var(--transformed);
+  background: var(--transformed-soft);
+}
+
+/* Transformed tables (built by SQL) use purple; loaded tables use the accent. */
+.table-card.transformed .card-head {
+  border-top-color: var(--transformed);
+}
+
+.card-error {
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: #fbeceb;
+  color: var(--danger);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .refresh-area {

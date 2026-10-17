@@ -17,11 +17,13 @@ def list_tables(params):
 
 
 def describe_tables(params):
-    """Every loaded table's columns (dlt's _dlt_* columns left out) and row count."""
+    """Every table's kind, columns (dlt's _dlt_* columns left out) and row count. "transformed"
+    is True for a loaded table with an in-place transform applied."""
     data_dir = Path(params["data_dir"])
     folders = engine.table_folders(data_dir)
     if not folders:
         return []
+    loaded = set(engine.table_names(data_dir))
     con = engine.connect(data_dir)
     try:
         tables = []
@@ -34,7 +36,13 @@ def describe_tables(params):
             # count(*) over Parquet comes from file metadata, so it's quick.
             rows = con.sql(f"SELECT count(*) FROM {engine.quote(name)}").fetchone()[0]
             tables.append(
-                {"name": name, "rows": rows, "columns": columns, "transformed": engine.is_transformed(data_dir, name)}
+                {
+                    "name": name,
+                    "kind": "loaded" if name in loaded else "transformed",
+                    "rows": rows,
+                    "columns": columns,
+                    "transformed": engine.is_transformed(data_dir, name),
+                }
             )
         return tables
     finally:

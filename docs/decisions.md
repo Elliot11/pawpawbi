@@ -161,23 +161,46 @@ are no separate tabs. The current step is saved with the project.
 
 **Why:** The app is organised around that guided workflow; tabs duplicated it.
 
-## 11. SQL transforms
+## 11. Two kinds of table, both shaped with SQL
 
-**Decision:** A table's transform is one SQL `SELECT` (DuckDB dialect) stored in
-`model/transforms.json`. It runs in the query engine (decision 4) over the original Parquet
-files, and the result is written to `data/model/<table>/` and used in place of the original.
-Queries can reference any table, always see the original data, and are locked down (see
-[security.md](security.md)).
+**Decision:** There are two kinds of table, and both are shaped with a single SQL `SELECT` (DuckDB
+dialect) run in the locked-down query engine (decision 4):
 
-**Why:** SQL is widely known and expressive (joins, window functions, dates), and DuckDB runs it
-fast while staying confined to the project's data folder.
+- **Loaded tables** come from data loads. A loaded table can have an **in-place transform**
+  (`model/transforms.json`) that changes how it looks. That query reads loaded tables' original
+  data, and the result replaces the table everywhere.
+- **Transformed tables** (`model/transformed.json`) are new tables built from any other tables,
+  loaded or transformed, so they can combine and reshape data across tables.
 
-**Alternatives:** SQLite via pandas (an older dialect, and slow because it copies data); Polars SQL
-(bigger package, less complete SQL); a fixed list of step types such as filter, rename and join
-(less flexible).
+The tables each query reads are worked out when it's saved and kept as `dependsOn`, using sqlglot.
+DuckDB's own `get_table_names` resolves views to the files behind them, so it can't be used.
 
-**Consequences:** transforms re-run after every load of their table. Better type detection in a
-reload can change column types, which can affect a transform's SQL.
+- **No circular references:** saving a query that would create one is refused.
+- **Rebuild order:** after any load, every in-place transform is re-applied, then transformed
+  tables are rebuilt in dependency order (`src/shared/dependencies.ts`).
+- **Safe deletes:** tables that others read can't be deleted.
+
+**Why:**
+- **SQL:** widely known and expressive (joins, window functions, dates), and DuckDB runs it fast
+  while staying confined to the project's data folder.
+- **Separate transformed tables:** they keep combining data separate from the loaded tables, and
+  can build on each other.
+- **In-place transforms:** quick fixes to a loaded table (types, renames) without making a new
+  table. Both were wanted.
+
+**Alternatives:**
+- **Only transformed tables:** simpler, with one concept instead of two, but rejected because
+  quick in-place fixes were wanted.
+- **SQLite via pandas:** an older dialect, and slow because it copies data.
+- **Polars SQL:** a bigger package with less complete SQL.
+- **A fixed list of step types** such as filter, rename and join: less flexible.
+
+**Consequences:**
+- Every load rebuilds all transforms and transformed tables. That's simple and always correct,
+  but slower for large models.
+- Better type detection in a reload can change column types, which can affect a query.
+- The UI calls loaded tables with an in-place transform "Transformed" on their button, which is
+  close to the name of the other kind.
 
 ## 12. Model view as a free-form canvas
 

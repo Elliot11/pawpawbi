@@ -1,17 +1,32 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { errorMessage } from '../errors';
-import type { TablePreview, TableSchema } from '../shared/types';
+import type { TableKind, TablePreview, TableSchema } from '../shared/types';
 import DataGrid from './data/DataGrid.vue';
 
 const props = defineProps<{
-  table: string;
+  /**
+   * kind "loaded": the loaded table whose in-place transform to edit.
+   * kind "transformed": the transformed table to edit, or null to create a new one.
+   */
+  table: string | null;
+  kind: TableKind;
   /** All tables, for the reference panel. */
   tables: TableSchema[];
 }>();
-const emit = defineEmits<{ back: []; changed: [] }>();
+const emit = defineEmits<{ back: []; changed: []; created: [name: string] }>();
 
-const defaultSql = () => `SELECT *\nFROM ${props.table}`;
+const isTransformed = props.kind === 'transformed';
+/** Set once a new transformed table has been created; later saves change that table. */
+const createdName = ref<string | null>(null);
+const tableName = computed(() => props.table ?? createdName.value);
+const newName = ref('');
+
+const firstTable =
+  props.tables.find((t) => !isTransformed || t.name !== props.table)?.name ??
+  'table_name';
+const defaultSql = () =>
+  `SELECT *\nFROM ${props.table && !isTransformed ? props.table : firstTable}`;
 
 const sql = ref('');
 const savedSql = ref<string | null>(null);
@@ -20,21 +35,34 @@ const error = ref('');
 const notice = ref('');
 const busy = ref<'' | 'preview' | 'apply' | 'remove'>('');
 const editor = ref<HTMLTextAreaElement | null>(null);
-const expanded = ref<Set<string>>(new Set([props.table]));
+const expanded = ref<Set<string>>(
+  new Set(props.table && !isTransformed ? [props.table] : []),
+);
 
 const hasUnappliedChanges = computed(
   () => sql.value.trim() !== (savedSql.value ?? defaultSql()).trim(),
 );
 
-// The table being transformed first, then the rest.
-const referenceTables = computed(() => [
-  ...props.tables.filter((t) => t.name === props.table),
-  ...props.tables.filter((t) => t.name !== props.table),
-]);
+// In-place transforms read loaded tables' original data, so only those are listed. Transformed
+// tables can read any other table. The table being transformed comes first.
+const referenceTables = computed(() => {
+  const available = props.tables.filter((t) =>
+    isTransformed ? t.name !== tableName.value : t.kind === 'loaded',
+  );
+  return [
+    ...available.filter((t) => t.name === props.table),
+    ...available.filter((t) => t.name !== props.table),
+  ];
+});
 
 onMounted(async () => {
   try {
-    savedSql.value = await window.api.data.getTransform(props.table);
+    if (!isTransformed && props.table) {
+      savedSql.value = await window.api.data.getTransform(props.table);
+    } else if (props.table) {
+      const all = await window.api.data.listTransformed();
+      savedSql.value = all.find((t) => t.name === props.table)?.sql ?? null;
+    }
   } catch (err) {
     error.value = errorMessage(err);
   }
@@ -43,6 +71,40 @@ onMounted(async () => {
   runPreview();
 });
 
+/** Creates the transformed table, or saves changes to it. */
+async function saveTransformed() {
+  if (busy.value) return;
+  busy.value = 'apply';
+  error.value = '';
+  notice.value = '';
+  const isNew = tableName.value === null;
+  const name = tableName.value ?? newName.value.trim();
+  try {
+    const { rows } = await window.api.data.saveTransformed({
+      name,
+      sql: sql.value,
+      isNew,
+    });
+    savedSql.value = sql.value;
+    if (isNew) {
+      createdName.value = name;
+      emit('created', name);
+    }
+    emit('changed');
+    preview.value = await window.api.data.previewTransform(
+      sql.value,
+      'transformed',
+    );
+    notice.value = isNew
+      ? `Created ${name} with ${rows.toLocaleString()} rows.`
+      : `Saved. ${name} now has ${rows.toLocaleString()} rows.`;
+  } catch (err) {
+    error.value = errorMessage(err);
+  } finally {
+    busy.value = '';
+  }
+}
+
 async function runPreview() {
   if (busy.value) return;
   busy.value = 'preview';
@@ -50,7 +112,10 @@ async function runPreview() {
   notice.value = '';
   removedSql.value = null;
   try {
-    preview.value = await window.api.data.previewTransform(sql.value);
+    preview.value = await window.api.data.previewTransform(
+      sql.value,
+      props.kind,
+    );
   } catch (err) {
     error.value = errorMessage(err);
   } finally {
@@ -66,7 +131,7 @@ async function apply() {
   removedSql.value = null;
   try {
     const { rows } = await window.api.data.applyTransform(
-      props.table,
+      props.table!,
       sql.value,
     );
     savedSql.value = sql.value;
@@ -90,7 +155,7 @@ async function removeTransform() {
   error.value = '';
   const previous = savedSql.value;
   try {
-    await window.api.data.removeTransform(props.table);
+    await window.api.data.removeTransform(props.table!);
     savedSql.value = null;
     sql.value = defaultSql();
     emit('changed');
@@ -110,7 +175,7 @@ async function undoRemove() {
   busy.value = 'apply';
   error.value = '';
   try {
-    await window.api.data.applyTransform(props.table, restored);
+    await window.api.data.applyTransform(props.table!, restored);
     savedSql.value = restored;
     sql.value = restored;
     removedSql.value = null;
@@ -164,16 +229,34 @@ const sqlName = (name: string) =>
   <div class="transform">
     <header class="head">
       <button class="back" @click="$emit('back')">← Back to model</button>
-      <h2>
-        Transform <span class="table-name">{{ table }}</span>
+      <template v-if="!isTransformed">
+        <h2>
+          Transform <span class="table-name">{{ table }}</span>
+        </h2>
+        <span
+          v-if="savedSql !== null"
+          class="active-badge"
+          title="This table currently shows the result of a SQL transform"
+        >
+          Transform active
+        </span>
+      </template>
+      <h2 v-else-if="tableName">
+        <span class="table-name transformed">{{ tableName }}</span>
+        <small class="kind">Transformed table</small>
       </h2>
-      <span
-        v-if="savedSql !== null"
-        class="active-badge"
-        title="This table currently shows the result of a SQL transform"
-      >
-        Transform active
-      </span>
+      <template v-else>
+        <h2>New transformed table</h2>
+        <label class="name-field">
+          Name
+          <input
+            v-model="newName"
+            type="text"
+            placeholder="e.g. sales_by_region"
+            spellcheck="false"
+          />
+        </label>
+      </template>
     </header>
 
     <div class="body">
@@ -222,9 +305,13 @@ const sqlName = (name: string) =>
             aria-label="SQL query"
             @keydown="onKeydown"
           ></textarea>
-          <p class="editor-note">
-            One SELECT query. It reads the original data, and can use any table
-            by name (so joins work). DuckDB SQL.
+          <p v-if="isTransformed" class="editor-note">
+            One SELECT query. It can read any other table by name, loaded or
+            transformed, as shown in the model (so joins work). DuckDB SQL.
+          </p>
+          <p v-else class="editor-note">
+            One SELECT query. It reads loaded tables' original data by name (so
+            joins work). DuckDB SQL.
           </p>
         </div>
 
@@ -238,6 +325,25 @@ const sqlName = (name: string) =>
             {{ busy === 'preview' ? 'Running…' : 'Run preview' }}
           </button>
           <button
+            v-if="isTransformed"
+            class="primary"
+            :disabled="
+              !!busy ||
+              (!tableName && !newName.trim()) ||
+              (!hasUnappliedChanges && savedSql !== null)
+            "
+            @click="saveTransformed"
+          >
+            {{
+              busy === 'apply'
+                ? 'Saving…'
+                : tableName
+                  ? 'Save changes'
+                  : 'Create table'
+            }}
+          </button>
+          <button
+            v-else
             class="primary"
             :disabled="!!busy || (!hasUnappliedChanges && savedSql !== null)"
             @click="apply"
@@ -245,7 +351,7 @@ const sqlName = (name: string) =>
             {{ busy === 'apply' ? 'Applying…' : 'Apply transform' }}
           </button>
           <button
-            v-if="savedSql !== null"
+            v-if="!isTransformed && savedSql !== null"
             class="link"
             :disabled="!!busy"
             @click="removeTransform"
@@ -300,6 +406,35 @@ const sqlName = (name: string) =>
 
 .table-name {
   color: var(--accent);
+}
+
+.table-name.transformed {
+  color: var(--transformed);
+}
+
+.kind {
+  margin-left: 10px;
+  color: var(--ink-muted);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.name-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.name-field input {
+  width: 240px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 13px;
 }
 
 .active-badge {

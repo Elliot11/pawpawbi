@@ -42,9 +42,11 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
 - **Large files are read into memory** by the web address connector and for JSON files.
 - **The Python bundle is about 275 MB unpacked** (mostly pyarrow, DuckDB and SQLAlchemy, plus
   precompiled bytecode kept for start-up speed). Could trim Tcl/Tk, IDLE and test packages.
-- **Connector environments don't lock their own dependencies.** Top-level packages are pinned and
-  shared packages are constrained, but other dependencies resolve fresh at install time. Add a
-  per-connector lock file.
+- **Connector environments don't lock their own dependencies.** Top-level packages are pinned,
+  shared packages are constrained, and everything is limited to releases at least 14 days old,
+  but other dependencies still resolve at install time. Add a per-connector lock file.
+- **Every load rebuilds every transform and transformed table**, not only those affected. Fine for
+  small models; rebuild only what's downstream of the loaded tables if it gets slow.
 - **Connectors needing extra packages require internet on first use**, which may not work on
   locked-down networks. Consider an offline bundle option.
 - **`npm audit`** reports two critical issues in the Forge template's build dependencies. Not yet

@@ -108,8 +108,10 @@ function installRequirements() {
   const args = ['-m', 'pip', 'install', '--disable-pip-version-check', '--no-warn-script-location'];
   args.push('-r', requirementsPath);
   // Constraints pin every transitive dependency so all machines get identical packages.
-  // Skipped with --lock, which resolves fresh versions to write a new constraints file.
-  if (!lockOnly && constraints) args.push('-c', constraintsPath);
+  // Skipped with --lock, which resolves fresh versions to write a new constraints file, using
+  // only releases at least 14 days old (the project's rule for every dependency).
+  if (lockOnly) args.push('--uploaded-prior-to', 'P14D');
+  else if (constraints) args.push('-c', constraintsPath);
   execFileSync(pythonExe, args, { stdio: 'inherit' });
 }
 

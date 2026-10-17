@@ -8,9 +8,12 @@ come from a project's SQL transforms) must never reach anything else on the comp
 Everything that reads loaded data goes through here: table info, previews, transforms, and
 later relationships and visuals.
 
-Tables on disk (see docs/pawpaw-file-format.md):
-    <data_dir>/raw/<table>/*.parquet       as loaded by dlt
-    <data_dir>/model/<table>/data.parquet  the result of the table's SQL transform, if it has one
+Tables on disk (see docs/pawpaw-file-format.md). There are two kinds:
+    Loaded tables, from data loads:
+        <data_dir>/raw/<table>/*.parquet              as loaded by dlt
+        <data_dir>/model/<table>/data.parquet         its in-place SQL transform's result, if any
+    Transformed tables, each built by a SQL query from other tables:
+        <data_dir>/transformed/<table>/data.parquet
 """
 
 from __future__ import annotations
@@ -27,9 +30,11 @@ import pyarrow.parquet as pq
 
 RAW_DATASET = "raw"
 MODEL_DATASET = "model"
+TRANSFORMED_DATASET = "transformed"
 
-# "current": each table's transformed copy if it has one, otherwise its original data.
-# "raw": always the original data (what SQL transforms read).
+# "current": every table as the app shows it: loaded tables (their in-place transform's result
+#   if they have one) and transformed tables. Previews, table info and transformed tables use this.
+# "raw": loaded tables' original data only. In-place transforms use this.
 Layer = Literal["current", "raw"]
 
 INTEGER_TYPES = {
@@ -48,28 +53,40 @@ def literal(text: str) -> str:
     return "'" + text.replace("'", "''") + "'"
 
 
-def table_names(data_dir: Path) -> list[str]:
-    """Every loaded table, leaving out dlt's own bookkeeping tables."""
-    raw = data_dir / RAW_DATASET
-    if not raw.is_dir():
+def _folder_names(folder: Path) -> list[str]:
+    if not folder.is_dir():
         return []
-    return sorted(p.name for p in raw.iterdir() if p.is_dir() and not p.name.startswith("_dlt"))
+    # Leave out dlt's bookkeeping tables and our own staging folders (".name.tmp").
+    return sorted(p.name for p in folder.iterdir() if p.is_dir() and not p.name.startswith(("_dlt", ".")))
+
+
+def table_names(data_dir: Path) -> list[str]:
+    """Every loaded table."""
+    return _folder_names(data_dir / RAW_DATASET)
+
+
+def transformed_table_names(data_dir: Path) -> list[str]:
+    """Every transformed table that has been built."""
+    return _folder_names(data_dir / TRANSFORMED_DATASET)
 
 
 def is_transformed(data_dir: Path, table: str) -> bool:
+    """Whether a loaded table has an in-place transform applied."""
     return (data_dir / MODEL_DATASET / table).is_dir()
 
 
 def table_folders(data_dir: Path, layer: Layer = "current") -> dict[str, Path]:
     """Table name -> the folder of Parquet files to read for it, for tables that have data."""
-    folders = {}
+    candidates = {}
     for table in table_names(data_dir):
         folder = data_dir / RAW_DATASET / table
         if layer == "current" and is_transformed(data_dir, table):
             folder = data_dir / MODEL_DATASET / table
-        if next(folder.glob("*.parquet"), None) is not None:
-            folders[table] = folder
-    return folders
+        candidates[table] = folder
+    if layer == "current":
+        for table in transformed_table_names(data_dir):
+            candidates.setdefault(table, data_dir / TRANSFORMED_DATASET / table)
+    return {t: f for t, f in candidates.items() if next(f.glob("*.parquet"), None) is not None}
 
 
 def connect(data_dir: Path, layer: Layer = "current") -> duckdb.DuckDBPyConnection:

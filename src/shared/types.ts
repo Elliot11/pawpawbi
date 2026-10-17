@@ -128,14 +128,46 @@ export interface LoadedTable {
   transformError?: string;
 }
 
+/** Loaded tables come from data loads; transformed tables are built by a SQL query. */
+export type TableKind = 'loaded' | 'transformed';
+
+/** A transformed table's definition (model/transformed.json). */
+export interface TransformedTable {
+  name: string;
+  sql: string;
+  /** Tables the query reads. */
+  dependsOn: string[];
+  updatedAt: string;
+  /** Why the last build failed, or null. */
+  error: string | null;
+}
+
+export interface SaveTransformedInput {
+  name: string;
+  sql: string;
+  /** True to create a new table; false to change an existing one's query. */
+  isNew: boolean;
+}
+
+export interface RefreshAllResult {
+  sourceCount: number;
+  failedSources: { name: string; error: string }[];
+  /** Tables whose transform or build failed. */
+  failedTables: { name: string; error: string }[];
+}
+
+/** DataProgress.sourceId for progress while refreshing every source. */
+export const ALL_SOURCES = '*';
+
 export type ColumnKind = 'integer' | 'decimal' | 'text' | 'boolean' | 'date' | 'datetime' | 'time' | 'nested' | 'other';
 
 export interface TableSchema {
   name: string;
+  kind: TableKind;
   rows: number;
   /** dlt's own _dlt_* columns are left out. */
   columns: { name: string; type: string; kind: ColumnKind }[];
-  /** True when these are the columns of the table's SQL transform result. */
+  /** For a loaded table: true when it has an in-place SQL transform applied. */
   transformed: boolean;
 }
 
@@ -172,12 +204,21 @@ export interface DataApi {
   saveDiagram: (diagram: ModelDiagram) => Promise<void>;
   /** The table's saved SQL transform, or null if it has none. */
   getTransform: (table: string) => Promise<string | null>;
-  /** Runs a SELECT query against the original tables and returns the first rows. Saves nothing. */
-  previewTransform: (sql: string) => Promise<TablePreview>;
+  /**
+   * Runs a SELECT query and returns the first rows. Saves nothing. For "loaded" (in-place
+   * transforms) it reads loaded tables' original data; for "transformed" it reads every table
+   * as currently shown.
+   */
+  previewTransform: (sql: string, kind?: TableKind) => Promise<TablePreview>;
+  listTransformed: () => Promise<TransformedTable[]>;
+  /** Creates or changes a transformed table and builds it. Refuses circular references. */
+  saveTransformed: (input: SaveTransformedInput) => Promise<{ rows: number }>;
+  /** Reloads every data source, then re-applies transforms and rebuilds transformed tables in order. */
+  refreshAll: () => Promise<RefreshAllResult>;
   /** Saves the table's transform and writes its result, which then replaces the table everywhere. */
   applyTransform: (table: string, sql: string) => Promise<{ rows: number }>;
   removeTransform: (table: string) => Promise<void>;
-  /** Deletes a table (and its nested child tables) from the project. */
+  /** Deletes a table (and a loaded table's nested child tables). Refused while other tables read it. */
   deleteTable: (table: string) => Promise<void>;
   previewTable: (table: string, limit?: number) => Promise<TablePreview>;
   /** Shows a file or folder picker. Resolves to the chosen paths, or [] if cancelled. */

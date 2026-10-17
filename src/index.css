@@ -8,6 +8,9 @@
   --ink-faint: #9a99a1;
   --accent: #e8622a;
   --accent-soft: #fdeee6;
+  /* Transformed tables (built by SQL), as distinct from loaded tables (the accent). */
+  --transformed: #6b46a3;
+  --transformed-soft: #f1ecf8;
   --danger: #c2372f;
 
   --radius-sm: 8px;

@@ -21,16 +21,20 @@ Sales report.pawpaw            (ZIP archive)
 │   │   ├── <table>/           One folder per table
 │   │   │   └── *.parquet
 │   │   └── _dlt_*/            dlt's bookkeeping (load history, pipeline state)
-│   └── model/                 Results of the tables' SQL transforms
+│   ├── model/                 Loaded tables' in-place SQL transform results
+│   │   └── <table>/
+│   │       └── data.parquet
+│   └── transformed/           Transformed tables, built by SQL from other tables
 │       └── <table>/
-│           └── *.parquet
+│           └── data.parquet
 │
 ├── model/                     How the data fits together
 │   ├── tables/
 │   │   └── <table>.json       Column types, names and descriptions for one table
 │   ├── relationships.json     How tables join to each other
 │   ├── diagram.json           Where each table sits on the Model data canvas
-│   └── transforms.json        SQL transforms that build data/model/
+│   ├── transforms.json        In-place SQL transforms of loaded tables
+│   └── transformed.json       Transformed tables' SQL queries and dependencies
 │
 ├── report/                    What the user sees                         (provisional)
 │   ├── report.json            Page order and report-wide settings
@@ -126,7 +130,18 @@ Identifies the project and the format version. Required.
 The project's data, stored as Parquet.
 
 - **`data/raw/`** is written only by dlt. Each table is a folder of one or more Parquet files that together make up the table; readers must treat the folder as a single table and never rely on file names. The `_dlt_loads`, `_dlt_pipeline_state` and `_dlt_version` folders are dlt's own records. They include the pipeline state dlt needs for incremental loading (fetching only new rows), so they must be kept.
-- **`data/model/`** holds the results of the SQL transforms in `model/transforms.json`: `data/model/<table>/data.parquet` for each transformed table. When a table has one, it's used in place of its `raw/` version everywhere in the app. Everything in it can be rebuilt from `raw/` plus the transforms, so a "save without processed data" option could leave it out to make files smaller.
+There are two kinds of table:
+
+- **Loaded tables** come from data loads. Their data is in `raw/`.
+- **Transformed tables** are built by a SQL query from other tables. Their data is in `transformed/`.
+
+The folders:
+
+- **`data/raw/`** is written only by dlt. Each table is a folder of one or more Parquet files that together make up the table; readers must treat the folder as a single table and never rely on file names. The `_dlt_loads`, `_dlt_pipeline_state` and `_dlt_version` folders are dlt's own records. They include the pipeline state dlt needs for incremental loading (fetching only new rows), so they must be kept.
+- **`data/model/<table>/data.parquet`** is a loaded table's in-place transform result (`model/transforms.json`), used in place of its `raw/` version everywhere in the app.
+- **`data/transformed/<table>/data.parquet`** is a transformed table (`model/transformed.json`).
+
+Loaded and transformed table names are unique across both kinds. Everything in `model/` and `transformed/` can be rebuilt from `raw/` plus the queries, so a "save without processed data" option could leave them out to make files smaller.
 
 ## model/
 
@@ -134,7 +149,7 @@ What the user and the assistant have worked out about the data, typically during
 
 ### model/tables/&lt;table&gt;.json
 
-One file per table in `data/raw/` or `data/model/`. A table with no file here is used as-is.
+One file per table (loaded or transformed). A table with no file here is used as-is.
 
 ```json
 {
@@ -152,7 +167,7 @@ One file per table in `data/raw/` or `data/model/`. A table with no file here is
 
 | Field | Meaning |
 |---|---|
-| `layer` | `raw` or `model`: which folder under `data/` the table is in |
+| `layer` | `raw`, `model` or `transformed`: which folder under `data/` the table is in |
 | `displayName`, `description` | How the table is labelled in the app and explained to the assistant |
 | `columns` | Per-column overrides, by column name. Only columns with something to say need an entry |
 
@@ -195,7 +210,7 @@ Where each table's card sits on the Model data canvas, in canvas pixels. Tables 
 
 ### model/transforms.json
 
-Each transformed table's SQL query. The query's result becomes `data/model/<table>/data.parquet` and is re-run whenever the table's source is refreshed.
+In-place transforms of loaded tables: each changes how one loaded table looks. The query's result becomes `data/model/<table>/data.parquet`.
 
 ```json
 {
@@ -208,8 +223,48 @@ Each transformed table's SQL query. The query's result becomes `data/model/<tabl
 }
 ```
 
-- A query must be a **single read-only `SELECT`** (DuckDB SQL). It can refer to any table in the project by name, so it can join tables, and it always reads their original `raw/` data, never another transform's result.
-- Queries run in an in-memory DuckDB that can read only the project's `data/` folder: no other files, no network, no extensions, and no changing those settings. Projects can come from other people, so a transform must never be able to reach anything else on the computer.
+The query can read any **loaded** table by name and always reads their original `raw/` data, so in-place transforms never depend on each other.
+
+### model/transformed.json
+
+Transformed tables: new tables built from other tables. The query's result becomes `data/transformed/<table>/data.parquet`.
+
+```json
+{
+  "tables": {
+    "sales_by_region": {
+      "sql": "SELECT region, sum(revenue) AS revenue FROM monthly_sales GROUP BY region",
+      "dependsOn": ["monthly_sales"],
+      "updatedAt": "2026-10-17T11:25:00Z",
+      "error": null
+    }
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `sql` | The query that builds the table |
+| `dependsOn` | The tables the query reads, worked out from the query when it's saved |
+| `error` | Why the last build failed, or `null` |
+
+- The query can read any other table by name, loaded or transformed, as the app shows it (a loaded table's in-place transform result if it has one).
+- Circular references (a table that reads itself, directly or through other transformed tables) are refused when saving.
+- A table can't be deleted while a transformed table, or another loaded table's in-place transform, reads it.
+
+### Rebuilding
+
+After data is loaded (one source or all of them), the app:
+
+1. Re-applies every in-place transform.
+2. Rebuilds every transformed table in dependency order, each after the transformed tables it reads.
+
+A failing query has its table's old result removed and its error recorded. Tables that read a failed table fail too.
+
+### Rules for all queries
+
+- A query must be a **single read-only `SELECT`** (DuckDB SQL).
+- Queries run in an in-memory DuckDB that can read only the project's `data/` folder: no other files, no network, no extensions, and no changing those settings. Projects can come from other people, so a query must never be able to reach anything else on the computer.
 - Arbitrary code (Python and the like) is never stored here. If it's ever supported, it must require the user's explicit approval before running.
 
 ## report/ (provisional)

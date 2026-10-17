@@ -10,6 +10,7 @@ import readline from 'node:readline';
 import { deleteSecrets, readSecrets, writeSecrets } from './credentials';
 import { markProjectChanged, openProject } from './projects';
 import { PYTHON_FLAGS, callPython, pythonEnv, pythonExe, pythonRoot, sidecarDir } from './python';
+import { buildOrder, directDependents, downstreamOf, findCycle, type DependencyMap } from './shared/dependencies';
 import { newId } from './shared/ids';
 import type {
   ConnectorCatalog,
@@ -20,10 +21,15 @@ import type {
   DiscoveredResource,
   LoadedTable,
   ModelDiagram,
+  RefreshAllResult,
   SaveSourceInput,
+  SaveTransformedInput,
+  TableKind,
   TablePreview,
   TableSchema,
+  TransformedTable,
 } from './shared/types';
+import { ALL_SOURCES } from './shared/types';
 
 const SAFE_ID = /^[a-z0-9]{1,32}$/;
 const SAFE_TABLE = /^[A-Za-z0-9_]+$/;
@@ -155,7 +161,16 @@ async function removeTables(tables: string[]) {
 
 async function removeSource(id: string) {
   const source = await readSource(id);
+  const users = await dependentsOf(source.tables);
+  if (users.length) {
+    throw new Error(
+      `${users.join(', ')} ${users.length === 1 ? 'uses' : 'use'} tables from this source. Change or delete ${users.length === 1 ? 'it' : 'them'} first.`,
+    );
+  }
   await removeTables(source.tables);
+  const transforms = await readTransforms();
+  for (const t of source.tables) delete transforms.tables[t];
+  await writeTransforms(transforms);
   await deleteSecrets(openProject().id, id);
   await fs.rm(sourcePath(id), { force: true });
   await markProjectChanged();
@@ -199,7 +214,9 @@ async function prepareEnvironment(info: ConnectorInfo, onProgress: (message: str
 
   onProgress(`Downloading the ${info.name} connector. This only happens the first time…`);
   await fs.rm(envDir, { recursive: true, force: true, maxRetries: 5 });
-  await runProcess(pythonExe, [...PYTHON_FLAGS, '-m', 'venv', '--system-site-packages', envDir]);
+  // Without its own pip: it uses the bundled pip through the shared packages, which is newer
+  // than the one Python's venv would install and supports --uploaded-prior-to.
+  await runProcess(pythonExe, [...PYTHON_FLAGS, '-m', 'venv', '--system-site-packages', '--without-pip', envDir]);
   await runProcess(
     envPython,
     [
@@ -210,6 +227,10 @@ async function prepareEnvironment(info: ConnectorInfo, onProgress: (message: str
       '--disable-pip-version-check',
       '--no-input',
       '--no-warn-script-location',
+      // The connector's own dependencies aren't locked, so at least hold them to the project's
+      // rule: only releases that have been public for 14 days.
+      '--uploaded-prior-to',
+      'P14D',
       ...(constraints ? ['-c', constraintsPath] : []),
       ...info.packages,
     ],
@@ -292,13 +313,16 @@ function runJob<T>(python: string, job: Record<string, unknown>, onProgress: (me
 }
 
 /** Runs a job for a source, with its saved settings and secrets. */
-async function runSourceJob<T>(id: string, job: Record<string, unknown>): Promise<T> {
+async function runSourceJob<T>(
+  id: string,
+  job: Record<string, unknown>,
+  onProgress = (message: string) => sendProgress({ sourceId: id, message }),
+): Promise<T> {
   if (runningJobs.has(id)) throw new Error('This data source is already busy.');
   runningJobs.add(id);
   try {
     const source = await readSource(id);
     const info = await connector(source.type);
-    const onProgress = (message: string) => sendProgress({ sourceId: id, message });
     const python = await ensureEnvironment(info, onProgress);
     const settings = { ...source.options, ...(await readSecrets(openProject().id, id)) };
     return await runJob<T>(python, { ...job, connector: info.id, settings }, onProgress);
@@ -307,27 +331,64 @@ async function runSourceJob<T>(id: string, job: Record<string, unknown>): Promis
   }
 }
 
-async function load(id: string, resources: string[]): Promise<LoadedTable[]> {
+/** Loads a source's tables, without rebuilding anything that depends on them. */
+async function loadSource(
+  id: string,
+  resources: string[],
+  onProgress?: (message: string) => void,
+): Promise<LoadedTable[]> {
   const others = (await readAllSources()).filter((s) => s.id !== id);
-  const result = await runSourceJob<{ tables: LoadedTable[] }>(id, {
-    action: 'load',
-    resources,
-    data_dir: path.join(openProject().filesDir, 'data'),
-    pipeline_name: `pawpaw_${id}`,
-    reserved_tables: others.flatMap((s) => s.tables),
-  });
+  const transformedNames = Object.keys((await readTransformed()).tables);
+  const result = await runSourceJob<{ tables: LoadedTable[] }>(
+    id,
+    {
+      action: 'load',
+      resources,
+      data_dir: dataDir(),
+      pipeline_name: `pawpaw_${id}`,
+      reserved_tables: [...others.flatMap((s) => s.tables), ...transformedNames],
+    },
+    onProgress,
+  );
 
   // Tables this source loaded last time but no longer produces are removed.
   const source = await readSource(id);
   const tables = result.tables.map((t) => t.name);
   await removeTables(source.tables.filter((t) => !tables.includes(t)));
   await writeSource({ ...source, resources, tables, lastLoadedAt: new Date().toISOString() });
+  return result.tables;
+}
 
-  // The new data replaces the old, so tables with SQL transforms need them re-run.
-  const transformErrors = await reapplyTransforms(tables);
-  return result.tables.map((t) =>
-    transformErrors[t.name] ? { ...t, transformError: transformErrors[t.name] } : t,
-  );
+/** Loads one source, then re-applies transforms and rebuilds transformed tables. */
+async function load(id: string, resources: string[]): Promise<LoadedTable[]> {
+  const loaded = await loadSource(id, resources);
+  const { inPlaceErrors } = await rebuildDerived((message) => sendProgress({ sourceId: id, message }));
+  return loaded.map((t) => (inPlaceErrors[t.name] ? { ...t, transformError: inPlaceErrors[t.name] } : t));
+}
+
+/** Loads every source in turn, then re-applies transforms and rebuilds transformed tables once. */
+async function refreshAll(): Promise<RefreshAllResult> {
+  const sources = await readAllSources();
+  const failedSources: RefreshAllResult['failedSources'] = [];
+  const progress = (message: string) => sendProgress({ sourceId: ALL_SOURCES, message });
+  for (const [i, source] of sources.entries()) {
+    const prefix = `${source.name} (${i + 1} of ${sources.length})`;
+    progress(`${prefix}: starting…`);
+    try {
+      await loadSource(source.id, source.resources, (message) => progress(`${prefix}: ${message}`));
+    } catch (error) {
+      failedSources.push({ name: source.name, error: (error as Error).message });
+    }
+  }
+  const { inPlaceErrors, transformedErrors } = await rebuildDerived(progress);
+  return {
+    sourceCount: sources.length,
+    failedSources,
+    failedTables: Object.entries({ ...inPlaceErrors, ...transformedErrors }).map(([name, error]) => ({
+      name,
+      error,
+    })),
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -364,7 +425,13 @@ async function saveDiagram(diagram: ModelDiagram) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// SQL transforms (model/transforms.json; results in data/model/<table>, see transforms.py)
+// SQL transforms (see python/sidecar/transforms.py). Two kinds:
+//   in-place transforms of loaded tables: model/transforms.json, results in data/model/<table>
+//   transformed tables built from other tables: model/transformed.json, results in
+//   data/transformed/<table>
+// In-place transforms read loaded tables' original data, so they never depend on each other.
+// Transformed tables read the tables as currently shown, so they're built in dependency order
+// (src/shared/dependencies.ts) after the in-place transforms.
 
 interface TransformsFile {
   tables: Record<string, { sql: string; updatedAt: string }>;
@@ -402,6 +469,7 @@ async function applyTransform(table: string, sql: string) {
   const transforms = await readTransforms();
   transforms.tables[table] = { sql, updatedAt: new Date().toISOString() };
   await writeTransforms(transforms);
+  await rebuildDownstream([table]);
   return result;
 }
 
@@ -410,15 +478,16 @@ async function removeTransform(table: string) {
   const transforms = await readTransforms();
   delete transforms.tables[table];
   await writeTransforms(transforms);
+  await rebuildDownstream([table]);
 }
 
-/** Re-runs the transforms of freshly loaded tables. Returns an error message per failed table. */
-async function reapplyTransforms(tables: string[]): Promise<Record<string, string>> {
+/** Re-runs every in-place transform. Returns an error message per failed table. */
+async function reapplyTransforms(): Promise<Record<string, string>> {
   const transforms = (await readTransforms()).tables;
+  const loaded = new Set(await callPython<string[]>('list_tables', { data_dir: dataDir() }));
   const errors: Record<string, string> = {};
-  for (const table of tables) {
-    const transform = transforms[table];
-    if (!transform) continue;
+  for (const [table, transform] of Object.entries(transforms)) {
+    if (!loaded.has(table)) continue;
     try {
       await callPython('apply_transform', { data_dir: dataDir(), table, sql: transform.sql });
     } catch (error) {
@@ -431,22 +500,188 @@ async function reapplyTransforms(tables: string[]): Promise<Record<string, strin
   return errors;
 }
 
-/** Deletes a table and its nested child tables (parent__child), with their transforms and layout. */
+// --- Transformed tables ----------------------------------------------------------------------
+
+interface TransformedFile {
+  tables: Record<string, { sql: string; dependsOn: string[]; updatedAt: string; error: string | null }>;
+}
+
+const transformedPath = () => path.join(openProject().filesDir, 'model', 'transformed.json');
+/** Names for new transformed tables: also what dlt produces for loaded tables. */
+const TRANSFORMED_NAME = /^[a-z][a-z0-9_]{0,62}$/;
+
+async function readTransformed(): Promise<TransformedFile> {
+  try {
+    const parsed = JSON.parse(await fs.readFile(transformedPath(), 'utf8'));
+    const tables: TransformedFile['tables'] = {};
+    for (const [table, t] of Object.entries(parsed?.tables ?? {})) {
+      const def = t as { sql?: unknown; dependsOn?: unknown; updatedAt?: unknown; error?: unknown };
+      if (!SAFE_TABLE.test(table) || typeof def.sql !== 'string') continue;
+      tables[table] = {
+        sql: def.sql,
+        dependsOn: Array.isArray(def.dependsOn) ? def.dependsOn.filter((d): d is string => typeof d === 'string') : [],
+        updatedAt: String(def.updatedAt ?? ''),
+        error: typeof def.error === 'string' ? def.error : null,
+      };
+    }
+    return { tables };
+  } catch {
+    return { tables: {} };
+  }
+}
+
+async function writeTransformed(file: TransformedFile) {
+  await fs.mkdir(path.dirname(transformedPath()), { recursive: true });
+  await fs.writeFile(transformedPath(), JSON.stringify(file, null, 2) + '\n');
+  await markProjectChanged();
+}
+
+const dependencyMap = (file: TransformedFile): DependencyMap =>
+  Object.fromEntries(Object.entries(file.tables).map(([name, t]) => [name, t.dependsOn]));
+
+/**
+ * Rebuilds transformed tables, which must be in build order. A table whose query fails, or that
+ * reads one that failed, has its old result removed and the error recorded.
+ */
+async function rebuildTransformed(
+  names: string[],
+  onProgress?: (message: string) => void,
+): Promise<Record<string, string>> {
+  const file = await readTransformed();
+  const errors: Record<string, string> = {};
+  for (const [i, name] of names.entries()) {
+    const def = file.tables[name];
+    if (!def) continue;
+    onProgress?.(`Building ${name} (${i + 1} of ${names.length})…`);
+    try {
+      const failed = def.dependsOn.find((d) => d in errors);
+      if (failed) throw new Error(`It reads ${failed}, which couldn't be built.`);
+      await callPython('build_table', { data_dir: dataDir(), table: name, sql: def.sql });
+      def.error = null;
+    } catch (error) {
+      errors[name] = def.error = (error as Error).message;
+      await callPython('clear_table', { data_dir: dataDir(), table: name }).catch(() => {});
+    }
+  }
+  if (names.length) await writeTransformed(file);
+  return errors;
+}
+
+/** Re-applies every in-place transform, then rebuilds every transformed table in order. */
+async function rebuildDerived(onProgress?: (message: string) => void) {
+  onProgress?.('Applying transforms…');
+  const inPlaceErrors = await reapplyTransforms();
+
+  const file = await readTransformed();
+  const { order, blocked } = buildOrder(dependencyMap(file));
+  const transformedErrors = await rebuildTransformed(order, onProgress);
+  if (blocked.length) {
+    const latest = await readTransformed();
+    for (const name of blocked) {
+      transformedErrors[name] = latest.tables[name].error = 'It’s part of a circular reference.';
+      await callPython('clear_table', { data_dir: dataDir(), table: name }).catch(() => {});
+    }
+    await writeTransformed(latest);
+  }
+  return { inPlaceErrors, transformedErrors };
+}
+
+/** Rebuilds the transformed tables that read any of `changed`, in order. */
+async function rebuildDownstream(changed: string[]) {
+  const file = await readTransformed();
+  return rebuildTransformed(downstreamOf(dependencyMap(file), changed));
+}
+
+async function saveTransformed(input: SaveTransformedInput): Promise<{ rows: number }> {
+  const name = input.name.trim();
+  if (!TRANSFORMED_NAME.test(name)) {
+    throw new Error(
+      'Use a name of lowercase letters, numbers and underscores that starts with a letter, e.g. sales_by_region.',
+    );
+  }
+  const file = await readTransformed();
+  const loaded = await callPython<string[]>('list_tables', { data_dir: dataDir() });
+  if (input.isNew && (name in file.tables || loaded.includes(name))) {
+    throw new Error(`There's already a table called ${name}.`);
+  }
+  if (!input.isNew && !(name in file.tables)) throw new Error(`There's no transformed table called ${name}.`);
+
+  const dependsOn = await callPython<string[]>('query_tables', {
+    data_dir: dataDir(),
+    sql: input.sql,
+    kind: 'transformed',
+  });
+  const deps = { ...dependencyMap(file), [name]: dependsOn };
+  const cycle = findCycle(deps, name);
+  if (cycle) {
+    throw new Error(
+      cycle.length === 2
+        ? 'A table can’t read itself.'
+        : `That would make a circular reference: ${cycle.join(' → ')}.`,
+    );
+  }
+
+  // Build it first, so a failing query is never saved.
+  const result = await callPython<{ rows: number }>('build_table', { data_dir: dataDir(), table: name, sql: input.sql });
+  file.tables[name] = { sql: input.sql, dependsOn, updatedAt: new Date().toISOString(), error: null };
+  await writeTransformed(file);
+  await rebuildDownstream([name]);
+  return result;
+}
+
+async function listTransformed(): Promise<TransformedTable[]> {
+  const file = await readTransformed();
+  return Object.entries(file.tables).map(([name, t]) => ({ name, ...t }));
+}
+
+// --- Deleting tables -------------------------------------------------------------------------
+
+/** Transformed tables and in-place transforms of other tables that read any of `tables`. */
+async function dependentsOf(tables: string[]): Promise<string[]> {
+  const deps = dependencyMap(await readTransformed());
+  const users = new Set(tables.flatMap((t) => directDependents(deps, t)));
+  for (const [table, transform] of Object.entries((await readTransforms()).tables)) {
+    if (tables.includes(table)) continue;
+    const reads = await callPython<string[]>('query_tables', { data_dir: dataDir(), sql: transform.sql }).catch(
+      () => [],
+    );
+    if (reads.some((r) => tables.includes(r))) users.add(table);
+  }
+  for (const t of tables) users.delete(t);
+  return [...users].sort();
+}
+
+/**
+ * Deletes a table, with its transform and layout. A loaded table's nested child tables
+ * (parent__child) go too. Refused while other tables read it.
+ */
 async function deleteTable(table: string) {
   if (!SAFE_TABLE.test(table)) throw new Error('Invalid table name.');
+  const transformed = await readTransformed();
   const owner = (await readAllSources()).find((s) => s.tables.includes(table));
-  const doomed = [table, ...(owner?.tables ?? []).filter((t) => t.startsWith(`${table}__`))];
+  const doomed =
+    table in transformed.tables ? [table] : [table, ...(owner?.tables ?? []).filter((t) => t.startsWith(`${table}__`))];
 
-  for (const t of doomed) await callPython('delete_table', { data_dir: dataDir(), table: t });
-
-  if (owner) await writeSource({ ...owner, tables: owner.tables.filter((t) => !doomed.includes(t)) });
-  const transforms = await readTransforms();
-  const diagram = await loadDiagram();
-  for (const t of doomed) {
-    delete transforms.tables[t];
-    delete diagram.tables[t];
+  const users = await dependentsOf(doomed);
+  if (users.length) {
+    throw new Error(
+      `${users.join(', ')} ${users.length === 1 ? 'uses' : 'use'} this table. Change or delete ${users.length === 1 ? 'it' : 'them'} first.`,
+    );
   }
-  await writeTransforms(transforms);
+
+  if (table in transformed.tables) {
+    await callPython('clear_table', { data_dir: dataDir(), table });
+    delete transformed.tables[table];
+    await writeTransformed(transformed);
+  } else {
+    for (const t of doomed) await callPython('delete_table', { data_dir: dataDir(), table: t });
+    if (owner) await writeSource({ ...owner, tables: owner.tables.filter((t) => !doomed.includes(t)) });
+    const transforms = await readTransforms();
+    for (const t of doomed) delete transforms.tables[t];
+    await writeTransforms(transforms);
+  }
+  const diagram = await loadDiagram();
+  for (const t of doomed) delete diagram.tables[t];
   await saveDiagram(diagram);
 }
 
@@ -485,9 +720,12 @@ export function registerDataHandlers() {
   ipcMain.handle('data:get-transform', async (_event, table: string) =>
     (await readTransforms()).tables[table]?.sql ?? null,
   );
-  ipcMain.handle('data:preview-transform', (_event, sql: string) =>
-    callPython<TablePreview>('preview_transform', { data_dir: dataDir(), sql, limit: 200 }),
+  ipcMain.handle('data:preview-transform', (_event, sql: string, kind: TableKind = 'loaded') =>
+    callPython<TablePreview>('preview_transform', { data_dir: dataDir(), sql, kind, limit: 200 }),
   );
+  ipcMain.handle('data:list-transformed', () => listTransformed());
+  ipcMain.handle('data:save-transformed', (_event, input: SaveTransformedInput) => saveTransformed(input));
+  ipcMain.handle('data:refresh-all', () => refreshAll());
   ipcMain.handle('data:apply-transform', (_event, table: string, sql: string) => applyTransform(table, sql));
   ipcMain.handle('data:remove-transform', (_event, table: string) => removeTransform(table));
   ipcMain.handle('data:delete-table', (_event, table: string) => deleteTable(table));

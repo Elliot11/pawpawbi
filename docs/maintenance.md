@@ -60,7 +60,8 @@ write its connector in `connectors/apps/`.
 1. Stop the app (the next step deletes `python/runtime/`).
 2. Edit the pin in `python/requirements.txt`.
 3. Run `npm run lock:python`. It reinstalls everything and rewrites `python/constraints.txt` with
-   the new transitive versions.
+   the new transitive versions. It only considers releases at least 14 days old
+   (`--uploaded-prior-to P14D`), so the whole lock file follows the rule, not just the direct pins.
 4. Review the `constraints.txt` diff for surprising jumps.
 5. If you changed **dlt**, also update `DLT_VERSION` in `connectors/storage.py`, and check the
    verified sources still import (`npm run test:python`).

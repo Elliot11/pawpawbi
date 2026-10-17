@@ -61,21 +61,21 @@ Each package's own licence file ships in its `*.dist-info` folder under
 | click | 8.5.0 | BSD-3-Clause |
 | fsspec | 2026.9.0 | BSD-3-Clause |
 | gitdb | 4.0.12 | BSD-3-Clause |
-| GitPython | 3.2.1 | BSD-3-Clause |
-| giturlparse | 0.16.0 | Apache-2.0 |
+| GitPython | 3.2.0 | BSD-3-Clause |
+| giturlparse | 0.15.0 | Apache-2.0 |
 | humanize | 4.16.0 | MIT |
 | idna | 3.20 | BSD-3-Clause |
-| jsonpath-ng | 1.11.0 | Apache-2.0 |
+| jsonpath-ng | 1.8.0 | Apache-2.0 |
 | markdown-it-py | 4.2.0 | MIT |
 | mdurl | 0.1.2 | MIT |
-| orjson | 3.13.0 | MPL-2.0 AND (Apache-2.0 OR MIT) |
+| orjson | 3.12.0 | MPL-2.0 AND (Apache-2.0 OR MIT) |
 | packaging | 26.3 | Apache-2.0 OR BSD-2-Clause |
 | pathvalidate | 3.3.1 | MIT |
-| pendulum | 3.3.0 | MIT |
-| pluggy | 1.7.0 | MIT |
+| pendulum | 3.2.0 | MIT |
+| pluggy | 1.6.0 | MIT |
 | Pygments | 2.21.0 | BSD-2-Clause |
 | python-dateutil | 2.9.0.post0 | Apache-2.0 OR BSD-3-Clause |
-| pytz | 2026.5 | MIT |
+| pytz | 2026.4 | MIT |
 | pywin32 | 312 | PSF |
 | PyYAML | 6.0.3 | MIT |
 | requests | 2.34.2 | Apache-2.0 |
@@ -84,14 +84,14 @@ Each package's own licence file ships in its `*.dist-info` folder under
 | rich-argparse | 1.8.0 | MIT |
 | semver | 3.1.0 | BSD-3-Clause |
 | setuptools | 84.0.0 | MIT |
-| simplejson | 4.2.0 | MIT OR AFL-2.1 |
+| simplejson | 4.1.2 | MIT OR AFL-2.1 |
 | six | 1.17.0 | MIT |
 | smmap | 5.0.3 | BSD-3-Clause |
-| sqlglot | 30.23.0 | MIT |
-| tenacity | 9.2.1 | Apache-2.0 |
-| tomlkit | 0.15.2 | MIT |
+| sqlglot | 30.21.0 | MIT |
+| tenacity | 9.1.4 | Apache-2.0 |
+| tomlkit | 0.15.1 | MIT |
 | typing_extensions | 4.16.0 | PSF-2.0 |
-| tzdata | 2026.5 | Apache-2.0 |
+| tzdata | 2026.4 | Apache-2.0 |
 | urllib3 | 2.8.0 | MIT |
 | win-precise-time | 1.4.2 | MIT |
 
