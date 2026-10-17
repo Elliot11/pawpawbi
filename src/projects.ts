@@ -181,9 +181,14 @@ async function createProject(win: BrowserWindow): Promise<Project | null> {
 
 async function saveProject(): Promise<Project> {
   const s = requireSession();
-  // Never zip a working folder that a load or rebuild is still writing to.
-  await work.idle(s.manifest.id);
-  await saveWorkspace(s, appLabel());
+  // Never zip a working folder that a load or rebuild is writing to, or could start writing to.
+  work.block(s.manifest.id);
+  try {
+    await work.idle(s.manifest.id);
+    await saveWorkspace(s, appLabel());
+  } finally {
+    work.unblock(s.manifest.id);
+  }
   notifyChanged();
   return toProject(s);
 }

@@ -18,9 +18,12 @@ Tables on disk (see docs/pawpaw-file-format.md). There are two kinds:
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import decimal
 import math
+import re
+import threading
 import uuid
 from pathlib import Path
 from typing import Literal
@@ -31,6 +34,13 @@ import pyarrow.parquet as pq
 RAW_DATASET = "raw"
 MODEL_DATASET = "model"
 TRANSFORMED_DATASET = "transformed"
+
+# A query that runs longer than this is stopped, so one slow query (e.g. one the assistant
+# wrote) can't tie up the sidecar, which handles requests one at a time.
+TIME_LIMIT_SECONDS = 60
+
+# Table names become folder names, so only plain names are ever used in a path.
+TABLE_NAME = re.compile(r"^[A-Za-z0-9_]+$")
 
 # "current": every table as the app shows it: loaded tables (their in-place transform's result
 #   if they have one) and transformed tables. Previews, table info and transformed tables use this.
@@ -51,6 +61,30 @@ def quote(name: str) -> str:
 def literal(text: str) -> str:
     """A SQL string literal."""
     return "'" + text.replace("'", "''") + "'"
+
+
+def table_dir(data_dir: Path, dataset: str, table: str) -> Path:
+    """<data_dir>/<dataset>/<table>, refusing any table name that isn't a plain name."""
+    if not isinstance(table, str) or not TABLE_NAME.match(table):
+        raise ValueError(f"Invalid table name: {table!r}")
+    return data_dir / dataset / table
+
+
+@contextlib.contextmanager
+def time_limit(con: duckdb.DuckDBPyConnection, seconds: float | None = None):
+    """Stops the queries run inside the block if they take longer than `seconds`
+    (TIME_LIMIT_SECONDS by default)."""
+    seconds = TIME_LIMIT_SECONDS if seconds is None else seconds
+    timer = threading.Timer(seconds, con.interrupt)
+    timer.start()
+    try:
+        yield
+    except Exception:
+        if not timer.is_alive():
+            raise TimeoutError(f"The query took longer than {seconds:g} seconds, so it was stopped.") from None
+        raise
+    finally:
+        timer.cancel()
 
 
 def _folder_names(folder: Path) -> list[str]:
@@ -176,9 +210,10 @@ def json_value(value):
 
 def preview(con: duckdb.DuckDBPyConnection, query: str, limit: int) -> dict:
     """A query's columns, its first `limit` rows and its total row count."""
-    relation = con.sql(query)
-    rows = relation.limit(limit).fetchall()
-    row_count = con.sql(f"SELECT count(*) FROM ({query})").fetchone()[0]
+    with time_limit(con):
+        relation = con.sql(query)
+        rows = relation.limit(limit).fetchall()
+        row_count = con.sql(f"SELECT count(*) FROM ({query})").fetchone()[0]
     return {
         "columns": [{"name": n, "dtype": str(t)} for n, t in zip(relation.columns, relation.types)],
         "rows": [[json_value(v) for v in row] for row in rows],

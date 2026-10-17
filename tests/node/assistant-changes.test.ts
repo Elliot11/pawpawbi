@@ -156,3 +156,53 @@ test('paths outside the project are refused', async () => {
     /Invalid path/,
   );
 });
+
+test('a journal opened after its store was deleted lists nothing', async () => {
+  const { record } = await journal.record('One', [site], () =>
+    write('report/report.json', '1'),
+  );
+  await fs.rm(path.join(tmp, 'undo'), { recursive: true, force: true });
+  const reopened = new ChangeJournal(root, path.join(tmp, 'undo'));
+  assert.deepEqual(await reopened.list(), []);
+  await assert.rejects(reopened.undoBackTo(record.id), /isn’t in the record/);
+  assert.equal(await read('report/report.json'), '1', 'nothing was touched');
+});
+
+test('a missing saved copy means nothing is undone, not half of it', async () => {
+  const { record } = await journal.record('Page', [site], async () => {
+    await write('report/report.json', '{"pages":["a"]}');
+    await write('report/pages/a.html', '<h1>A</h1>');
+  });
+  // The copy of report.json is lost, but the record still says to delete a.html.
+  await fs.rm(path.join(tmp, 'undo', record.id, 'report', 'report.json'));
+  await assert.rejects(journal.undoBackTo(record.id));
+  assert.equal(await read('report/pages/a.html'), '<h1>A</h1>', 'not deleted');
+  assert.equal(await read('report/report.json'), '{"pages":["a"]}');
+  assert.equal((await journal.list())[0].undone, false);
+});
+
+test('undoing several changes records each one as it is done', async () => {
+  const first = await journal.record('One', [site], () =>
+    write('report/report.json', '1'),
+  );
+  await journal.record('Two', [{ file: 'model/datasets.json' }], () =>
+    write('model/datasets.json', '{}'),
+  );
+  // Make the first change's copy unreadable, so the second undoes but the first fails.
+  await fs.rm(path.join(tmp, 'undo', first.record.id), {
+    recursive: true,
+    force: true,
+  });
+  await assert.rejects(journal.undoBackTo(first.record.id));
+  const reopened = new ChangeJournal(root, path.join(tmp, 'undo'));
+  assert.deepEqual(
+    (await reopened.list()).map((c) => [c.summary, c.undone]),
+    [
+      ['One', false],
+      ['Two', true],
+    ],
+    'the journal on disk says exactly what happened',
+  );
+  assert.equal(await read('model/datasets.json'), null);
+  assert.equal(await read('report/report.json'), '1');
+});

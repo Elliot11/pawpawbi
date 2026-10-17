@@ -6,35 +6,25 @@ works without PawpawBI, e.g. hosted on S3. Only what the query returns is publis
 datasets should aggregate.
 
 The query runs in the locked-down DuckDB from engine.py like every other query. Results are
-capped in rows and size, and a query that runs too long is stopped.
+capped in rows and size. Like every query, one that runs too long is stopped.
 """
 
 import datetime as dt
 import json
 import os
-import threading
 from pathlib import Path
 
 import engine
 
 MAX_ROWS = 50_000
 MAX_BYTES = 10 * 1024 * 1024
-TIME_LIMIT_SECONDS = 60
 
 
 def _run(con, sql: str, limit: int, time_limit: float):
     query = engine.select(con, sql)
-    timer = threading.Timer(time_limit, con.interrupt)
-    timer.start()
-    try:
+    with engine.time_limit(con, time_limit):
         relation = con.sql(query)
         rows = relation.fetchmany(limit + 1)
-    except Exception:
-        if not timer.is_alive():
-            raise TimeoutError(f"The query took longer than {time_limit:g} seconds, so it was stopped.") from None
-        raise
-    finally:
-        timer.cancel()
     columns = [{"name": n, "type": str(t)} for n, t in zip(relation.columns, relation.types)]
     return columns, rows
 
@@ -47,7 +37,7 @@ def write_dataset(params):
     limit = min(int(params.get("max_rows", MAX_ROWS)), MAX_ROWS)
     con = engine.connect(Path(params["data_dir"]))
     try:
-        columns, rows = _run(con, params["sql"], limit, float(params.get("time_limit", TIME_LIMIT_SECONDS)))
+        columns, rows = _run(con, params["sql"], limit, float(params.get("time_limit", engine.TIME_LIMIT_SECONDS)))
     finally:
         con.close()
 

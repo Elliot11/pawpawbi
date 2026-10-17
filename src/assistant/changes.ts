@@ -154,16 +154,27 @@ export class ChangeJournal {
     return files;
   }
 
-  /** Puts a change's files back as they were before it. */
+  /**
+   * Puts a change's files back as they were before it. Every saved copy is read before any
+   * file is touched, so a missing copy (e.g. the store was deleted) changes nothing.
+   */
   private async restore(change: StoredChange) {
+    const copies = new Map<string, Buffer | null>();
     for (const [relative, { before }] of Object.entries(change.files)) {
+      copies.set(
+        relative,
+        before === null
+          ? null
+          : await fs.readFile(
+              path.join(this.store, change.id, ...checkRelative(relative)),
+            ),
+      );
+    }
+    for (const [relative, content] of copies) {
       const target = this.abs(relative);
-      if (before === null) {
+      if (content === null) {
         await fs.rm(target, { force: true, maxRetries: 5 });
       } else {
-        const content = await fs.readFile(
-          path.join(this.store, change.id, ...checkRelative(relative)),
-        );
         await fs.mkdir(path.dirname(target), { recursive: true });
         await fs.writeFile(target, content);
       }
@@ -204,7 +215,14 @@ export class ChangeJournal {
           }
         }
       }
-      await this.restore(stored);
+      try {
+        await this.restore(stored);
+      } catch (restoreError) {
+        // Keep the saved copies: they're the only way back. Report both failures.
+        throw new Error(
+          `${(error as Error)?.message ?? error} Putting the files back also failed (${(restoreError as Error)?.message}); the copies are in ${path.join(this.store, id)}.`,
+        );
+      }
       await fs.rm(path.join(this.store, id), { recursive: true, force: true });
       throw error;
     }
@@ -266,15 +284,16 @@ export class ChangeJournal {
   /** Reverts a change and every later one, newest first. Returns the changes undone. */
   async undoBackTo(id: string): Promise<ChangeRecord[]> {
     const undoing = await this.from(id);
+    // Newest first, recording each as it's done, so a failure part-way leaves the record true.
     for (const change of [...undoing].reverse()) {
       await this.restore(change);
       change.undone = true;
+      await this.saveJournal();
       await fs.rm(path.join(this.store, change.id), {
         recursive: true,
         force: true,
       });
     }
-    await this.saveJournal();
     return undoing.map(toRecord);
   }
 }

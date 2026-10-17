@@ -2,7 +2,7 @@
 //
 // pytest is installed into a separate virtual environment, python/.venv-test, so it never ends
 // up in the bundled runtime that ships with the app. The venv is created from the bundled
-// runtime with --system-site-packages, so tests see the same dlt, pandas and DuckDB as the app.
+// runtime with --system-site-packages, so tests see the same dlt, pyarrow and DuckDB as the app.
 //
 // Usage: npm run test:python [-- <extra pytest arguments>]
 import { createHash } from 'node:crypto';

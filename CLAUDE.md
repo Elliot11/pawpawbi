@@ -20,9 +20,11 @@ obvious from the code. Keep this file current when a convention changes.
 ## Commands
 
 - `npm run typecheck` after every TypeScript or Vue change. `npm test` for anything touching
-  connectors, the runner, transforms or the archive format.
+  connectors, the runner, transforms, datasets, the archive format, the report site or
+  `charts.js`, or the assistant.
 - `npm start` runs the app. Renderer (Vue) changes hot-reload; **main-process changes
-  (`src/*.ts` other than the renderer) and Python sidecar changes need the app restarted**
+  (`src/*.ts`, `src/assistant/`, and anything bundled into it with `?raw`: `src/report-template/`
+  and `docs/report-pages.md`) and Python sidecar changes need the app restarted**
   (stop `electron.exe` whose path contains `PawpawBI`, then `npm start`). Connector jobs run in a
   fresh Python process each time, so `runner.py` and `connectors/` changes apply immediately.
 - After editing `python/requirements.txt`: `npm run lock:python` (reinstalls the runtime and
@@ -43,16 +45,18 @@ obvious from the code. Keep this file current when a convention changes.
   Electron's "Error invoking remote method…" prefix.
 - **Secrets never go in the project.** Connector fields marked `secret=True` are stored with
   `src/credentials.ts` (OS encryption), never in `sources/*.json` or anywhere in the `.pawpaw` file.
+  The assistant's API keys are stored the same way by `src/assistant/settings.ts`.
 - **All reading of loaded data goes through `python/sidecar/engine.py`**: one locked-down,
   in-memory DuckDB over the Parquet files (table info, previews, transforms, report datasets;
-  later relationships). Don't read tables any other way, and don't loosen `engine.connect()` or
-  `engine.select()` (SQL transforms must be one read-only SELECT); see
+  later relationships). Don't read tables any other way, and don't loosen `engine.connect()`,
+  `engine.select()` (every query must be one read-only SELECT) or `engine.time_limit()`; see
   [docs/security.md](docs/security.md). The sandbox tests in `python/tests/` must keep passing.
 - **pandas isn't bundled**, deliberately (decision 4 in [docs/decisions.md](docs/decisions.md)). Use DuckDB, pyarrow or plain Python instead of adding
   it back.
 - **Anything read from a `.pawpaw` file is untrusted** (projects are shared). Validate IDs and
-  table names before using them in paths (`SAFE_ID`, `SAFE_TABLE`); never execute stored code,
-  except the report in its sandbox.
+  names before using them in paths (`SAFE_ID`, `SAFE_TABLE`, `GUID`, `DATASET_NAME`;
+  `engine.table_dir` on the Python side); never execute stored code, except the report in its
+  sandbox.
 - **The report (`report/`) is a static website** that must work hosted on its own (e.g. S3 + CDN):
   plain HTML, CSS and JavaScript, no Vue or framework, nothing loaded from outside the folder, no
   dependency on PawpawBI. Pages read data only from `data/<dataset>.json`, written by the app from
@@ -60,6 +64,9 @@ obvious from the code. Keep this file current when a convention changes.
   library is `src/report-template/assets/charts.js`; its API is
   [docs/report-pages.md](docs/report-pages.md) (update both together) and keeps the series colour
   order and mark rules described there. Spec: [docs/pawpaw-file-format.md](docs/pawpaw-file-format.md).
+  `docs/report-pages.md` is also bundled into the app as the assistant's report guide, so keep it a
+  precise contract: what it says is what the model does. Existing projects keep their own copy of
+  `src/report-template/`; changing the template only affects new projects.
 - **The assistant** (`src/assistant/`, [docs/assistant.md](docs/assistant.md)) runs on the user's
   own Anthropic or OpenAI key, or a local Ollama model, called with plain `fetch` from the main
   process (no SDKs). Keep its conversation, tools and prompts provider-neutral (`types.ts`) and

@@ -12,7 +12,7 @@ are installed the first time the connector is used; see `python/sidecar/connecto
 ## Updating
 
 Download the repository at a newer commit, replace the folders here, update the commit above,
-then re-check each connector's settings in `python/sidecar/connectors/apps.py` against the
+then re-check each connector's settings in `python/sidecar/connectors/apps/` against the
 source's function signature, since parameters do change between versions.
 
 Not included: `chess` and `pokemon` (demos), `scraping` (web scraping), `unstructured_data`

@@ -90,11 +90,17 @@ Connector environments rebuild themselves on next use because the constraints ch
    app (`out/PawpawBI-win32-x64/PawpawBI.exe`).
 5. Check `npm audit`, but don't run `npm audit fix --force` (it can break the Forge template).
 
+## Change the assistant
+
+Adding a provider or a tool, and what the model is told, are in [assistant.md](assistant.md).
+`docs/report-pages.md` is bundled into the app as the assistant's report guide, so changes to
+it change the assistant's behaviour; `src/report-template/` is copied into every new project.
+
 ## Change the `.pawpaw` file format
 
 1. Additive changes (new optional files, folders or fields) don't need a new format version:
    older versions ignore and preserve them.
-2. Breaking changes need `FORMAT_VERSION` bumped in `src/projects.ts`, plus code that upgrades
+2. Breaking changes need `FORMAT_VERSION` bumped in `src/workspace.ts`, plus code that upgrades
    older projects when they're opened.
 3. Update [pawpaw-file-format.md](pawpaw-file-format.md) in the same change.
 
@@ -110,7 +116,10 @@ Not set up end to end yet; code signing is outstanding ([TODO.md](../TODO.md)).
    - Load a CSV.
    - Use one connector that downloads packages.
    - Run a transform.
-   - Save, reopen, and check the data is there.
+   - Add a chart to the report page and export the report.
+   - Chat once with each provider you have a key for; check `PAWPAW_*_API` has no effect in the
+     packaged app.
+   - Save, reopen, and check the data, report and conversation are there.
 5. **Signing** (once set up): sign the app executable, the installer, and the bundled Python
    `.exe`/`.dll` files. Setup options are in
    [Electron Forge's Windows signing guide](https://www.electronforge.io/guides/code-signing/code-signing-windows)

@@ -652,7 +652,7 @@
       if (built.folded) {
         note(
           frame.notes,
-          `${built.folded + 1} smaller series are added together as “Other”.`,
+          `${built.folded} smaller series are added together as “Other”.`,
         );
       }
 
@@ -989,7 +989,7 @@
       if (built.folded) {
         note(
           frame.notes,
-          `${built.folded + 1} smaller series are added together as “Other”.`,
+          `${built.folded} smaller series are added together as “Other”.`,
         );
       }
       if (rows.truncated)

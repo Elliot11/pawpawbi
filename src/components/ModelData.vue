@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onActivated, onBeforeUnmount, ref } from 'vue';
 import { errorMessage } from '../errors';
 import { plain } from '../plain';
 import {
@@ -80,7 +80,7 @@ async function load() {
 
 // Kept alive between workflow steps, so reload whenever the screen is shown: data may have
 // been added or refreshed in the meantime.
-onMounted(load);
+// onActivated also fires on the first show, so this loads once, not twice.
 onActivated(load);
 
 // --- Refreshing every data source ---------------------------------------------------------------

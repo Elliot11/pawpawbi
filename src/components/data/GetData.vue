@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onMounted, ref } from 'vue';
 import { errorMessage } from '../../errors';
+import { plain } from '../../plain';
 import type {
   ConnectorCatalog,
   ConnectorInfo,
@@ -60,6 +61,12 @@ async function reloadSources() {
   sources.value = await window.api.data.listSources();
 }
 
+// Tables can be deleted on the Model data screen, so reload when coming back to this one.
+onActivated(() => {
+  if (!loading.value)
+    reloadSources().catch((err) => (error.value = errorMessage(err)));
+});
+
 async function finishSetup() {
   await reloadSources();
   view.value = { name: 'overview' };
@@ -76,7 +83,7 @@ async function refresh(source: DataSource) {
   const { [source.id]: _, ...otherErrors } = refreshErrors.value;
   refreshErrors.value = otherErrors;
   try {
-    await window.api.data.load(source.id, source.resources);
+    await window.api.data.load(source.id, plain(source.resources));
     await reloadSources();
   } catch (err) {
     refreshErrors.value = {

@@ -24,8 +24,8 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
   `model/relationships.json`. The canvas has an SVG layer and column anchors ready for this.
 - **Column types and descriptions** in the model (`model/tables/<table>.json`), e.g. marking a
   text column as a date.
-- **The assistant's editing tools for tables and sources (phases 3b and 3c).** 3a (approvals, Undo
-  and the report tools) is done. Next:
+- **The assistant's editing tools for tables and sources (phases 3b and 3c).** The assistant can
+  change the report; it can't change tables or sources:
   - **3b, modelling:** in-place transforms, transformed tables, deleting tables; undo must also
     clear and rebuild derived data.
   - **3c, sources:** add and edit sources (passwords only through the source's form), discover
@@ -37,17 +37,18 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
   ("add a bar chart of revenue by region, then a line chart of monthly revenue below it"), Claude
   Haiku 5.5 and gpt-5 both built working pages every time. qwen3 8B through Ollama didn't:
   - it wrote HTML for another chart library;
-  - it edited example code inside an HTML comment (now removed from the page template);
+  - it edited the example code that the page template then carried in an HTML comment;
   - it invented markup and garbled the page.
-
-  Fixed along the way:
-  - `create_page` refuses a title that's already used (models added a second "Overview").
-  - Page IDs are accepted as `pages/<id>.html` too.
 
 - **The assistant's guides and evaluation tasks (phase 4).** Guides for adding data, modelling and
   SQL alongside the report guide, a tuned system prompt, and sample tasks run against both
   providers.
-- **Publish to S3 and CloudFront** from the app. For now, Export writes the site to a folder.
+- **Publish to S3 and CloudFront** from the app. Export writes the site to a folder.
+- **Screens other than Build visuals don't react to the assistant's changes.** Only
+  `ReportCanvas.vue` watches `projectChanged`; Add data and Model data need to as well before
+  the phase 3b and 3c tools exist (the `changed` event already names the areas).
+- **Update a report's copy of `charts.js`** when the app's version improves; each project keeps
+  its own copy.
 - **More for the report:** stacked bars, area and scatter charts, filters within a page, dark
   mode, printing a page, an editor with syntax highlighting, reordering pages, renaming the
   report, and updating a report's copy of `charts.js` when the app's version improves.
@@ -88,8 +89,8 @@ PawpawBI targets Windows. Before shipping Linux builds:
 - **`npm audit`** reports two critical issues, both in build tools from the Forge template. What the
   app ships has none (`npm audit --omit=dev`). Not yet investigated.
 - **Tables can't be renamed**, and deleting a table can't be undone. Neither can deleting a report
-  page or dataset.
-- **Datasets that use a renamed or deleted table or column** fail at their next refresh (keeping
+  page or dataset from the Build visuals screen (the assistant's deletions can be undone).
+- **Datasets that use a deleted table or a changed column** fail at their next refresh (keeping
   their old data); nothing warns before the change.
 - **Unsaved edits in the report's file editor are lost** if the project is closed first.
 - **An exported report doesn't work opened straight from disk** (browsers block reading its data
@@ -103,8 +104,8 @@ PawpawBI targets Windows. Before shipping Linux builds:
 - **The assistant doesn't show what a reply cost**, though usage is reported by the adapters.
 - **Local models through Ollama are much less capable** than Claude or ChatGPT, and thinking is
   turned off for speed. The context window is fixed at 16,384 tokens, so long conversations with
-  big tool results may lose earlier detail. Only Ollama at the default address
-  (`127.0.0.1:11434`) is supported.
+  big tool results may lose earlier detail. Packaged builds use only Ollama at its default
+  address (`127.0.0.1:11434`).
 - **The Ollama option hasn't been tried on a computer without a capable GPU**, where replies may be
   very slow.
 - **Long conversations are cut to the last 80 messages** with no summary of what came before.
@@ -115,9 +116,11 @@ PawpawBI targets Windows. Before shipping Linux builds:
 - **Files outside projects are never cleaned up**: saved credentials, dlt state and working folders
   of deleted projects, and connector environments no longer used.
 - **Some of the main process's logic has no automated tests**: rebuild orchestration, refusing
-  deletes, data sources and the recent list. Tested: the archive format, working folders and crash
-  recovery, dependency ordering, background-work tracking, the report site's files, the chart
-  library's helpers, and the Python side.
+  deletes, data sources, the recent list, and the assistant's `index.ts` (approval wiring, the
+  journal per project) and `report-tools.ts`, which import Electron modules. Tested: the archive
+  format, working folders and crash recovery, dependency ordering, background-work tracking, the
+  report site's files, the chart library's helpers, the assistant's tool loop, change journal,
+  history and provider adapters, and the Python side.
 - **Python code isn't linted or formatted.** Add Ruff (development only) and run it from
   `npm run lint`.
 - **After choosing Wait when closing during a load**, only the top bar's "Working…" shows that a

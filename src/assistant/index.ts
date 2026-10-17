@@ -119,22 +119,16 @@ async function snapshot(stage: string) {
 // ---------------------------------------------------------------------------------------------
 // Changes: the journal for Undo, and asking before each change
 
-const journals = new Map<string, ChangeJournal>();
-
-/** The open project's change journal. Its store is in the working folder, beside the files. */
-function journal() {
-  const { filesDir } = openProject();
-  if (!journals.has(filesDir)) {
-    journals.set(
-      filesDir,
-      new ChangeJournal(
-        filesDir,
-        path.join(path.dirname(filesDir), 'assistant-changes'),
-      ),
-    );
-  }
-  return journals.get(filesDir)!;
-}
+/**
+ * The open project's change journal. Its store is in the working folder, beside the files, and
+ * goes when the project is closed, so the journal is opened afresh each time rather than kept:
+ * a kept one would still list changes whose copies are gone.
+ */
+const journal = () =>
+  new ChangeJournal(
+    openProject().filesDir,
+    path.join(path.dirname(openProject().filesDir), 'assistant-changes'),
+  );
 
 /** Approval requests waiting for the user's answer, by tool call ID. */
 const waiting = new Map<string, (answer: ApprovalAnswer) => void>();

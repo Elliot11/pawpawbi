@@ -1,7 +1,7 @@
 # The .pawpaw file format
 
 **Format version:** 1
-**Status:** Draft. Sections marked _provisional_ describe features that aren't built yet and may change before they are.
+**Status:** Draft. Sections marked _not written yet_ describe files the app doesn't produce yet; they may change before it does.
 
 A `.pawpaw` file is a standard ZIP archive containing one PawpawBI project: its data, its data model, its report and its assistant conversation. Everything inside is an ordinary file (JSON, JSON Lines, Parquet, PNG), so a project can be unzipped and inspected with everyday tools.
 
@@ -11,7 +11,7 @@ A `.pawpaw` file is a standard ZIP archive containing one PawpawBI project: its 
 Sales report.pawpaw            (ZIP archive)
 ├── mimetype                   Identifies the archive as a PawpawBI project
 ├── manifest.json              Project metadata and format version
-├── thumbnail.png              Preview image for the start screen (optional)
+├── thumbnail.png              Preview image for the start screen (optional, not written yet)
 │
 ├── sources/                   Where the data came from
 │   └── <source-id>.json       One file per data source
@@ -53,7 +53,7 @@ Sales report.pawpaw            (ZIP archive)
     └── messages.jsonl         Message history, one message per line
 ```
 
-Only `mimetype` and `manifest.json` are required. A brand-new project contains those and the default `report/`; every other folder is optional until something is put in it. A project without `report/` (made before reports existed) is valid, and the app offers to add one.
+Only `mimetype` and `manifest.json` are required. A brand-new project contains those and the default `report/`; every other folder is optional until something is put in it. A project without `report/` is valid, and the app offers to add one.
 
 ## Archive rules
 
@@ -73,7 +73,7 @@ These apply to the ZIP container itself.
 ## Naming rules
 
 - **Table names** are lowercase letters, digits and underscores, starting with a letter (for example `monthly_sales`). This matches how dlt names tables, so a table's folder in `data/raw/`, its file in `model/tables/` and the name used everywhere else are identical.
-- **IDs** for sources, pages and visuals are short random strings (lowercase letters and digits, e.g. `k3f9x2`), generated when the item is created and never changed. Renaming a page changes its title, not its ID, so nothing that refers to it breaks.
+- **IDs** are generated when an item is created and never changed, so renaming something never breaks what refers to it. Source IDs are 8 lowercase letters and digits (e.g. `k3f9x2ab`); page IDs are lowercase version 4 UUIDs (e.g. `3f2b8c1e-9a4d-4e7b-b6c2-5d1e8f0a7c94`).
 - **Dates and times** are ISO 8601 in UTC, e.g. `2026-10-17T09:30:00Z`.
 
 ## manifest.json
@@ -134,25 +134,24 @@ Identifies the project and the format version. Required.
 
 The project's data, stored as Parquet.
 
-- **`data/raw/`** is written only by dlt. Each table is a folder of one or more Parquet files that together make up the table; readers must treat the folder as a single table and never rely on file names. The `_dlt_loads`, `_dlt_pipeline_state` and `_dlt_version` folders are dlt's own records. They include the pipeline state dlt needs for incremental loading (fetching only new rows), so they must be kept.
-  There are two kinds of table:
+There are two kinds of table:
 
 - **Loaded tables** come from data loads. Their data is in `raw/`.
 - **Transformed tables** are built by a SQL query from other tables. Their data is in `transformed/`.
 
 The folders:
 
-- **`data/raw/`** is written only by dlt. Each table is a folder of one or more Parquet files that together make up the table; readers must treat the folder as a single table and never rely on file names. The `_dlt_loads`, `_dlt_pipeline_state` and `_dlt_version` folders are dlt's own records. They include the pipeline state dlt needs for incremental loading (fetching only new rows), so they must be kept.
+- **`data/raw/`** is written only by dlt. Each table is a folder of one or more Parquet files that together make up the table; readers must treat the folder as a single table and never rely on file names. The `_dlt_loads`, `_dlt_pipeline_state` and `_dlt_version` folders are dlt's own records of what it loaded; keep them so loads stay consistent.
 - **`data/model/<table>/data.parquet`** is a loaded table's in-place transform result (`model/transforms.json`), used in place of its `raw/` version everywhere in the app.
 - **`data/transformed/<table>/data.parquet`** is a transformed table (`model/transformed.json`).
 
-Loaded and transformed table names are unique across both kinds. Everything in `model/` and `transformed/` can be rebuilt from `raw/` plus the queries, so a "save without processed data" option could leave them out to make files smaller.
+Loaded and transformed table names are unique across both kinds. Everything in `model/` and `transformed/` can be rebuilt from `raw/` plus the queries.
 
 ## model/
 
 What the user and the assistant have worked out about the data, typically during the _Model data_ step. None of this changes the data in `raw/`; it describes how to interpret it.
 
-### model/tables/&lt;table&gt;.json
+### model/tables/&lt;table&gt;.json (not written yet)
 
 One file per table (loaded or transformed). A table with no file here is used as-is.
 
@@ -186,7 +185,7 @@ Column fields, all optional:
 - `role`: `key` (uniquely identifies a row), `measure` (a number to add up or average) or `dimension` (something to group by).
 - `displayName`, `description`, `hidden` (`true` to keep it out of the report builder), and `format` for display (e.g. `"0.0%"`).
 
-### model/relationships.json
+### model/relationships.json (not written yet)
 
 How tables join. The assistant proposes these and the user confirms them.
 
@@ -269,7 +268,7 @@ After data is loaded (one source or all of them), the app:
 1. Re-applies every in-place transform.
 2. Rebuilds every transformed table in dependency order, each after the transformed tables it reads.
 
-A failing query has its table's old result removed and its error recorded. Tables that read a failed table fail too.
+A failing transformed-table query has its table's old result removed and its error recorded; tables that read a failed table fail too. A failing in-place transform keeps its previous result.
 
 ### Rules for all queries
 
@@ -333,8 +332,9 @@ The report is a static website of plain HTML, CSS and JavaScript. It depends on 
 ```
 
 - `id`: the page's GUID, a lowercase version 4 UUID, generated when the page is created and never changed. The page's file is `pages/<id>.html`.
-- `title`: shown in the navigation, at most 80 characters.
+- `title`: shown in the navigation, at most 80 characters (as is the report's `title`).
 - Pages without a valid GUID are ignored, as is an HTML file in `pages/` that isn't listed.
+- Pages, stylesheets and scripts written by the app or the assistant are at most 2 MB each.
 
 **`report/data/<dataset>.json`**:
 
@@ -380,15 +380,18 @@ The conversation with the assistant, so it can pick up where it left off.
   {"id":"m5","role":"assistant","text":"North has 100 orders.","createdAt":"2026-10-17T09:31:19Z"}
   ```
 
-  | Field        | Meaning                                                                                         |
-  | ------------ | ----------------------------------------------------------------------------------------------- |
-  | `role`       | `user`, `assistant` or `tool`                                                                   |
-  | `text`       | What was said; for a tool message, the result given to the model (at most 20,000 characters)    |
-  | `toolCalls`  | Assistant messages: the tools it asked to run, each with an `id`, `name` and `input`            |
-  | `toolCallId` | Tool messages: the call this answers. Also `toolName`, `summary` (shown in the chat), `isError` |
-  | `changeId`   | Tool messages that changed the project: the change (Undo works while the project is open)       |
-  | `declined`   | Tool messages: `true` if the user didn't allow the change                                       |
-  | `event`      | `true` on a note to the assistant about something the user did, e.g. undoing changes            |
+  | Field        | Meaning                                                                                      |
+  | ------------ | -------------------------------------------------------------------------------------------- |
+  | `id`         | A short random ID, unique within the conversation                                            |
+  | `createdAt`  | When the message was saved                                                                   |
+  | `role`       | `user`, `assistant` or `tool`                                                                |
+  | `text`       | What was said; for a tool message, the result given to the model (at most 20,000 characters) |
+  | `toolCalls`  | Assistant messages: the tools it asked to run, each with an `id`, `name` and `input`         |
+  | `toolCallId` | Tool messages: the call this answers. Also `toolName` and `isError`                          |
+  | `summary`    | A few words shown in the chat instead of `text`: on tool messages and event notes            |
+  | `changeId`   | Tool messages that changed the project: the change (Undo works while the project is open)    |
+  | `declined`   | Tool messages: `true` if the user didn't allow the change                                    |
+  | `event`      | `true` on a note to the assistant about something the user did, e.g. undoing changes         |
 
   Tool results can contain samples of the project's data. A damaged line is skipped.
 

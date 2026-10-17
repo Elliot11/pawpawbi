@@ -12,6 +12,8 @@
   --pp-grid: #ecebe6;
   --pp-axis: #c3c2b7;
   --pp-accent: #e8622a;
+  --pp-good: #006300;
+  --pp-bad: #d03b3b;
   --pp-font: system-ui, -apple-system, 'Segoe UI', sans-serif;
   color-scheme: light;
 }
@@ -139,7 +141,7 @@ a {
 /* Charts in a grid: two columns on wide screens, one on narrow ones. */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   margin-top: 20px;
 }

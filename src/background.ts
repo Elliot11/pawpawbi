@@ -28,7 +28,7 @@ export class BackgroundWork {
   private current = new AsyncLocalStorage<Task>();
 
   /**
-   * Runs `work` as a tracked task of a project. Refused while the project is closing.
+   * Runs `work` as a tracked task of a project. Refused while the project is saving or closing.
    * Processes started inside it should register with onCancel so it can be stopped.
    */
   async run<T>(
@@ -37,7 +37,7 @@ export class BackgroundWork {
     work: () => Promise<T>,
   ): Promise<T> {
     if (this.blocked.has(projectId)) {
-      throw new Error('The project is closing, so this can’t start.');
+      throw new Error('The project is saving or closing, so this can’t start.');
     }
     const task: Task = {
       projectId,

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { plain } from '../../plain';
 import type { ConnectorField } from '../../shared/types';
 
 const props = defineProps<{
@@ -25,7 +26,10 @@ const placeholder = computed(() =>
 
 async function browse() {
   const kind = props.field.type as 'file' | 'files' | 'folder';
-  const chosen = await window.api.data.pickPaths(kind, props.field.fileFilters);
+  const chosen = await window.api.data.pickPaths(
+    kind,
+    plain(props.field.fileFilters),
+  );
   if (chosen.length === 0) return;
   model.value = kind === 'files' ? chosen : chosen[0];
 }

@@ -89,7 +89,6 @@ export interface SourceFile {
 }
 
 const sourcesDir = () => path.join(openProject().filesDir, 'sources');
-const rawDataDir = () => path.join(openProject().filesDir, 'data', 'raw');
 
 function sourcePath(id: string) {
   if (!SAFE_ID.test(id)) throw new Error('Invalid data source ID.');
@@ -178,14 +177,25 @@ async function saveSource(input: SaveSourceInput): Promise<DataSource> {
   return toDataSource(source);
 }
 
+/**
+ * Removes loaded tables' data (original and in-place transform result, which would otherwise
+ * still be shown in place of a later load of the same name) and their transforms.
+ */
 async function removeTables(tables: string[]) {
-  for (const table of tables) {
-    if (!SAFE_TABLE.test(table)) continue;
-    await fs.rm(path.join(rawDataDir(), table), {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-    });
+  const safe = tables.filter((t) => SAFE_TABLE.test(t));
+  for (const table of safe) {
+    for (const dataset of ['raw', 'model']) {
+      await fs.rm(path.join(dataDir(), dataset, table), {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+      });
+    }
+  }
+  const transforms = await readTransforms();
+  if (safe.some((t) => t in transforms.tables)) {
+    for (const t of safe) delete transforms.tables[t];
+    await writeTransforms(transforms);
   }
 }
 
@@ -198,9 +208,6 @@ async function removeSource(id: string) {
     );
   }
   await removeTables(source.tables);
-  const transforms = await readTransforms();
-  for (const t of source.tables) delete transforms.tables[t];
-  await writeTransforms(transforms);
   await deleteSecrets(openProject().id, id);
   await fs.rm(sourcePath(id), { force: true });
   await markProjectChanged();
@@ -211,7 +218,7 @@ async function removeSource(id: string) {
 //
 // Connectors that need extra Python packages get their own environment in
 // userData/connector-envs/<connector id>, created on first use. It's layered on the bundled
-// Python (--system-site-packages), so it shares dlt, pandas, etc. and only adds the connector's
+// Python (--system-site-packages), so it shares dlt, pyarrow, DuckDB, etc. and only adds the connector's
 // packages, pinned against python/constraints.txt so the shared ones never change version.
 
 const installs = new Map<string, Promise<string>>();
@@ -635,6 +642,7 @@ async function applyTransform(table: string, sql: string) {
 }
 
 async function removeTransform(table: string) {
+  if (!SAFE_TABLE.test(table)) throw new Error('Invalid table name.');
   await callPython('remove_transform', { data_dir: dataDir(), table });
   const transforms = await readTransforms();
   delete transforms.tables[table];

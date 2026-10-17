@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import datasets
+import engine
 import transforms
 
 
@@ -257,3 +258,34 @@ def test_sandbox_blocks_duckdb_temp_directory_in_working_dir(data_dir, tmp_path,
     monkeypatch.chdir(cwd)
     with pytest.raises(Exception):
         preview(data_dir, "SELECT * FROM read_csv('.tmp/secret.csv')")
+
+
+# Time limits and name checks -------------------------------------------------------------------
+
+SLOW = "SELECT count(*) FROM range(1000000000000) a"
+
+
+def test_slow_previews_are_stopped(data_dir, monkeypatch):
+    monkeypatch.setattr(engine, "TIME_LIMIT_SECONDS", 0.5)
+    with pytest.raises(TimeoutError, match="longer than 0.5 seconds"):
+        preview(data_dir, SLOW)
+    # The connection is closed and the next request works.
+    assert preview(data_dir, "SELECT 1 AS one")["rows"] == [[1]]
+
+
+def test_slow_builds_are_stopped_and_leave_nothing_behind(data_dir, monkeypatch):
+    monkeypatch.setattr(engine, "TIME_LIMIT_SECONDS", 0.5)
+    with pytest.raises(TimeoutError):
+        transforms.build_table({"data_dir": str(data_dir), "table": "slow", "sql": SLOW})
+    assert not (data_dir / "transformed" / "slow").exists()
+    assert not (data_dir / "transformed" / ".slow.tmp").exists()
+
+
+@pytest.mark.parametrize("table", ["../secret", "..", "a/b", "x y", ""])
+def test_table_names_are_checked_before_touching_folders(data_dir, outside, table):
+    for method in (transforms.remove_transform, transforms.clear_table, transforms.delete_table):
+        with pytest.raises(ValueError):
+            method({"data_dir": str(data_dir), "table": table})
+    with pytest.raises(ValueError):
+        transforms.build_table({"data_dir": str(data_dir), "table": table, "sql": "SELECT 1"})
+    assert outside.exists()

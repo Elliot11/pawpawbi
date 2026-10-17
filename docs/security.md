@@ -95,7 +95,8 @@ files. Each layer below stops something on its own:
   fonts). No frames, workers, plugins or forms. DNS prefetching is off, so links can't leak data
   through look-ups.
 - **No web requests at all.** The app's UI needs none (it's bundled files, plus the dev server
-  during development; connectors use the network from Python). `lockDownNetwork()` cancels every
+  during development; connectors use the network from Python, and the assistant from the main
+  process, below). `lockDownNetwork()` cancels every
   `http(s)` and `ws(s)` request from the app's windows and points them at an unreachable proxy.
   The window's WebRTC policy allows only proxied connections, so WebRTC, which bypasses both the
   policy and request blocking, can't connect either.
@@ -131,7 +132,9 @@ anyone who can reach it, so private reports need access control on the host.
 - **What the tools can do.** Read tools can't change anything. Change tools can only change the
   report (its files, pages and datasets) through the same checked functions as the app's own
   screens (`sitePath`, `DATASET_NAME`, `engine.select()`): nothing outside the project, no
-  network. Queries go through the locked-down engine like every other query.
+  network, files in `data/` can't be written, and a file is at most 2 MB. Queries go through the
+  locked-down engine like every other query, with its time limit, so a slow query from the
+  assistant can't tie up the sidecar.
 - **Every change is approved and undoable.** By default the user is asked before each change, and
   can choose to stop being asked. Every change is recorded first (`ChangeJournal`) and can be
   undone; a failed change is rolled back at once. The undo store is outside the project files.

@@ -107,8 +107,8 @@ async function serveSite(request: Request): Promise<Response> {
 
 /**
  * No web requests from the app's windows. The app's UI loads only bundled files (and the dev
- * server during development); connectors and (later) the assistant reach the network from the
- * main process or Python, not from here. This stops a report page sending data out through
+ * server during development); connectors and the assistant reach the network from the main
+ * process or Python, not from here. This stops a report page sending data out through
  * anything its Content Security Policy misses. The unreachable proxy, with the WebRTC policy
  * set in guardFrames, stops WebRTC, which goes through neither.
  */

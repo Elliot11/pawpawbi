@@ -48,7 +48,7 @@ def handle(request):
     method = METHODS.get(request.get("method"))
     if method is None:
         raise ValueError(f"Unknown method: {request.get('method')}")
-    return method(request.get("params"))
+    return method(request.get("params") or {})
 
 
 def main():

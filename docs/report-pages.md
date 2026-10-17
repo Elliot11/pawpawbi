@@ -48,7 +48,8 @@ ORDER BY 1, 2
 ## Pages
 
 Each page is `pages/<guid>.html` and is listed in `report.json`, which the navigation reads. A
-new page starts from the template:
+new page starts empty (a heading, a "Nothing on this page yet" section to remove, and an empty
+`grid`). A finished page looks like this:
 
 ```html
 <!doctype html>
@@ -96,8 +97,9 @@ new page starts from the template:
 ```
 
 Layout classes from `assets/report.css`: `page` (the content column), `stats` (a row of headline
-numbers), `grid` (charts, two columns on wide screens, one on phones) and `wide` (a chart across
-the whole grid). `pawpaw.nav(target)` fills in the report's title and links to every page.
+numbers), `grid` (charts, two columns on wide screens, one on phones), `wide` (a chart across
+the whole grid) and `empty-state` (the new page's placeholder). `pawpaw.nav(target)` fills in the
+report's title and links to every page.
 
 Each chart function takes a **target** (a CSS selector or element), the **data** and
 **options**. It turns the target into a card, shows "Loading…", then the chart, or a short
@@ -120,7 +122,7 @@ pawpaw.barChart(
 
 ## Charts
 
-Options for every chart:
+Options for bar and line charts (`stat` and `table` have their own, below):
 
 | Option     | Meaning                                                                                             |
 | ---------- | --------------------------------------------------------------------------------------------------- |
@@ -130,8 +132,8 @@ Options for every chart:
 | `currency` | Currency code for `'currency'`, e.g. `'GBP'`. Default `'USD'`.                                      |
 | `height`   | Plot height in pixels (default 280). Horizontal bar charts size themselves.                         |
 
-Every chart has a **Show table** button with the same numbers, a tooltip on hover (and with the
-arrow keys after tabbing to it), and a legend when it has more than one series.
+Bar and line charts have a **Show table** button with the same numbers, a tooltip on hover (and
+with the arrow keys after tabbing to it), and a legend when there's more than one series.
 
 ### Series
 
@@ -151,7 +153,7 @@ first appearance, so `ORDER BY` controls them.
 
 Bars from zero. `orientation: 'vertical' | 'horizontal'`; by default bars are horizontal when
 labels are long or there are more than 12. With one series and up to 15 bars, each bar shows its
-value. At most 50 bars are drawn.
+value when it fits. At most 50 bars are drawn.
 
 ### pawpaw.lineChart(target, data, options)
 
@@ -183,14 +185,15 @@ column: `{ revenue: 'currency' }`), `currency`, `title`, `maxRows` (default 500)
 Styles live in `assets/report.css` and pages' own `<style>` elements. The charts' built-in styles
 have the lowest priority, so any rule overrides them. Colours are CSS variables:
 
-| Variable                               | Used for                    |
-| -------------------------------------- | --------------------------- |
-| `--pp-page`                            | Page background             |
-| `--pp-surface`, `--pp-border`          | Cards                       |
-| `--pp-ink`, `--pp-ink-2`, `--pp-muted` | Text, secondary text, axes  |
-| `--pp-grid`, `--pp-axis`               | Gridlines and the zero line |
-| `--pp-accent`                          | The current page, focus     |
-| `--pp-font`                            | Font (the system font)      |
+| Variable                               | Used for                                      |
+| -------------------------------------- | --------------------------------------------- |
+| `--pp-page`                            | Page background                               |
+| `--pp-surface`, `--pp-border`          | Cards                                         |
+| `--pp-ink`, `--pp-ink-2`, `--pp-muted` | Text, secondary text, axes                    |
+| `--pp-grid`, `--pp-axis`               | Gridlines and the zero line                   |
+| `--pp-accent`                          | The current page, focus                       |
+| `--pp-good`, `--pp-bad`                | Up and down in headline numbers; chart errors |
+| `--pp-font`                            | Font (the system font)                        |
 
 The eight series colours were chosen to be told apart by colour-blind readers, in this order.
 Don't reorder them or add more; fold extra series into "Other" instead.

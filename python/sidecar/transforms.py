@@ -62,7 +62,8 @@ def query_tables(params) -> list[str]:
 def _write_result(data_dir: Path, sql: str, layer: engine.Layer, dataset: str, table: str) -> int:
     """Run a query and save its result as <data_dir>/<dataset>/<table>/data.parquet, swapping
     in the new result only once it's complete. Returns the row count."""
-    target_root = data_dir / dataset
+    target = engine.table_dir(data_dir, dataset, table)
+    target_root = target.parent
     target_root.mkdir(parents=True, exist_ok=True)
     staging = target_root / f".{table}.tmp"
     shutil.rmtree(staging, ignore_errors=True)
@@ -70,19 +71,19 @@ def _write_result(data_dir: Path, sql: str, layer: engine.Layer, dataset: str, t
 
     con = engine.connect(data_dir, layer=layer)
     try:
-        reader = con.sql(engine.select(con, sql)).to_arrow_reader(BATCH_ROWS)
-        rows = 0
-        with pq.ParquetWriter(staging / "data.parquet", reader.schema) as writer:
-            for batch in reader:
-                writer.write_batch(batch)
-                rows += batch.num_rows
+        with engine.time_limit(con):
+            reader = con.sql(engine.select(con, sql)).to_arrow_reader(BATCH_ROWS)
+            rows = 0
+            with pq.ParquetWriter(staging / "data.parquet", reader.schema) as writer:
+                for batch in reader:
+                    writer.write_batch(batch)
+                    rows += batch.num_rows
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
     finally:
         con.close()
 
-    target = target_root / table
     shutil.rmtree(target, ignore_errors=True)
     staging.rename(target)
     return rows
@@ -99,7 +100,7 @@ def apply_transform(params):
 
 def remove_transform(params):
     """Remove a loaded table's in-place transform result, so it shows its original data."""
-    shutil.rmtree(Path(params["data_dir"]) / engine.MODEL_DATASET / params["table"], ignore_errors=True)
+    shutil.rmtree(engine.table_dir(Path(params["data_dir"]), engine.MODEL_DATASET, params["table"]), ignore_errors=True)
 
 
 def build_table(params):
@@ -113,7 +114,7 @@ def build_table(params):
 
 def clear_table(params):
     """Remove a transformed table's built data (its definition is kept by the main process)."""
-    shutil.rmtree(Path(params["data_dir"]) / engine.TRANSFORMED_DATASET / params["table"], ignore_errors=True)
+    shutil.rmtree(engine.table_dir(Path(params["data_dir"]), engine.TRANSFORMED_DATASET, params["table"]), ignore_errors=True)
 
 
 def delete_table(params):
@@ -124,4 +125,4 @@ def delete_table(params):
     if table not in engine.table_names(data_dir) and table not in engine.transformed_table_names(data_dir):
         raise ValueError(f"No table named {table!r}")
     for dataset in (engine.RAW_DATASET, engine.MODEL_DATASET, engine.TRANSFORMED_DATASET):
-        shutil.rmtree(data_dir / dataset / table, ignore_errors=True)
+        shutil.rmtree(engine.table_dir(data_dir, dataset, table), ignore_errors=True)

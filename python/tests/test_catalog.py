@@ -71,3 +71,11 @@ def test_fields_that_look_secret_are_marked_secret():
         if looks_secret.search(f.key) and not f.secret
     ]
     assert unmarked == []
+
+
+def test_a_request_without_params_is_handled():
+    import main
+
+    assert main.handle({"method": "catalog"})["connectors"]
+    with pytest.raises(ValueError, match="Unknown method"):
+        main.handle({"method": "nope"})

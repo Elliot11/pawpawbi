@@ -8,13 +8,14 @@ why it works this way see decision 16 in [decisions.md](decisions.md); for its s
 
 ```mermaid
 flowchart LR
-  C["ChatPanel.vue"] -- "window.api.assistant.send()" --> I["assistant/index.ts<br/>(main process)"]
-  I -- "assistant:event<br/>(text, tool, message)" --> C
+  C["ChatPanel.vue"] -- "send(), answer(), undo()" --> I["assistant/index.ts<br/>(main process)"]
+  I -- "assistant:event<br/>(text, tool, message,<br/>approval, changed)" --> C
   I --> L["loop.ts<br/>tool loop"]
-  L --> P["anthropic.ts / openai.ts"]
-  P -- "HTTPS, streamed" --> API(("Anthropic or<br/>OpenAI API"))
-  L --> T["tools.ts"]
+  L --> P["anthropic.ts / openai.ts / ollama.ts"]
+  P -- "HTTP, streamed" --> API(("Anthropic or OpenAI API,<br/>or Ollama on this computer"))
+  L --> T["tools.ts<br/>report-tools.ts"]
   T --> D["data.ts, report.ts,<br/>Python sidecar"]
+  T --> U["changes.ts<br/>copies for Undo"]
   I --> F[("chat/messages.jsonl")]
 ```
 
@@ -75,7 +76,8 @@ streamed reply in the API's format split at odd places, errors.
 
 `settings.ts` keeps, under `%APPDATA%\PawpawBI\assistant\`:
 
-- `settings.json`: the chosen provider and a model for each.
+- `settings.json`: the chosen provider, a model for each, and `permissions` (whether the
+  assistant asks before each change; see Changes below).
 - `<provider>.key`: that provider's API key, encrypted with Electron's `safeStorage`. Ollama has
   none.
 
@@ -101,6 +103,8 @@ from the provider; `pickModel` keeps the saved choice if it's still offered, els
   bundled into the app.
 
 The conversation sent is the last 80 saved messages, starting at a user message (`history.ts`).
+A user message that got no reply (stopped, or failed) is followed by a stand-in reply saying so,
+so the model doesn't answer it along with the next message.
 
 ## Tools
 
@@ -133,15 +137,15 @@ It can change the report (`report-tools.ts`):
 | `refresh_datasets`  | Rewrites every dataset's data                                        |
 | `show_page`         | Shows a page in Build visuals (doesn't change anything)              |
 
-Tools for data sources and tables are still to come; until then the assistant says how to make
-those changes by hand.
+There are no tools for data sources or tables; the assistant explains how to make those changes
+by hand.
 
 Results are JSON, cut at 20,000 characters with a note asking for less. A tool that fails returns
 its error message to the model instead of stopping the reply.
 
 Claude and ChatGPT get every tool. Small local models (Ollama) get the read tools and only the
-changes for the workflow step the user is on (each tool's `step`), so they have fewer to choose
-from.
+tools for the workflow step the user is on (each tool's `step`, including `show_page`), so they
+have fewer to choose from.
 
 **Adding a tool:** add a `ToolSpec` with a clear description (the model chooses tools by it), a
 JSON Schema for its input, `describe` (the few words the chat and approval card show, e.g.

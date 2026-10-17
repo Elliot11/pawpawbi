@@ -63,8 +63,9 @@ and must be refreshed by hand ([maintenance.md](maintenance.md)).
 **Decision:** dlt writes loaded data to its `filesystem` destination as Parquet
 (`data/raw/<table>/`). **No data is loaded into DuckDB** (an explicit user requirement).
 Everything that reads loaded data goes through one locked-down, in-memory DuckDB over those files
-(`python/sidecar/engine.py`): table info and previews, SQL transforms, and later relationships and
-visuals. The file connectors read CSV with DuckDB and Excel with openpyxl. pandas isn't used.
+(`python/sidecar/engine.py`): table info and previews, SQL transforms, the report's datasets,
+and later relationships. The file connectors read CSV with DuckDB and Excel with openpyxl.
+pandas isn't used.
 
 **Why:**
 
@@ -261,7 +262,7 @@ copied between reports, and stable when pages are renamed.
   it's contained by a sandboxed frame, a strict Content Security Policy and a block on all web
   requests, so a page can only show the report's own files ([security.md](security.md)).
 - Each project carries its own copy of `charts.js`, so updating the library in the app doesn't
-  change existing reports. A way to update a report's copy is still to come.
+  change existing reports (updating a report's copy is in TODO.md).
 - New chart types are added to the library, and [report-pages.md](report-pages.md) is its
   contract with page authors (people and the assistant).
 
@@ -296,7 +297,7 @@ user provides, or on a model running in Ollama on the user's computer, which nee
 keeps everything local. Keys are stored with OS encryption and never put in a project
 or in the model's context. The conversation, tools and guides are written once, provider-neutral;
 a small adapter per provider translates tool calls and streaming. The adapters call the APIs
-with plain HTTPS from the main process rather than the providers' SDKs. Details:
+with plain HTTP(S) requests from the main process rather than the providers' SDKs. Details:
 [assistant.md](assistant.md).
 
 **Why:** Users already have accounts with one or the other, and it avoids running a PawpawBI
