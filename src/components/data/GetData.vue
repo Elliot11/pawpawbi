@@ -90,6 +90,21 @@ function edit(source: DataSource) {
   if (connector) view.value = { name: 'setup', connector, source };
 }
 
+/** The data source that loaded a table. */
+const sourceOf = (table: string) => sources.value.find((s) => s.tables.includes(table));
+
+function editTableSource(table: string) {
+  const source = sourceOf(table);
+  if (source) edit(source);
+}
+
+async function previewFromSetup(table: string) {
+  const returnTo = view.value;
+  // The load just finished, so pick up its tables (this also shows the Edit source button).
+  await reloadSources();
+  view.value = { name: 'preview', table, returnTo };
+}
+
 const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
 function timeAgo(iso: string) {
   const minutes = Math.round((Date.now() - Date.parse(iso)) / 60_000);
@@ -119,13 +134,16 @@ function timeAgo(iso: string) {
         :source="view.source"
         @done="finishSetup"
         @cancel="cancelSetup"
-        @preview="view = { name: 'preview', table: $event, returnTo: view }"
+        @preview="previewFromSetup($event)"
       />
 
       <TablePreview
         v-else-if="view.name === 'preview'"
+        :key="view.table"
         :table="view.table"
+        :source-name="sourceOf(view.table)?.name"
         @back="view = view.returnTo"
+        @edit="editTableSource(view.table)"
       />
 
       <!-- Overview -->
