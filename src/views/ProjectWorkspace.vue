@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
-import type { Project } from '../shared/types';
+import type { Project, WorkflowStage } from '../shared/types';
 import ChatPanel from '../components/ChatPanel.vue';
+import WorkflowSteps from '../components/WorkflowSteps.vue';
 import GetData from '../components/data/GetData.vue';
 import ReportCanvas from '../components/ReportCanvas.vue';
 
@@ -9,6 +10,8 @@ const props = defineProps<{ project: Project }>();
 const emit = defineEmits<{ close: [] }>();
 
 const tab = ref<'data' | 'report'>('data');
+// Where the user is in the workflow. The chat loads it from the project and advances it.
+const stage = ref<WorkflowStage>('data');
 
 const saving = ref(false);
 const saveError = ref('');
@@ -57,6 +60,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       <span class="divider" aria-hidden="true"></span>
       <h1 :title="project.path">{{ project.name }}</h1>
 
+      <div class="steps-slot">
+        <WorkflowSteps :stage="stage" />
+      </div>
+
       <div class="save-area">
         <span v-if="saveError" class="save-error" role="alert">{{ saveError }}</span>
         <span v-else class="save-status">{{ project.dirty ? 'Unsaved changes' : 'Saved' }}</span>
@@ -72,7 +79,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
     </header>
 
     <div class="body">
-      <ChatPanel />
+      <ChatPanel v-model:stage="stage" />
       <section class="main">
         <nav class="tabs" role="tablist" aria-label="Project views">
           <button role="tab" :aria-selected="tab === 'data'" :class="{ active: tab === 'data' }" @click="tab = 'data'">
@@ -146,17 +153,25 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 }
 
 .topbar h1 {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   font-size: 18px;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
+.steps-slot {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  min-width: max-content;
+}
+
 .save-area {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-left: auto;
   white-space: nowrap;
 }
 

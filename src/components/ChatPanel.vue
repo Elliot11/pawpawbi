@@ -2,16 +2,16 @@
 import { computed, nextTick, onMounted, ref } from 'vue';
 import { newId } from '../shared/ids';
 import type { ChatMessage, WorkflowStage } from '../shared/types';
-import { INTRO_MESSAGE, STAGES, replyTo } from '../workflow';
+import { INTRO_MESSAGE, replyTo } from '../workflow';
 
-const stage = ref<WorkflowStage>('data');
+// Shared with the workspace's step tracker in the top bar.
+const stage = defineModel<WorkflowStage>('stage', { required: true });
 const messages = ref<ChatMessage[]>([]);
 const draft = ref('');
 const loading = ref(true);
 const thinking = ref(false);
 const scroller = ref<HTMLElement | null>(null);
 
-const stageIndex = computed(() => STAGES.findIndex((s) => s.id === stage.value));
 const canSend = computed(() => draft.value.trim() !== '' && !loading.value && !thinking.value);
 
 // How many of `messages` are already saved in the project. The intro message isn't saved
@@ -75,16 +75,6 @@ function onKeydown(event: KeyboardEvent) {
   <aside class="chat">
     <div class="chat-header">
       <h2>Assistant</h2>
-      <ol class="steps">
-        <li
-          v-for="(s, i) in STAGES"
-          :key="s.id"
-          :class="{ done: i < stageIndex, current: i === stageIndex }"
-        >
-          <span class="step-dot">{{ i < stageIndex ? '✓' : i + 1 }}</span>
-          {{ s.label }}
-        </li>
-      </ol>
     </div>
 
     <div ref="scroller" class="messages">
@@ -127,56 +117,7 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 .chat-header h2 {
-  margin-bottom: 14px;
   font-size: 22px;
-}
-
-.steps {
-  display: flex;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.steps li {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-muted);
-  color: var(--ink-faint);
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.steps li.current {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.steps li.done {
-  color: var(--ink-muted);
-}
-
-.step-dot {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--surface);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.steps li.current .step-dot {
-  background: var(--accent);
-  color: #fff;
 }
 
 .messages {

@@ -2,14 +2,14 @@
 import type { WorkflowStage } from './shared/types';
 
 export const STAGES: { id: WorkflowStage; label: string }[] = [
-  { id: 'data', label: 'Get data' },
+  { id: 'data', label: 'Add data' },
   { id: 'model', label: 'Model data' },
   { id: 'visuals', label: 'Build visuals' },
 ];
 
 export const INTRO_MESSAGE = `Hi! Let's build your report together. We'll work through three steps:
 
-1. Get the data: connect a file, spreadsheet or database.
+1. Add data: connect a file, spreadsheet or database.
 2. Model the data: I'll check how your tables fit together and ask you to clarify anything ambiguous, like how two tables join or how dates should be grouped.
 3. Build visuals: tell me what you want to see and I'll add charts to the canvas on the right.
 
