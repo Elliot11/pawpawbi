@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { errorMessage } from '../errors';
 import type { TableKind, TablePreview, TableSchema } from '../shared/types';
 import DataGrid from './data/DataGrid.vue';
@@ -72,12 +72,94 @@ onMounted(async () => {
 });
 
 /** Creates the transformed table, or saves changes to it. */
+// --- Naming a new transformed table -------------------------------------------------------------
+
+/** The rule the main process enforces: also how dlt names loaded tables. */
+const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
+const takenNames = computed(() => new Set(props.tables.map((t) => t.name)));
+
+/** "Comments & Posts!" → "comments_posts". Empty if nothing usable is left. */
+function formatName(raw: string): string {
+  let name = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (name && !/^[a-z]/.test(name)) name = `t_${name}`;
+  return name.slice(0, 63).replace(/_+$/, '');
+}
+
+/** The name, or the name with _2, _3… added if a table already has it. */
+function freeName(base: string): string {
+  let name = base;
+  for (let n = 2; takenNames.value.has(name); n++) name = `${base}_${n}`;
+  return name;
+}
+
+/** A name from the tables the query reads: comments → comments_transformed,
+ * comments and posts → comments_posts. */
+const suggestedName = computed(() => {
+  const read = [
+    ...new Set(
+      [...sql.value.matchAll(/\b(?:from|join)\s+"?([A-Za-z_][\w]*)"?/gi)]
+        .map((m) => m[1].toLowerCase())
+        .filter((name) => takenNames.value.has(name)),
+    ),
+  ];
+  const base =
+    read.length === 0
+      ? 'new_table'
+      : read.length === 1
+        ? `${read[0]}_transformed`
+        : read.slice(0, 3).join('_');
+  return freeName(formatName(base));
+});
+
+/** Shown under the name field when the name can't be used, with a suggested fix. */
+const nameProblem = ref<{ message: string; suggestion: string } | null>(null);
+watch(newName, () => (nameProblem.value = null));
+
+function checkName(raw: string): typeof nameProblem.value {
+  if (!raw) {
+    return {
+      message: 'Give the new table a name.',
+      suggestion: suggestedName.value,
+    };
+  }
+  if (!NAME_PATTERN.test(raw)) {
+    return {
+      message:
+        'Table names use lowercase letters, numbers and underscores, and start with a letter.',
+      suggestion: freeName(formatName(raw) || suggestedName.value),
+    };
+  }
+  if (takenNames.value.has(raw)) {
+    return {
+      message: `There's already a table called ${raw}.`,
+      suggestion: freeName(raw),
+    };
+  }
+  return null;
+}
+
+function useName(name: string) {
+  newName.value = name;
+  nameProblem.value = null;
+}
+
 async function saveTransformed() {
   if (busy.value) return;
+  const isNew = tableName.value === null;
+  if (isNew) {
+    // Clicking Create again while a suggestion is showing (the name hasn't been edited since)
+    // means "use the suggestion".
+    if (nameProblem.value) useName(nameProblem.value.suggestion);
+    nameProblem.value = checkName(newName.value.trim());
+    if (nameProblem.value) return;
+  }
   busy.value = 'apply';
   error.value = '';
   notice.value = '';
-  const isNew = tableName.value === null;
   const name = tableName.value ?? newName.value.trim();
   try {
     const { rows } = await window.api.data.saveTransformed({
@@ -245,18 +327,7 @@ const sqlName = (name: string) =>
         <span class="table-name transformed">{{ tableName }}</span>
         <small class="kind">Transformed table</small>
       </h2>
-      <template v-else>
-        <h2>New transformed table</h2>
-        <label class="name-field">
-          Name
-          <input
-            v-model="newName"
-            type="text"
-            placeholder="e.g. sales_by_region"
-            spellcheck="false"
-          />
-        </label>
-      </template>
+      <h2 v-else>New transformed table</h2>
     </header>
 
     <div class="body">
@@ -315,6 +386,26 @@ const sqlName = (name: string) =>
           </p>
         </div>
 
+        <div v-if="isTransformed && !tableName" class="name-row">
+          <label class="name-field">
+            Table name
+            <input
+              v-model="newName"
+              type="text"
+              :placeholder="`e.g. ${suggestedName}`"
+              spellcheck="false"
+              @keydown.enter="saveTransformed"
+            />
+          </label>
+          <p v-if="nameProblem" class="name-problem" role="alert">
+            {{ nameProblem.message }}
+            <button class="suggestion" @click="useName(nameProblem.suggestion)">
+              Use {{ nameProblem.suggestion }}
+            </button>
+            <span class="name-hint">or click Create table again to use it</span>
+          </p>
+        </div>
+
         <div class="actions">
           <button
             class="ghost"
@@ -327,11 +418,7 @@ const sqlName = (name: string) =>
           <button
             v-if="isTransformed"
             class="primary"
-            :disabled="
-              !!busy ||
-              (!tableName && !newName.trim()) ||
-              (!hasUnappliedChanges && savedSql !== null)
-            "
+            :disabled="!!busy || (!hasUnappliedChanges && savedSql !== null)"
             @click="saveTransformed"
           >
             {{
@@ -429,12 +516,44 @@ const sqlName = (name: string) =>
 }
 
 .name-field input {
-  width: 240px;
+  width: 280px;
   padding: 7px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  background: var(--surface);
   font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
   font-size: 13px;
+}
+
+.name-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.name-problem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.name-hint {
+  color: var(--ink-muted);
+}
+
+.suggestion {
+  padding: 3px 10px;
+  border: 1px solid var(--transformed);
+  border-radius: var(--radius-sm);
+  background: var(--transformed-soft);
+  color: var(--transformed);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .active-badge {
