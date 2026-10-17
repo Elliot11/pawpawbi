@@ -102,7 +102,7 @@ Data kept outside the project file, on this computer only:
 ```mermaid
 flowchart LR
   SRC["Data source"] -->|"connector + dlt<br/>(runner.py)"| RAW["data/raw/&lt;table&gt;/*.parquet"]
-  RAW -->|"SQL transform<br/>(DuckDB, transforms.py)"| MOD["data/model/&lt;table&gt;/data.parquet"]
+  RAW -->|"SQL transform<br/>(DuckDB)"| MOD["data/model/&lt;table&gt;/data.parquet"]
   RAW -->|"no transform"| USE["Model view, previews,<br/>visuals (future)"]
   MOD --> USE
 ```
@@ -118,14 +118,28 @@ flowchart LR
 4. **Transform** (optional). A table's SQL query runs in DuckDB over the raw Parquet files; the
    result is written to `data/model/<table>/` and used in place of the raw table everywhere. After
    each load, the affected transforms are re-run.
-5. **Use.** The Model view and previews read schemas and rows through the sidecar (pyarrow and
-   pandas). Visuals will read the same way.
+5. **Use.** The Model view and previews read schemas and rows through the sidecar. Visuals and
+   relationships will read the same way.
+
+## The query engine
+
+All reading of loaded data goes through `python/sidecar/engine.py`. For each request it opens a
+fresh in-memory DuckDB, creates one view per table over that table's Parquet files, and locks
+the connection down (see [security.md](security.md)). Nothing is stored in DuckDB.
+
+There are two views of the data:
+- **`current`** (previews and table info): a transformed table's result if it has one,
+  otherwise its original data.
+- **`raw`** (SQL transforms): always the original data, so transforms never build on each other.
+
+dlt's `_dlt_*` bookkeeping columns are left out of the views. Values are converted to JSON-safe
+ones (`engine.json_value`) before going to the UI.
 
 ## Connector environments
 
 Connectors that need extra Python packages declare them in their catalog entry (`packages`). The
 first time one is used, `data.ts` creates `connector-envs\<connector id>\` with
-`python -m venv --system-site-packages` layered on the bundled Python. It shares dlt, pandas and
+`python -m venv --system-site-packages` layered on the bundled Python. It shares dlt, DuckDB and
 the rest, and adds only the connector's packages, installed with `python/constraints.txt` as
 constraints so shared packages never change version. A stamp file records the Python path,
 packages and constraints, and the environment is rebuilt whenever any of them change (e.g. after

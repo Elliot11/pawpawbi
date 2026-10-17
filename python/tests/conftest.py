@@ -42,43 +42,53 @@ def pytest_collection_modifyitems(config, items):
 # Sample source files ----------------------------------------------------------------------------
 
 
+def sales_rows(month: str = "") -> list[list]:
+    """SALES as rows, optionally only orders from one month ("2026-07")."""
+    rows = [list(row) for row in zip(*SALES.values())]
+    return [row for row in rows if row[1].startswith(month)]
+
+
+def write_csv(path: Path, header: list[str], rows: list[list]):
+    import csv
+
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(["" if v is None else v for v in row] for row in rows)
+
+
 @pytest.fixture
-def sales_df():
-    import pandas as pd
-
-    return pd.DataFrame(SALES)
-
-
-@pytest.fixture
-def sales_csv(tmp_path, sales_df) -> Path:
+def sales_csv(tmp_path) -> Path:
     path = tmp_path / "Monthly Sales.csv"
-    sales_df.to_csv(path, index=False)
+    write_csv(path, list(SALES), sales_rows())
     return path
 
 
 @pytest.fixture
 def budget_xlsx(tmp_path) -> Path:
     """An Excel workbook with two sheets, Targets and Staff."""
-    import pandas as pd
+    from openpyxl import Workbook
 
     path = tmp_path / "Budget.xlsx"
-    with pd.ExcelWriter(path, engine="openpyxl") as writer:
-        pd.DataFrame({"region": ["North", "South"], "budget": [5000, 4000]}).to_excel(
-            writer, sheet_name="Targets", index=False
-        )
-        pd.DataFrame({"month": ["Jul", "Aug", "Sep"], "headcount": [12, 14, 15]}).to_excel(
-            writer, sheet_name="Staff", index=False
-        )
+    workbook = Workbook()
+    targets = workbook.active
+    targets.title = "Targets"
+    for row in (["region", "budget"], ["North", 5000], ["South", 4000]):
+        targets.append(row)
+    staff = workbook.create_sheet("Staff")
+    for row in (["month", "headcount"], ["Jul", 12], ["Aug", 14], ["Sep", 15]):
+        staff.append(row)
+    workbook.save(path)
     return path
 
 
 @pytest.fixture
-def csv_folder(tmp_path, sales_df) -> Path:
+def csv_folder(tmp_path) -> Path:
     """A folder of monthly CSV exports with the same columns."""
     folder = tmp_path / "monthly"
     folder.mkdir()
     for month in ("2026-07", "2026-08"):
-        sales_df[sales_df.order_date.str.startswith(month)].to_csv(folder / f"sales_{month}.csv", index=False)
+        write_csv(folder / f"sales_{month}.csv", list(SALES), sales_rows(month))
     return folder
 
 

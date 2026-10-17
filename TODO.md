@@ -40,9 +40,8 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
 - **Table names can clash** between sources. A load that would overwrite another source's table
   is refused, but nested child tables (`parent__child`) aren't checked before loading.
 - **Large files are read into memory** by the web address connector and for JSON files.
-- **The Python bundle is about 350 MB unpacked** (mostly pandas, pyarrow and numpy, plus about
-  90 MB of precompiled bytecode kept for start-up speed). Could trim Tcl/Tk, IDLE and test
-  packages.
+- **The Python bundle is about 275 MB unpacked** (mostly pyarrow, DuckDB and SQLAlchemy, plus
+  precompiled bytecode kept for start-up speed). Could trim Tcl/Tk, IDLE and test packages.
 - **Connector environments don't lock their own dependencies.** Top-level packages are pinned and
   shared packages are constrained, but other dependencies resolve fresh at install time. Add a
   per-connector lock file.

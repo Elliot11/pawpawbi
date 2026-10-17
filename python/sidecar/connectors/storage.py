@@ -24,16 +24,17 @@ def _pattern_field(example: str) -> Field:
 
 
 def _load_files(bucket_url: str, settings: dict, credentials=None):
-    from dlt.sources.filesystem import filesystem, read_csv, read_jsonl, read_parquet
+    from dlt.sources.filesystem import filesystem
+
+    from .files import file_reader
 
     fmt = text(settings, "format", "csv")
-    reader = {"csv": read_csv, "jsonl": read_jsonl, "parquet": read_parquet}[fmt]
     files = filesystem(
         bucket_url=bucket_url,
         credentials=credentials,
         file_glob=text(settings, "pattern", f"**/*.{fmt}"),
     )
-    return (files | reader()).with_name(required(settings, "table", "Table name"))
+    return (files | file_reader(fmt)).with_name(required(settings, "table", "Table name"))
 
 
 def _bucket(scheme: str, settings: dict) -> str:

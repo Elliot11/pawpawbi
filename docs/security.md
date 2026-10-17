@@ -38,16 +38,18 @@ data sources themselves.
 Never add a feature that executes code stored in a project; if it's ever needed, it must ask
 the user first.
 
-## SQL transforms
+## SQL transforms and the query engine
 
 A project can contain SQL (`model/transforms.json`), which runs when the project is used. This is
-the largest attack surface, so `python/sidecar/transforms.py` locks DuckDB down:
+the largest attack surface. All reading of loaded data (transforms, previews, table info) goes
+through one DuckDB setup, `python/sidecar/engine.py`, which locks it down:
 
-- **One read-only statement.** `_select()` uses DuckDB's own parser (`extract_statements`) and
-  allows exactly one statement of type `SELECT`. `COPY`, `ATTACH`, `INSTALL`, `SET`, `PRAGMA`,
+- **One read-only statement.** `engine.select()` uses DuckDB's own parser (`extract_statements`)
+  and allows exactly one statement of type `SELECT`. `COPY`, `ATTACH`, `INSTALL`, `SET`, `PRAGMA`,
   `CREATE` and the rest are refused, as are multiple statements.
-- **No file system beyond the project's data.** After creating one view per table, `_connect()`
-  sets `allowed_directories` to the project's `data/` folder and `enable_external_access = false`.
+- **No file system beyond the project's data.** After creating one view per table,
+  `engine.connect()` sets `allowed_directories` to the project's `data/` folder and
+  `enable_external_access = false`.
   Functions such as `read_csv('C:/…')` and `read_text(…)` fail for any other path, and web URLs fail.
   `temp_directory` is cleared first, because DuckDB otherwise silently adds its temp folder
   (`<working dir>/.tmp`) to the allowed directories; the automated tests caught that. As a
@@ -60,8 +62,12 @@ These are covered by the sandbox tests in `python/tests/` (system files, other f
 project folder, web requests, settings, `COPY`, `DROP`, `INSTALL`, multiple statements).
 
 **Rules:** don't create the views after locking, don't widen `allowed_directories`, don't enable
-extensions, and don't run user SQL through any path other than `_select()`. When upgrading DuckDB,
-run the sandbox tests: setting names and behaviour can change between versions.
+extensions, don't read project data through any other DuckDB connection than `engine.connect()`,
+and don't run user SQL through any path other than `engine.select()`. When upgrading DuckDB, run
+the sandbox tests: setting names and behaviour can change between versions.
+
+(The file connectors also use DuckDB, to read CSV files the user chose. That's a separate, normal
+connection inside a connector job; it never sees SQL from a project.)
 
 ## Credentials
 

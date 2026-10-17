@@ -21,7 +21,7 @@ Sales report.pawpaw            (ZIP archive)
 │   │   ├── <table>/           One folder per table
 │   │   │   └── *.parquet
 │   │   └── _dlt_*/            dlt's bookkeeping (load history, pipeline state)
-│   └── model/                 Tables produced by processing in pandas
+│   └── model/                 Results of the tables' SQL transforms
 │       └── <table>/
 │           └── *.parquet
 │
@@ -239,7 +239,7 @@ The conversation with the assistant, so it can pick up where it left off.
 
 PawpawBI never edits the inside of a ZIP in place.
 
-- **Opening:** check that the first entry is `mimetype` with the expected value, validate every path (see [Archive rules](#archive-rules)), then extract the archive into a working folder in the app's data directory, named after the project's `id` plus a short hash of the file's location (so two copies of the same project never share a folder). All work happens on those ordinary files. dlt writes to `data/raw/` there and pandas reads from it.
+- **Opening:** check that the first entry is `mimetype` with the expected value, validate every path (see [Archive rules](#archive-rules)), then extract the archive into a working folder in the app's data directory, named after the project's `id` plus a short hash of the file's location (so two copies of the same project never share a folder). All work happens on those ordinary files. dlt writes to `data/raw/` there and DuckDB queries it.
 - **Saving:** update `modifiedAt` and `modifiedWith`, zip the working folder into a temporary file next to the destination, then replace the original with it in one step. If anything fails partway, the original file is left untouched.
 - **Crash recovery:** the working folder survives a crash. When a project is opened and its working folder contains unsaved changes newer than the file, PawpawBI offers to recover them.
 - **Closing:** the working folder is deleted once the project is saved or the user discards their changes.

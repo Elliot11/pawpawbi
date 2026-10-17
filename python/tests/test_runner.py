@@ -59,6 +59,22 @@ def test_local_files_load_csv_and_excel_sheets(run_job, tmp_path, sales_csv, bud
     assert [row[:2] for row in preview["rows"]] == [["North", 5000], ["South", 4000]]
 
 
+def test_local_files_csv_gets_proper_column_types(run_job, tmp_path, sales_csv):
+    """DuckDB reads CSV, so dates and numbers aren't left as text."""
+    data_dir = tmp_path / "project" / "data"
+    result_of(run_job(load_job("local_files", {"files": [str(sales_csv)]}, data_dir)))
+    sales = {t["name"]: t for t in datasets.describe_tables({"data_dir": str(data_dir)})}["monthly_sales"]
+    assert {c["name"]: c["kind"] for c in sales["columns"]} == {
+        "order_id": "integer",
+        "order_date": "date",
+        "region": "text",
+        "revenue": "decimal",
+    }
+    preview = datasets.preview_table({"data_dir": str(data_dir), "table": "monthly_sales"})
+    assert preview["rows"][0] == [1001, "2026-07-03", "North", 1250.5]
+    assert preview["rows"][3][3] is None  # the empty revenue cell
+
+
 def test_local_files_load_json_variants(run_job, tmp_path, json_array, json_wrapper, json_lines, json_nested):
     data_dir = tmp_path / "project" / "data"
     files = [str(p) for p in (json_array, json_wrapper, json_lines, json_nested)]

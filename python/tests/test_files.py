@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from connectors.files import _detect_format, _json_records, _read_json
+from connectors.files import _column_names, _detect_format, _json_records, _read_csv, _read_excel, _read_json
 
 
 @pytest.mark.parametrize(
@@ -102,3 +102,82 @@ def test_read_json_chunks_large_files(monkeypatch):
 def test_read_json_rejects_invalid_json():
     with pytest.raises(json.JSONDecodeError):
         _all(_read_json(io.BytesIO(b"{not json")))
+
+
+# CSV (DuckDB) -------------------------------------------------------------------------------------
+
+
+def _csv_table(source, **options):
+    import pyarrow as pa
+
+    return pa.Table.from_batches(list(_read_csv(source, **options)))
+
+
+def test_read_csv_detects_types(sales_csv):
+    table = _csv_table(sales_csv)
+    assert table.column_names == ["order_id", "order_date", "region", "revenue"]
+    assert [str(t) for t in table.schema.types] == ["int64", "date32[day]", "string", "double"]
+    assert table.num_rows == 4
+
+
+def test_read_csv_detects_semicolons_from_bytes():
+    table = _csv_table(io.BytesIO("name;amount\nAcme;1,5\nBluegum;2\n".encode()))
+    assert table.column_names == ["name", "amount"]
+    assert table.num_rows == 2
+
+
+def test_read_csv_explicit_tab_delimiter(tmp_path):
+    path = tmp_path / "data.tsv"
+    path.write_text("a\tb\n1\tx\n", encoding="utf-8")
+    assert _csv_table(path, delimiter="\t").to_pylist() == [{"a": 1, "b": "x"}]
+
+
+# Excel (openpyxl) ---------------------------------------------------------------------------------
+
+
+def test_column_names_fill_blanks_and_dedupe():
+    assert _column_names(["Region", None, "  ", "Region", "Region", 2026]) == [
+        "Region",
+        "column_2",
+        "column_3",
+        "Region_2",
+        "Region_3",
+        "2026",
+    ]
+
+
+def test_read_excel_sheet(budget_xlsx):
+    assert _all(_read_excel(budget_xlsx, "Staff")) == [
+        {"month": "Jul", "headcount": 12},
+        {"month": "Aug", "headcount": 14},
+        {"month": "Sep", "headcount": 15},
+    ]
+
+
+def test_read_excel_defaults_to_first_sheet_and_skips_empty_rows(tmp_path):
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    sheet = workbook.active
+    for row in (["name", None, "name"], ["a", 1, "b"], [None, None, None], ["c", 2, "d"]):
+        sheet.append(row)
+    path = tmp_path / "book.xlsx"
+    workbook.save(path)
+    assert _all(_read_excel(io.BytesIO(path.read_bytes()))) == [
+        {"name": "a", "column_2": 1, "name_2": "b"},
+        {"name": "c", "column_2": 2, "name_2": "d"},
+    ]
+
+
+def test_read_excel_formulas_give_values(tmp_path):
+    from openpyxl import Workbook, load_workbook
+
+    path = tmp_path / "formulas.xlsx"
+    workbook = Workbook()
+    workbook.active.append(["a", "b"])
+    workbook.active.append([2, "=A2*2"])
+    workbook.save(path)
+    # openpyxl doesn't calculate formulas, and a file it wrote has no cached values, so the cell
+    # reads as empty; files saved by Excel carry the calculated value.
+    assert _all(_read_excel(path)) == [{"a": 2, "b": None}]
+    assert load_workbook(path).active["B2"].value == "=A2*2"

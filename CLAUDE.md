@@ -43,9 +43,14 @@ obvious from the code. Keep this file current when a convention changes.
   Electron's "Error invoking remote method…" prefix.
 - **Secrets never go in the project.** Connector fields marked `secret=True` are stored with
   `src/credentials.ts` (OS encryption), never in `sources/*.json` or anywhere in the `.pawpaw` file.
-- **SQL transforms are one read-only SELECT** run by `python/sidecar/transforms.py` in a locked
-  DuckDB. Don't loosen `_connect()` or `_select()`; see [docs/security.md](docs/security.md).
-  The sandbox tests in `python/tests/` must keep passing.
+- **All reading of loaded data goes through `python/sidecar/engine.py`**: one locked-down,
+  in-memory DuckDB over the Parquet files (table info, previews, transforms; later relationships
+  and visuals). Don't read tables any other way, and don't loosen `engine.connect()` or
+  `engine.select()` (SQL transforms must be one read-only SELECT); see
+  [docs/security.md](docs/security.md). The sandbox tests in `python/tests/` must keep passing.
+- **pandas isn't bundled** (removed deliberately, decision 14 in
+  [docs/decisions.md](docs/decisions.md)). Use DuckDB, pyarrow or plain Python instead of adding
+  it back.
 - **Anything read from a `.pawpaw` file is untrusted** (projects are shared). Validate IDs and
   table names before using them in paths (`SAFE_ID`, `SAFE_TABLE`); never execute stored code.
 - **The `.pawpaw` format is specified in [docs/pawpaw-file-format.md](docs/pawpaw-file-format.md).**

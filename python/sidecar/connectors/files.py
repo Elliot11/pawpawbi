@@ -20,11 +20,67 @@ FORMAT_OPTIONS = [
 CSV_CHUNK_ROWS = 50_000
 
 
-def _read_csv(source, sep=None):
-    import pandas as pd
+def _read_csv(source, delimiter: str | None = None):
+    """CSV rows as Arrow batches, from a path or a file object. DuckDB detects the delimiter,
+    header and column types (dates, numbers, …) from the data."""
+    import duckdb
 
-    # sep=None lets pandas detect commas, semicolons, tabs, etc.
-    yield from pd.read_csv(source, sep=sep, engine="python" if sep is None else "c", chunksize=CSV_CHUNK_ROWS)
+    con = duckdb.connect()
+    try:
+        options = {"delimiter": delimiter} if delimiter else {}
+        relation = con.read_csv(str(source) if isinstance(source, Path) else source, **options)
+        yield from relation.to_arrow_reader(CSV_CHUNK_ROWS)
+    finally:
+        con.close()
+
+
+def _column_names(header) -> list[str]:
+    """Names from a spreadsheet's first row: blanks get column_<n>, duplicates get a suffix."""
+    names: list[str] = []
+    for i, value in enumerate(header, 1):
+        name = str(value).strip() if value is not None else ""
+        name = name or f"column_{i}"
+        base, n = name, 2
+        while name in names:
+            name, n = f"{base}_{n}", n + 1
+        names.append(name)
+    return names
+
+
+def _excel_sheet_names(source) -> list[str]:
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(source, read_only=True, data_only=True)
+    try:
+        return workbook.sheetnames
+    finally:
+        workbook.close()
+
+
+def _read_excel(source, sheet: str | None = None):
+    """A sheet's rows as dicts, using its first row as column names. Formulas give their last
+    calculated values. Defaults to the first sheet."""
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(source, read_only=True, data_only=True)
+    try:
+        rows = workbook[sheet or workbook.sheetnames[0]].iter_rows(values_only=True)
+        header = next(rows, None)
+        if header is None:
+            return
+        names = _column_names(header)
+        batch = []
+        for row in rows:
+            if all(value is None for value in row):
+                continue
+            batch.append(dict(zip(names, row)))
+            if len(batch) >= CSV_CHUNK_ROWS:
+                yield batch
+                batch = []
+        if batch:
+            yield batch
+    finally:
+        workbook.close()
 
 
 def _json_records(data) -> list:
@@ -59,7 +115,8 @@ def _read_parquet(path: Path):
 
 
 def _frames(name: str, read):
-    """A resource that yields DataFrames/Arrow batches from `read()` when loading, not before."""
+    """A resource that yields the batches from `read()` (Arrow batches or lists of dicts) when
+    loading, not before."""
 
     @dlt.resource(name=name)
     def frames():
@@ -81,15 +138,11 @@ def _file_resources(path: Path, used_names: set[str]) -> list:
         return candidate
 
     if ext in (".xlsx", ".xlsm"):
-        import pandas as pd
-
-        sheets = pd.ExcelFile(path, engine="openpyxl").sheet_names
+        sheets = _excel_sheet_names(path)
         resources = []
         for sheet in sheets:
             name = unique(path.stem if len(sheets) == 1 else f"{path.stem} {sheet}")
-            resources.append(
-                _frames(name, lambda sheet=sheet: iter([pd.read_excel(path, sheet_name=sheet, engine="openpyxl")]))
-            )
+            resources.append(_frames(name, lambda sheet=sheet: _read_excel(path, sheet)))
         return resources
     if ext in (".csv", ".tsv", ".txt"):
         return [_frames(unique(path.stem), lambda: _read_csv(path, "\t" if ext == ".tsv" else None))]
@@ -109,15 +162,24 @@ def _build_local_files(settings: dict):
 
 
 def _build_folder(settings: dict):
-    from dlt.sources.filesystem import filesystem, read_csv, read_jsonl, read_parquet
+    from dlt.sources.filesystem import filesystem
 
     folder = Path(required(settings, "folder", "Folder"))
     if not folder.is_dir():
         raise ValueError(f"Folder not found: {folder}")
     fmt = text(settings, "format", "csv")
-    reader = {"csv": read_csv, "jsonl": read_jsonl, "parquet": read_parquet}[fmt]
     files = filesystem(bucket_url=folder.resolve().as_uri(), file_glob=text(settings, "pattern", f"**/*.{fmt}"))
-    return (files | reader()).with_name(text(settings, "table", folder.name))
+    return (files | file_reader(fmt)).with_name(text(settings, "table", folder.name))
+
+
+def file_reader(fmt: str):
+    """dlt's reader for files listed by its filesystem source. CSV goes through DuckDB, which
+    detects types; the other readers don't need pandas either."""
+    from dlt.sources.filesystem import read_csv_duckdb, read_jsonl, read_parquet
+
+    if fmt == "csv":
+        return read_csv_duckdb(chunk_size=CSV_CHUNK_ROWS, use_pyarrow=True)
+    return {"jsonl": read_jsonl, "parquet": read_parquet}[fmt]()
 
 
 def _build_url(settings: dict):
@@ -141,9 +203,7 @@ def _build_url(settings: dict):
 
             yield pq.read_table(content)
         elif fmt == "xlsx":
-            import pandas as pd
-
-            yield pd.read_excel(content, engine="openpyxl")
+            yield from _read_excel(content)
         else:
             raise ValueError(f"Unsupported format: {fmt}")
 

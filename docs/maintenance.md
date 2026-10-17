@@ -55,7 +55,7 @@ write its connector in `connectors/apps/`.
    `packages` pins.
 6. Run `npm run test:python`, then try the changed connectors in the app.
 
-## Update a bundled Python package (dlt, pandas, DuckDB, …)
+## Update a bundled Python package (dlt, DuckDB, pyarrow, …)
 
 1. Stop the app (the next step deletes `python/runtime/`).
 2. Edit the pin in `python/requirements.txt`.

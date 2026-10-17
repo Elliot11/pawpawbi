@@ -22,14 +22,13 @@ def info(_params):
         "version": platform.python_version(),
         "executable": sys.executable,
         "dlt": version("dlt"),
-        "pandas": version("pandas"),
+        "duckdb": version("duckdb"),
     }
 
 
 METHODS = {
     "info": info,
     "catalog": connectors.catalog,
-    "load_file": datasets.load_file,
     "list_tables": datasets.list_tables,
     "describe_tables": datasets.describe_tables,
     "preview_transform": transforms.preview_transform,

@@ -16,11 +16,9 @@ idna==3.20
 jsonpath-ng==1.11.0
 markdown-it-py==4.2.0
 mdurl==0.1.2
-numpy==2.5.4
 openpyxl==3.1.5
 orjson==3.13.0
 packaging==26.3
-pandas==3.0.6
 pathvalidate==3.3.1
 pendulum==3.3.0
 pluggy==1.7.0

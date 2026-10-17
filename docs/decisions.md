@@ -26,7 +26,7 @@ React or Svelte for the UI.
 pinned by release and SHA-256. Use the "stripped" builds. The main process talks to it over
 stdin/stdout.
 
-**Why:** The data tooling we wanted (dlt, pandas) is Python. Relying on the user's own Python is
+**Why:** The data tooling we wanted (dlt, and at the time pandas) is Python. Relying on the user's own Python is
 fragile (missing, wrong version, missing packages). The standalone builds are what `uv` uses and
 include pip.
 
@@ -34,8 +34,9 @@ include pip.
 flagged by antivirus); `uv` downloading Python on first run (needs internet); Pyodide in the page
 (can't open network connections, so no database drivers).
 
-**Consequences:** about 350 MB of Python in the packaged app, mostly pandas, pyarrow and numpy
-(see [TODO.md](../TODO.md)). The Python files must be code-signed for release.
+**Consequences:** about 275 MB of Python in the packaged app, mostly pyarrow, DuckDB and
+SQLAlchemy plus precompiled bytecode (it was about 400 MB before pandas and numpy were removed
+in decision 14). The Python files must be code-signed for release.
 
 ## 3. dlt for connecting to data
 
@@ -53,14 +54,16 @@ Meltano (separate services, too heavy for a desktop app).
 **Consequences:** verified sources aren't pip packages, so they're vendored from a pinned commit
 and must be refreshed by hand ([maintenance.md](maintenance.md)).
 
-## 4. Data stored as Parquet files, processed with pandas, not loaded into a database
+## 4. Data stored as Parquet files, not loaded into a database
 
-**Decision:** dlt writes to its `filesystem` destination as Parquet (`data/raw/<table>/`). pandas
-and pyarrow read it. **No data is loaded into DuckDB** (an explicit user requirement).
+**Decision:** dlt writes to its `filesystem` destination as Parquet (`data/raw/<table>/`).
+**No data is loaded into DuckDB** (an explicit user requirement). Originally pandas and pyarrow
+read the files; since decision 14, DuckDB queries them.
 
 **Why:** Plain files that travel inside the project, readable by many tools, compact and typed.
 
-**Alternatives:** loading into a DuckDB database file (rejected by the user); SQLite.
+**Alternatives:** loading into a DuckDB database file (rejected by the user, and revisited in
+decision 14); SQLite.
 
 ## 5. `.pawpaw` project files are ZIPs of ordinary files
 
@@ -70,7 +73,7 @@ folder and saved by re-zipping atomically.
 
 **Why:** One file to share or back up; inspectable with everyday tools; data and model travel
 together; the same approach as EPUB and OpenDocument (uncompressed `mimetype` first). Working on an
-extracted folder makes dlt, pandas and DuckDB easy to use, and allows crash recovery.
+extracted folder makes dlt and DuckDB easy to use, and allows crash recovery.
 
 **Alternatives:** a single JSON file (the first version; can't hold data); a SQLite project file;
 a folder instead of a file.
@@ -161,3 +164,40 @@ commit) is pinned to an exact version that has been public for at least two week
 
 **Why:** Reproducible builds, and a buffer against compromised or broken releases, which are
 usually caught and pulled within days.
+
+## 14. DuckDB as the engine for reading loaded data; pandas removed
+
+**Decision:** Everything that reads loaded data goes through one locked-down, in-memory DuckDB
+(`python/sidecar/engine.py`) over the project's Parquet files: table info, previews and SQL
+transforms now, and relationships and visuals later. The file connectors read CSV with DuckDB
+and Excel with openpyxl. pandas, and with it numpy, is no longer bundled. dlt stays for
+connecting, and storage stays Parquet. Refines decisions 4 and 11.
+
+**Why:** Joins, aggregations for charts and filtering are SQL-shaped work, and DuckDB does them
+faster than pandas, streaming instead of loading whole tables into memory (previews used to read
+an entire table to show 200 rows). One engine means one sandbox to secure. DuckDB also detects
+CSV types better, so dates and numbers no longer arrive as text. Removing pandas and numpy saved
+about 120 MB.
+
+**Alternatives considered:**
+- **Store the data in a DuckDB database file** inside the project. Rejected for now:
+  - Only one process can write to a DuckDB file at a time, but loads run in their own processes
+    while the sidecar reads.
+  - A file written by a newer DuckDB may not open in an older one, which matters for shared
+    projects.
+  - Data would no longer be readable by other tools.
+  - Opening shared projects would mean handing DuckDB a whole database file, including any
+    stored views or macros.
+
+  Worth revisiting if projects get large enough to need indexes or incremental updates.
+- **Use DuckDB's extensions instead of dlt** for files and databases. They're faster for bulk
+  copies, but we'd still need dlt for business apps, so we'd maintain two connector systems.
+  They'd also download extensions at runtime, which the sandbox blocks on purpose. Possible later
+  for specific slow cases, such as large Postgres tables.
+
+**Consequences:**
+- Processing is done in DuckDB SQL rather than pandas.
+- CSV columns can get different, better types than before, which can affect SQL transforms
+  written against older loads.
+- Connector packages that need pandas, such as Databricks, install it into their own environment
+  on first use.

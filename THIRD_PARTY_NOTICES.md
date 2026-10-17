@@ -50,9 +50,7 @@ Each package's own licence file ships in its `*.dist-info` folder under
 | Package | Version | Licence |
 |---|---|---|
 | dlt | 1.30.0 | Apache-2.0 |
-| pandas | 3.0.6 | BSD-3-Clause |
 | pyarrow | 25.0.1 | Apache-2.0 |
-| numpy | 2.5.4 | BSD-3-Clause (includes 0BSD, MIT, Zlib and CC0-1.0 components) |
 | duckdb | 1.5.6 | MIT |
 | SQLAlchemy | 2.0.54 | MIT |
 | greenlet | 3.5.6 | MIT AND PSF-2.0 |

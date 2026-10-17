@@ -12,9 +12,9 @@ sqlalchemy==2.0.54
 # Excel files
 openpyxl==3.1.5
 
-# Runs SQL transforms on the Parquet files (query engine only: nothing is stored in DuckDB)
+# Query engine for everything that reads loaded data (previews, table info, SQL transforms) and
+# for reading CSV files. Query engine only: nothing is stored in DuckDB.
 duckdb==1.5.6
 
-# Data processing
-pandas==3.0.6
+# Parquet and Arrow data (dlt's Parquet writer; reading schemas)
 pyarrow==25.0.1

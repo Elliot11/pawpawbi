@@ -5,7 +5,7 @@ you through three steps: **add data** from files, databases and business apps; *
 (fix types, transform with SQL, and later define relationships); and **build visuals**.
 
 Built with Electron, Vue and TypeScript, plus a bundled Python that does the data work with
-[dlt](https://dlthub.com), pandas and DuckDB. Each project is a single `.pawpaw` file: a ZIP of
+[dlt](https://dlthub.com) (connecting to data) and DuckDB (querying it). Each project is a single `.pawpaw` file: a ZIP of
 ordinary files and folders, defined in [docs/pawpaw-file-format.md](docs/pawpaw-file-format.md).
 
 ## Status
@@ -64,8 +64,9 @@ python/
   sidecar/                 Python code shipped with the app
     main.py                  Long-running helper: JSON requests over stdin/stdout
     runner.py                Runs one connector job in its own process
-    datasets.py              Reading loaded tables (pandas / pyarrow)
-    transforms.py            SQL transforms (DuckDB, locked down)
+    engine.py                The locked-down DuckDB that all reading of loaded data goes through
+    datasets.py              Table info and previews
+    transforms.py            SQL transforms
     connectors/              The connector catalog: forms and how each one loads data
     verified_sources/        dlt's connectors, vendored unmodified (Apache 2.0)
   tests/                   Python tests

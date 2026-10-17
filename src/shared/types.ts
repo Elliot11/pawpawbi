@@ -189,7 +189,7 @@ export interface PythonInfo {
   version: string;
   executable: string;
   dlt: string;
-  pandas: string;
+  duckdb: string;
 }
 
 export interface PythonApi {

@@ -20,7 +20,7 @@ How to add one: [maintenance.md](maintenance.md).
 
 | Connector | ID | Extra packages | Status | Notes |
 |---|---|---|---|---|
-| Files on this computer | `local_files` | — | ✅ | CSV/TSV, Excel (`.xlsx`/`.xlsm`; one table per sheet), JSON, JSON Lines, Parquet. Old `.xls` isn't supported. Whole JSON files are read into memory. |
+| Files on this computer | `local_files` | — | ✅ | CSV/TSV (read by DuckDB, which detects the delimiter and column types such as dates), Excel (`.xlsx`/`.xlsm`, read with openpyxl; one table per sheet; first row is the header; formulas give the value last calculated in Excel), JSON, JSON Lines, Parquet. Old `.xls` isn't supported. Whole JSON files are read into memory. |
 | Folder of files | `folder` | — | ✅ | Combines matching files into one table (CSV, JSON Lines or Parquet). |
 | File from a web address | `url` | — | ✅ | Format from the extension, then `Content-Type`, then the content. JSON wrappers like `{"data": [...]}` are unwrapped. Downloads the whole file into memory. |
 
