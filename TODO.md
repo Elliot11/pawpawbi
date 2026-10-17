@@ -33,9 +33,17 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
     where a source with a saved password connects should always ask, even with "make changes
     without asking", so a shared project can't redirect saved credentials.
 - **A structured `add_chart` tool** (page, chart type, dataset, columns, title) that writes the
-  chart's HTML and script itself. In testing, a small local model (qwen3 8B) wrote a page from
-  memory with the wrong chart library and created a duplicate page instead of editing the
-  existing one. Writing the markup in code would make charts reliable for every model.
+  chart's HTML and script itself. Needed before local models can build reports. In live tests
+  ("add a bar chart of revenue by region, then a line chart of monthly revenue below it"), Claude
+  Haiku 5.5 and gpt-5 both built working pages every time. qwen3 8B through Ollama didn't:
+  - it wrote HTML for another chart library;
+  - it edited example code inside an HTML comment (now removed from the page template);
+  - it invented markup and garbled the page.
+
+  Fixed along the way:
+  - `create_page` refuses a title that's already used (models added a second "Overview").
+  - Page IDs are accepted as `pages/<id>.html` too.
+
 - **The assistant's guides and evaluation tasks (phase 4).** Guides for adding data, modelling and
   SQL alongside the report guide, a tuned system prompt, and sample tasks run against both
   providers.

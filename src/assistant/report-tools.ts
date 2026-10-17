@@ -77,6 +77,14 @@ async function fileLabel(file: unknown): Promise<string> {
   return String(file ?? 'a report file');
 }
 
+/** A page ID from the model, which may also give it as "pages/<id>.html" or "<id>.html". */
+function pageId(input: Record<string, unknown>) {
+  return text(input, 'page_id')
+    .trim()
+    .replace(/^pages\//, '')
+    .replace(/\.html$/, '');
+}
+
 async function pageTitle(id: string) {
   const page = (await readReport(filesDir())).pages.find((p) => p.id === id);
   if (!page)
@@ -146,6 +154,16 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
         await requireSite();
         const title = text(input, 'title');
         const html = text(input, 'html', true);
+        // Models (small ones especially) tend to add a new page rather than edit the one asked
+        // for; two pages with one name would confuse the user too.
+        const existing = (await readReport(filesDir())).pages.find(
+          (p) => p.title.toLowerCase() === title.trim().toLowerCase(),
+        );
+        if (existing) {
+          throw new Error(
+            `There's already a page called "${existing.title}" (pages/${existing.id}.html). To change it, read it with read_report_file and edit it with edit_report_file. For a new page, choose a different title.`,
+          );
+        }
         const page = await ctx.change(
           call,
           `Added the page "${title}"`,
@@ -174,7 +192,7 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
       step,
       describe: (input) => `Rename a page to "${String(input.title ?? '')}"`,
       run: async (input, call) => {
-        const id = text(input, 'page_id');
+        const id = pageId(input);
         const old = await pageTitle(id);
         const title = text(input, 'title');
         await ctx.change(call, `Renamed "${old}" to "${title}"`, [SITE], () =>
@@ -197,7 +215,7 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
       describe: async (input) =>
         `Delete ${await fileLabel(`pages/${String(input.page_id)}.html`)}`,
       run: async (input, call) => {
-        const id = text(input, 'page_id');
+        const id = pageId(input);
         const title = await pageTitle(id);
         await ctx.change(call, `Deleted the page "${title}"`, [SITE], () =>
           deletePage(filesDir(), id),
@@ -386,7 +404,7 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
       step,
       describe: () => 'Showing the page',
       run: async (input) => {
-        const id = text(input, 'page_id');
+        const id = pageId(input);
         await pageTitle(id);
         ctx.show('visuals', id);
         return 'Shown.';
