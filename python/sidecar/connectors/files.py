@@ -1,6 +1,7 @@
 """Connectors for files on this computer or on the web. Bundled with the app: no downloads needed."""
 
 import io
+import json
 from pathlib import Path
 
 import dlt
@@ -26,13 +27,29 @@ def _read_csv(source, sep=None):
     yield from pd.read_csv(source, sep=sep, engine="python" if sep is None else "c", chunksize=CSV_CHUNK_ROWS)
 
 
-def _read_json(source, json_lines: bool):
-    import pandas as pd
+def _json_records(data) -> list:
+    """The records in a parsed JSON document: a top-level list, or the one list inside a
+    wrapper object such as {"data": [...]}; otherwise the object itself is a single record."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        lists = [value for value in data.values() if isinstance(value, list)]
+        return lists[0] if len(lists) == 1 else [data]
+    return [{"value": data}]
 
-    if json_lines:
-        yield from pd.read_json(source, lines=True, chunksize=CSV_CHUNK_ROWS)
-    else:
-        yield pd.read_json(source)
+
+def _read_json(source):
+    """JSON or JSON Lines, from a path or bytes. Records go to dlt as dicts, so nested objects
+    and lists become their own columns and child tables."""
+    raw = source.read_bytes() if isinstance(source, Path) else source.getvalue()
+    content = raw.decode("utf-8-sig")
+    try:
+        records = _json_records(json.loads(content))
+    except json.JSONDecodeError:
+        # Not a single document: JSON Lines, one record per line.
+        records = [json.loads(line) for line in content.splitlines() if line.strip()]
+    for start in range(0, len(records), CSV_CHUNK_ROWS):
+        yield records[start : start + CSV_CHUNK_ROWS]
 
 
 def _read_parquet(path: Path):
@@ -76,10 +93,8 @@ def _file_resources(path: Path, used_names: set[str]) -> list:
         return resources
     if ext in (".csv", ".tsv", ".txt"):
         return [_frames(unique(path.stem), lambda: _read_csv(path, "\t" if ext == ".tsv" else None))]
-    if ext in (".jsonl", ".ndjson"):
-        return [_frames(unique(path.stem), lambda: _read_json(path, json_lines=True))]
-    if ext == ".json":
-        return [_frames(unique(path.stem), lambda: _read_json(path, json_lines=False))]
+    if ext in (".json", ".jsonl", ".ndjson"):
+        return [_frames(unique(path.stem), lambda: _read_json(path))]
     if ext == ".parquet":
         return [_frames(unique(path.stem), lambda: _read_parquet(path))]
     raise ValueError(f"Unsupported file type: {path.name}")
@@ -109,17 +124,18 @@ def _build_url(settings: dict):
     from dlt.sources.helpers import requests
 
     url = required(settings, "url", "Web address")
-    fmt = text(settings, "format") or _format_from_url(url)
+    chosen_format = text(settings, "format")
     table = text(settings, "table") or Path(url.split("?")[0]).stem or "download"
 
     def read():
         response = requests.get(url, timeout=120)
         response.raise_for_status()
+        fmt = chosen_format or _detect_format(url, response.headers.get("Content-Type", ""), response.content)
         content = io.BytesIO(response.content)
         if fmt == "csv":
             yield from _read_csv(content)
         elif fmt in ("jsonl", "json"):
-            yield from _read_json(content, json_lines=fmt == "jsonl")
+            yield from _read_json(content)
         elif fmt == "parquet":
             import pyarrow.parquet as pq
 
@@ -134,9 +150,38 @@ def _build_url(settings: dict):
     return _frames(table, read)
 
 
-def _format_from_url(url: str) -> str:
+EXTENSION_FORMATS = {
+    "csv": "csv", "tsv": "csv", "txt": "csv",
+    "json": "json", "jsonl": "jsonl", "ndjson": "jsonl",
+    "parquet": "parquet",
+    "xlsx": "xlsx", "xlsm": "xlsx",
+}
+
+
+def _detect_format(url: str, content_type: str, content: bytes) -> str:
+    """The file format from the URL's extension, then the server's Content-Type, then the
+    content itself. Many APIs and download links have no extension at all."""
     ext = Path(url.split("?")[0]).suffix.lower().lstrip(".")
-    return {"ndjson": "jsonl", "xlsm": "xlsx", "tsv": "csv", "txt": "csv"}.get(ext, ext or "csv")
+    if ext in EXTENSION_FORMATS:
+        return EXTENSION_FORMATS[ext]
+
+    content_type = content_type.lower()
+    if "ndjson" in content_type or "jsonl" in content_type:
+        return "jsonl"
+    if "json" in content_type:
+        return "json"
+    if "spreadsheetml" in content_type or "ms-excel" in content_type:
+        return "xlsx"
+    if "parquet" in content_type:
+        return "parquet"
+
+    if content.startswith(b"PAR1"):
+        return "parquet"
+    if content.startswith(b"PK"):  # A ZIP container, as .xlsx files are.
+        return "xlsx"
+    if content.lstrip(b"\xef\xbb\xbf \t\r\n")[:1] in (b"[", b"{"):
+        return "json"
+    return "csv"
 
 
 CONNECTORS: list[Connector] = [
