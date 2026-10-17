@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue';
+import { plain } from '../plain';
 import { newId } from '../shared/ids';
 import type { ChatMessage, WorkflowStage } from '../shared/types';
 import { INTRO_MESSAGE, replyTo } from '../workflow';
@@ -45,7 +46,7 @@ async function addMessage(role: ChatMessage['role'], text: string) {
   messages.value.push(createMessage(role, text));
   const unsaved = messages.value.slice(savedCount);
   savedCount = messages.value.length;
-  await window.api.projects.appendChat(unsaved, stage.value);
+  await window.api.projects.appendChat(plain(unsaved), stage.value);
   await scrollToBottom();
 }
 

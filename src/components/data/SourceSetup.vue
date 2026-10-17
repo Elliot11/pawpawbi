@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref } from 'vue';
 import { errorMessage } from '../../errors';
+import { plain } from '../../plain';
 import type {
   ConnectorInfo,
   DataSource,
@@ -81,7 +82,7 @@ async function connect() {
       id: savedSource.value?.id,
       type: props.connector.id,
       name: name.value,
-      settings: { ...settings },
+      settings: plain(settings),
     });
     // Secrets are saved now; clear them from the form.
     for (const f of props.connector.fields) if (f.secret) settings[f.key] = '';

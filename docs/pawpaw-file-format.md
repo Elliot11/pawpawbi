@@ -29,6 +29,7 @@ Sales report.pawpaw            (ZIP archive)
 │   ├── tables/
 │   │   └── <table>.json       Column types, names and descriptions for one table
 │   ├── relationships.json     How tables join to each other
+│   ├── diagram.json           Where each table sits on the Model data canvas
 │   └── transforms.json        Processing steps that build data/model/   (provisional)
 │
 ├── report/                    What the user sees                         (provisional)
@@ -178,6 +179,19 @@ How tables join. The assistant proposes these and the user confirms them.
 ```
 
 `cardinality` is `one-to-one`, `many-to-one` or `many-to-many`.
+
+### model/diagram.json
+
+Where each table's card sits on the Model data canvas, in canvas pixels. Tables without an entry are placed automatically; entries for tables that no longer exist are ignored.
+
+```json
+{
+  "tables": {
+    "monthly_sales": { "x": 48, "y": 120 },
+    "customers": { "x": 336, "y": 120 }
+  }
+}
+```
 
 ### model/transforms.json (provisional)
 

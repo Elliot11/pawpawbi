@@ -135,6 +135,11 @@ export interface TableSchema {
   columns: { name: string; type: string; kind: ColumnKind }[];
 }
 
+/** model/diagram.json: where each table sits on the Model data canvas. */
+export interface ModelDiagram {
+  tables: Record<string, { x: number; y: number }>;
+}
+
 export interface TablePreview {
   columns: { name: string; dtype: string }[];
   rows: unknown[][];
@@ -159,6 +164,8 @@ export interface DataApi {
   listTables: () => Promise<string[]>;
   /** Columns and row counts of every loaded table (read from metadata, so it's quick). */
   describeTables: () => Promise<TableSchema[]>;
+  loadDiagram: () => Promise<ModelDiagram>;
+  saveDiagram: (diagram: ModelDiagram) => Promise<void>;
   previewTable: (table: string, limit?: number) => Promise<TablePreview>;
   /** Shows a file or folder picker. Resolves to the chosen paths, or [] if cancelled. */
   pickPaths: (kind: 'file' | 'files' | 'folder', filters?: ConnectorField['fileFilters']) => Promise<string[]>;

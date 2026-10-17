@@ -1,22 +1,49 @@
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onMounted, ref } from 'vue';
 import { errorMessage } from '../errors';
+import { plain } from '../plain';
 import type { ColumnKind, DataSource, TableSchema } from '../shared/types';
 
 defineEmits<{ addData: [] }>();
+
+type Point = { x: number; y: number };
+
+// Layout for tables that haven't been placed yet: a grid of cards.
+const CARD_WIDTH = 240;
+const GRID_GAP = 48;
+const GRID_ROW_HEIGHT = 400;
+const GRID_COLUMNS = 4;
+const GRID_ORIGIN: Point = { x: 48, y: 120 };
+const MIN_ZOOM = 0.3;
+const MAX_ZOOM = 1.6;
 
 const tables = ref<TableSchema[]>([]);
 const sources = ref<DataSource[]>([]);
 const loading = ref(true);
 const error = ref('');
 
+const positions = ref<Record<string, Point>>({});
+/** Draw order: the last table is on top. */
+const stacking = ref<string[]>([]);
+const pan = ref<Point>({ x: 0, y: 0 });
+const zoom = ref(1);
+
+const viewport = ref<HTMLElement | null>(null);
+const cardElements = new Map<string, HTMLElement>();
+
 async function load() {
   error.value = '';
   try {
-    [tables.value, sources.value] = await Promise.all([
+    const [schemas, sourceList, diagram] = await Promise.all([
       window.api.data.describeTables(),
       window.api.data.listSources(),
+      window.api.data.loadDiagram(),
     ]);
+    tables.value = schemas;
+    sources.value = sourceList;
+    positions.value = { ...diagram.tables };
+    placeNewTables();
+    stacking.value = schemas.map((t) => t.name);
   } catch (err) {
     error.value = errorMessage(err);
   } finally {
@@ -28,6 +55,151 @@ async function load() {
 // been added or refreshed in the meantime.
 onMounted(load);
 onActivated(load);
+
+/** Puts tables without a saved position in a grid below the ones that have one. */
+function placeNewTables() {
+  const placed = tables.value.filter((t) => positions.value[t.name]);
+  const unplaced = tables.value.filter((t) => !positions.value[t.name]);
+  const top = placed.length
+    ? Math.max(...placed.map((t) => positions.value[t.name].y)) + GRID_ROW_HEIGHT
+    : GRID_ORIGIN.y;
+  unplaced.forEach((t, i) => {
+    positions.value[t.name] = {
+      x: GRID_ORIGIN.x + (i % GRID_COLUMNS) * (CARD_WIDTH + GRID_GAP),
+      y: top + Math.floor(i / GRID_COLUMNS) * GRID_ROW_HEIGHT,
+    };
+  });
+}
+
+async function saveLayout() {
+  const layout = Object.fromEntries(tables.value.map((t) => [t.name, positions.value[t.name]]));
+  try {
+    await window.api.data.saveDiagram(plain({ tables: layout }));
+  } catch (err) {
+    error.value = errorMessage(err);
+  }
+}
+
+function tidyUp() {
+  positions.value = {};
+  placeNewTables();
+  saveLayout();
+  fitToScreen();
+}
+
+// --- Dragging tables and panning ------------------------------------------------------------
+
+type Drag =
+  | { kind: 'table'; table: string; start: Point; origin: Point; moved: boolean }
+  | { kind: 'pan'; start: Point; origin: Point };
+const drag = ref<Drag | null>(null);
+
+function bringToFront(table: string) {
+  stacking.value = [...stacking.value.filter((t) => t !== table), table];
+}
+
+function startTableDrag(event: PointerEvent, table: string) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  bringToFront(table);
+  drag.value = {
+    kind: 'table',
+    table,
+    start: { x: event.clientX, y: event.clientY },
+    origin: { ...positions.value[table] },
+    moved: false,
+  };
+  listenForDrag();
+}
+
+function startPan(event: PointerEvent) {
+  // Left or middle button on the empty canvas.
+  if (event.button !== 0 && event.button !== 1) return;
+  event.preventDefault();
+  drag.value = { kind: 'pan', start: { x: event.clientX, y: event.clientY }, origin: { ...pan.value } };
+  listenForDrag();
+}
+
+function onDragMove(event: PointerEvent) {
+  const d = drag.value;
+  if (!d) return;
+  const dx = event.clientX - d.start.x;
+  const dy = event.clientY - d.start.y;
+  if (d.kind === 'table') {
+    d.moved ||= Math.abs(dx) + Math.abs(dy) > 2;
+    positions.value[d.table] = { x: Math.round(d.origin.x + dx / zoom.value), y: Math.round(d.origin.y + dy / zoom.value) };
+  } else {
+    pan.value = { x: d.origin.x + dx, y: d.origin.y + dy };
+  }
+}
+
+function onDragEnd() {
+  const d = drag.value;
+  drag.value = null;
+  window.removeEventListener('pointermove', onDragMove);
+  window.removeEventListener('pointerup', onDragEnd);
+  if (d?.kind === 'table' && d.moved) saveLayout();
+}
+
+function listenForDrag() {
+  window.addEventListener('pointermove', onDragMove);
+  window.addEventListener('pointerup', onDragEnd);
+}
+
+onBeforeUnmount(onDragEnd);
+
+// --- Zoom ----------------------------------------------------------------------------------------
+
+const clampZoom = (value: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+
+/** Zooms keeping the canvas point under (clientX, clientY) in place. */
+function zoomAt(clientX: number, clientY: number, nextZoom: number) {
+  const rect = viewport.value!.getBoundingClientRect();
+  const screen = { x: clientX - rect.left, y: clientY - rect.top };
+  const world = { x: (screen.x - pan.value.x) / zoom.value, y: (screen.y - pan.value.y) / zoom.value };
+  zoom.value = clampZoom(nextZoom);
+  pan.value = { x: screen.x - world.x * zoom.value, y: screen.y - world.y * zoom.value };
+}
+
+function zoomBy(factor: number) {
+  const rect = viewport.value!.getBoundingClientRect();
+  zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, zoom.value * factor);
+}
+
+function onWheel(event: WheelEvent) {
+  // Let a table's column list scroll when the pointer is over it.
+  const list = (event.target as Element).closest('.columns');
+  if (!event.ctrlKey && list && list.scrollHeight > list.clientHeight) return;
+  event.preventDefault();
+  if (event.ctrlKey || event.metaKey) {
+    zoomAt(event.clientX, event.clientY, zoom.value * Math.exp(-event.deltaY * 0.002));
+  } else {
+    pan.value = { x: pan.value.x - event.deltaX, y: pan.value.y - event.deltaY };
+  }
+}
+
+/** Zooms and pans so every table is visible. */
+function fitToScreen() {
+  if (!viewport.value || tables.value.length === 0) return;
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  for (const t of tables.value) {
+    const p = positions.value[t.name];
+    const height = cardElements.get(t.name)?.offsetHeight ?? GRID_ROW_HEIGHT;
+    left = Math.min(left, p.x);
+    top = Math.min(top, p.y);
+    right = Math.max(right, p.x + CARD_WIDTH);
+    bottom = Math.max(bottom, p.y + height);
+  }
+  const padding = 48;
+  const { clientWidth, clientHeight } = viewport.value;
+  zoom.value = clampZoom(Math.min(1, (clientWidth - padding * 2) / (right - left), (clientHeight - padding * 2 - 60) / (bottom - top)));
+  pan.value = {
+    x: (clientWidth - (right - left) * zoom.value) / 2 - left * zoom.value,
+    y: 60 + (clientHeight - 60 - (bottom - top) * zoom.value) / 2 - top * zoom.value,
+  };
+}
+
+// --- Display ----------------------------------------------------------------------------------
 
 const sourceByTable = computed(() => {
   const map = new Map<string, string>();
@@ -51,22 +223,20 @@ const BADGES: Record<ColumnKind, { label: string; title: string }> = {
 };
 
 const totalColumns = computed(() => tables.value.reduce((sum, t) => sum + t.columns.length, 0));
+
+function setCardElement(table: string, element: unknown) {
+  if (element instanceof HTMLElement) cardElements.set(table, element);
+  else cardElements.delete(table);
+}
 </script>
 
 <template>
   <div class="model">
-    <header class="head">
-      <h2>Model data</h2>
-      <p v-if="tables.length">
-        {{ tables.length }} {{ tables.length === 1 ? 'table' : 'tables' }} ·
-        {{ totalColumns }} columns
-      </p>
-    </header>
-
     <p v-if="error" class="error" role="alert">{{ error }}</p>
-    <p v-else-if="loading" class="status">Loading tables…</p>
 
-    <div v-else-if="tables.length === 0" class="empty">
+    <div v-if="loading" class="centered status">Loading tables…</div>
+
+    <div v-else-if="tables.length === 0 && !error" class="centered empty">
       <div class="empty-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path d="M3 4h7v6H3zM14 14h7v6h-7zM6.5 10v4a3 3 0 0 0 3 3H14" /></svg>
       </div>
@@ -75,71 +245,115 @@ const totalColumns = computed(() => tables.value.reduce((sum, t) => sum + t.colu
       <button class="primary" @click="$emit('addData')">Add data</button>
     </div>
 
-    <div v-else class="grid">
-      <article v-for="t in tables" :key="t.name" class="table-card">
-        <header class="card-head">
-          <h3 :title="t.name">{{ t.name }}</h3>
-          <small>
-            <template v-if="parentOf(t.name)">Nested in {{ parentOf(t.name) }}</template>
-            <template v-else>{{ sourceByTable.get(t.name) ?? 'Unknown source' }}</template>
-            · {{ t.rows.toLocaleString() }} rows
-          </small>
-        </header>
-        <ul class="columns" :aria-label="`Columns in ${t.name}`">
-          <li v-for="c in t.columns" :key="c.name" :title="`${c.name} (${c.type})`">
-            <span class="badge" :class="c.kind" :title="BADGES[c.kind].title">{{ BADGES[c.kind].label }}</span>
-            <span class="column-name">{{ c.name }}</span>
-          </li>
-        </ul>
-        <footer class="card-foot">{{ t.columns.length }} {{ t.columns.length === 1 ? 'column' : 'columns' }}</footer>
-      </article>
+    <div
+      v-else
+      ref="viewport"
+      class="viewport"
+      :class="{ panning: drag?.kind === 'pan', dragging: drag?.kind === 'table' }"
+      :style="{
+        backgroundPosition: `${pan.x}px ${pan.y}px`,
+        backgroundSize: `${20 * zoom}px ${20 * zoom}px`,
+      }"
+      @pointerdown="startPan"
+      @wheel="onWheel"
+    >
+      <div class="world" :style="{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }">
+        <!-- Relationship lines between tables will be drawn here, underneath the cards, in the
+             same coordinates as the cards' positions. -->
+        <svg class="links" aria-hidden="true"></svg>
+
+        <article
+          v-for="t in tables"
+          :key="t.name"
+          :ref="(el) => setCardElement(t.name, el)"
+          class="table-card"
+          :data-table="t.name"
+          :style="{
+            left: `${positions[t.name]?.x ?? 0}px`,
+            top: `${positions[t.name]?.y ?? 0}px`,
+            width: `${CARD_WIDTH}px`,
+            zIndex: stacking.indexOf(t.name) + 1,
+          }"
+          @pointerdown.stop="bringToFront(t.name)"
+        >
+          <header class="card-head" title="Drag to move" @pointerdown="startTableDrag($event, t.name)">
+            <h3 :title="t.name">{{ t.name }}</h3>
+            <small>
+              <template v-if="parentOf(t.name)">Nested in {{ parentOf(t.name) }}</template>
+              <template v-else>{{ sourceByTable.get(t.name) ?? 'Unknown source' }}</template>
+              · {{ t.rows.toLocaleString() }} rows
+            </small>
+          </header>
+          <ul class="columns" :aria-label="`Columns in ${t.name}`">
+            <li v-for="c in t.columns" :key="c.name" :data-column="c.name" :title="`${c.name} (${c.type})`">
+              <span class="badge" :class="c.kind" :title="BADGES[c.kind].title">{{ BADGES[c.kind].label }}</span>
+              <span class="column-name">{{ c.name }}</span>
+            </li>
+          </ul>
+          <footer class="card-foot">{{ t.columns.length }} {{ t.columns.length === 1 ? 'column' : 'columns' }}</footer>
+        </article>
+      </div>
+
+      <header class="overlay title" @pointerdown.stop>
+        <h2>Model data</h2>
+        <p>
+          {{ tables.length }} {{ tables.length === 1 ? 'table' : 'tables' }} · {{ totalColumns }} columns
+        </p>
+      </header>
+
+      <div class="overlay toolbar" role="toolbar" aria-label="Canvas" @pointerdown.stop>
+        <button title="Zoom out" aria-label="Zoom out" @click="zoomBy(1 / 1.2)">−</button>
+        <span class="zoom-level">{{ Math.round(zoom * 100) }}%</span>
+        <button title="Zoom in" aria-label="Zoom in" @click="zoomBy(1.2)">+</button>
+        <span class="sep" aria-hidden="true"></span>
+        <button title="Show all tables" @click="fitToScreen">Fit</button>
+        <button title="Arrange tables in a grid" @click="tidyUp">Tidy up</button>
+      </div>
+
+      <p class="overlay hint" @pointerdown.stop>Drag tables by their name · drag the background to pan · Ctrl + scroll to zoom</p>
     </div>
   </div>
 </template>
 
 <style scoped>
 .model {
-  width: 100%;
-  padding: 32px 36px 48px;
-  background-image: radial-gradient(var(--border) 1px, transparent 1px);
-  background-size: 20px 20px;
-}
-
-.head {
+  position: relative;
   display: flex;
-  align-items: baseline;
-  gap: 14px;
-  margin-bottom: 22px;
+  flex: 1;
+  min-width: 0;
 }
 
-.head h2 {
-  font-size: 30px;
+.viewport {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
-.head p {
-  margin: 0;
-  color: var(--ink-muted);
+.viewport.panning {
+  cursor: grabbing;
 }
 
-.status {
-  color: var(--ink-muted);
+.world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
 }
 
-.error {
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  background: #fbeceb;
-  color: var(--danger);
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  align-items: start;
-  gap: 16px;
+.links {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
 }
 
 .table-card {
+  position: absolute;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
@@ -147,12 +361,23 @@ const totalColumns = computed(() => tables.value.reduce((sum, t) => sum + t.colu
   background: var(--surface);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
+  cursor: default;
+  transition: box-shadow 0.15s;
+}
+
+.table-card:hover {
+  box-shadow: var(--shadow-md);
 }
 
 .card-head {
   padding: 12px 14px 10px;
   border-top: 3px solid var(--accent);
   border-bottom: 1px solid var(--border);
+  cursor: grab;
+}
+
+.viewport.dragging .card-head {
+  cursor: grabbing;
 }
 
 .card-head h3 {
@@ -242,13 +467,108 @@ const totalColumns = computed(() => tables.value.reduce((sum, t) => sum + t.colu
   font-size: 11px;
 }
 
+.overlay {
+  position: absolute;
+  z-index: 10000;
+  cursor: default;
+}
+
+.title {
+  top: 24px;
+  left: 36px;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 4px 10px 4px 0;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+}
+
+.title h2 {
+  font-size: 30px;
+}
+
+.title p {
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+.toolbar {
+  right: 20px;
+  bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+.toolbar button {
+  min-width: 32px;
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  font-weight: 600;
+}
+
+.toolbar button:hover {
+  background: var(--surface-muted);
+}
+
+.zoom-level {
+  min-width: 44px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.hint {
+  bottom: 26px;
+  left: 36px;
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.error {
+  position: absolute;
+  top: 80px;
+  left: 36px;
+  z-index: 10001;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: #fbeceb;
+  color: var(--danger);
+}
+
+.centered {
+  margin: auto;
+}
+
+.status {
+  color: var(--ink-muted);
+}
+
 .empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
   max-width: 380px;
-  margin: 60px auto 0;
   text-align: center;
 }
 

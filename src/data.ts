@@ -19,6 +19,7 @@ import type {
   DataSource,
   DiscoveredResource,
   LoadedTable,
+  ModelDiagram,
   SaveSourceInput,
   TablePreview,
   TableSchema,
@@ -325,6 +326,39 @@ async function load(id: string, resources: string[]): Promise<LoadedTable[]> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Model diagram (model/diagram.json)
+
+const diagramPath = () => path.join(openProject().filesDir, 'model', 'diagram.json');
+
+/** Keeps only well-formed table positions, rounded to whole pixels. */
+function cleanDiagram(value: unknown): ModelDiagram {
+  const tables: ModelDiagram['tables'] = {};
+  const raw = (value as ModelDiagram | null)?.tables;
+  if (raw && typeof raw === 'object') {
+    for (const [table, position] of Object.entries(raw)) {
+      if (SAFE_TABLE.test(table) && Number.isFinite(position?.x) && Number.isFinite(position?.y)) {
+        tables[table] = { x: Math.round(position.x), y: Math.round(position.y) };
+      }
+    }
+  }
+  return { tables };
+}
+
+async function loadDiagram(): Promise<ModelDiagram> {
+  try {
+    return cleanDiagram(JSON.parse(await fs.readFile(diagramPath(), 'utf8')));
+  } catch {
+    return { tables: {} };
+  }
+}
+
+async function saveDiagram(diagram: ModelDiagram) {
+  await fs.mkdir(path.dirname(diagramPath()), { recursive: true });
+  await fs.writeFile(diagramPath(), JSON.stringify(cleanDiagram(diagram), null, 2) + '\n');
+  await markProjectChanged();
+}
+
+// ---------------------------------------------------------------------------------------------
 // IPC
 
 async function pickPaths(
@@ -356,6 +390,8 @@ export function registerDataHandlers() {
   ipcMain.handle('data:describe-tables', () =>
     callPython<TableSchema[]>('describe_tables', { data_dir: path.join(openProject().filesDir, 'data') }),
   );
+  ipcMain.handle('data:load-diagram', () => loadDiagram());
+  ipcMain.handle('data:save-diagram', (_event, diagram: ModelDiagram) => saveDiagram(diagram));
   ipcMain.handle('data:preview-table', (_event, table: string, limit = 100) =>
     callPython<TablePreview>('preview_table', {
       data_dir: path.join(openProject().filesDir, 'data'),
