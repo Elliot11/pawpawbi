@@ -124,6 +124,8 @@ export interface DiscoveredResource {
 export interface LoadedTable {
   name: string;
   rows: number;
+  /** Set when the table's SQL transform failed to re-run after loading. */
+  transformError?: string;
 }
 
 export type ColumnKind = 'integer' | 'decimal' | 'text' | 'boolean' | 'date' | 'datetime' | 'time' | 'nested' | 'other';
@@ -133,6 +135,8 @@ export interface TableSchema {
   rows: number;
   /** dlt's own _dlt_* columns are left out. */
   columns: { name: string; type: string; kind: ColumnKind }[];
+  /** True when these are the columns of the table's SQL transform result. */
+  transformed: boolean;
 }
 
 /** model/diagram.json: where each table sits on the Model data canvas. */
@@ -166,6 +170,15 @@ export interface DataApi {
   describeTables: () => Promise<TableSchema[]>;
   loadDiagram: () => Promise<ModelDiagram>;
   saveDiagram: (diagram: ModelDiagram) => Promise<void>;
+  /** The table's saved SQL transform, or null if it has none. */
+  getTransform: (table: string) => Promise<string | null>;
+  /** Runs a SELECT query against the original tables and returns the first rows. Saves nothing. */
+  previewTransform: (sql: string) => Promise<TablePreview>;
+  /** Saves the table's transform and writes its result, which then replaces the table everywhere. */
+  applyTransform: (table: string, sql: string) => Promise<{ rows: number }>;
+  removeTransform: (table: string) => Promise<void>;
+  /** Deletes a table (and its nested child tables) from the project. */
+  deleteTable: (table: string) => Promise<void>;
   previewTable: (table: string, limit?: number) => Promise<TablePreview>;
   /** Shows a file or folder picker. Resolves to the chosen paths, or [] if cancelled. */
   pickPaths: (kind: 'file' | 'files' | 'folder', filters?: ConnectorField['fileFilters']) => Promise<string[]>;

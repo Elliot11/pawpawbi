@@ -244,6 +244,9 @@ const formatNumber = (n: number) => n.toLocaleString();
           <button class="loaded" @click="$emit('preview', t.name)">
             <span>{{ t.name }}</span>
             <small>{{ formatNumber(t.rows) }} rows</small>
+            <small v-if="t.transformError" class="transform-error" :title="t.transformError">
+              SQL transform failed, showing original data
+            </small>
             <span class="preview-link">Preview →</span>
           </button>
         </li>
@@ -561,6 +564,10 @@ const formatNumber = (n: number) => n.toLocaleString();
 
 .loaded small {
   color: var(--ink-muted);
+}
+
+.loaded small.transform-error {
+  color: var(--danger);
 }
 
 .preview-link {

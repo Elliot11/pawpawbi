@@ -14,6 +14,7 @@ from importlib.metadata import version
 
 import connectors
 import datasets
+import transforms
 
 
 def info(_params):
@@ -31,6 +32,10 @@ METHODS = {
     "load_file": datasets.load_file,
     "list_tables": datasets.list_tables,
     "describe_tables": datasets.describe_tables,
+    "preview_transform": transforms.preview_transform,
+    "apply_transform": transforms.apply_transform,
+    "remove_transform": transforms.remove_transform,
+    "delete_table": transforms.delete_table,
     "preview_table": datasets.preview_table,
 }
 

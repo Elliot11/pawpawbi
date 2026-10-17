@@ -4,6 +4,11 @@ Each project has a data folder. dlt writes loaded data into its "raw" dataset as
 one sub-folder per table:
 
     <data_dir>/raw/<table>/<load_id>.<file_id>.parquet
+
+A table with a SQL transform (see transforms.py) also has a transformed copy, which is used
+in its place everywhere:
+
+    <data_dir>/model/<table>/data.parquet
 """
 
 import hashlib
@@ -14,6 +19,7 @@ import dlt
 import pandas as pd
 
 RAW_DATASET = "raw"
+MODEL_DATASET = "model"
 
 READERS = {
     ".csv": pd.read_csv,
@@ -39,11 +45,19 @@ def _table_names(data_dir: Path) -> list[str]:
     return sorted(p.name for p in raw.iterdir() if p.is_dir() and not p.name.startswith("_dlt"))
 
 
-def read_table(data_dir: Path, table: str) -> pd.DataFrame:
-    """Read a loaded table into a DataFrame."""
+def _table_dir(data_dir: Path, table: str) -> tuple[Path, bool]:
+    """The folder holding a table's current data, and whether that's the transformed copy."""
     if table not in _table_names(data_dir):
         raise ValueError(f"No table named {table!r}")
-    return pd.read_parquet(data_dir / RAW_DATASET / table)
+    transformed = data_dir / MODEL_DATASET / table
+    if transformed.is_dir():
+        return transformed, True
+    return data_dir / RAW_DATASET / table, False
+
+
+def read_table(data_dir: Path, table: str) -> pd.DataFrame:
+    """Read a loaded table (its transformed version, if it has one) into a DataFrame."""
+    return pd.read_parquet(_table_dir(data_dir, table)[0])
 
 
 def load_file(params):
@@ -98,13 +112,16 @@ def describe_tables(params):
     data_dir = Path(params["data_dir"])
     tables = []
     for name in _table_names(data_dir):
-        dataset = ds.dataset(data_dir / RAW_DATASET / name, format="parquet")
+        folder, transformed = _table_dir(data_dir, name)
+        dataset = ds.dataset(folder, format="parquet")
         columns = [
             {"name": field.name, "type": str(field.type), "kind": _column_kind(field.type)}
             for field in dataset.schema
             if not field.name.startswith("_dlt")  # dlt's own bookkeeping columns
         ]
-        tables.append({"name": name, "rows": dataset.count_rows(), "columns": columns})
+        tables.append(
+            {"name": name, "rows": dataset.count_rows(), "columns": columns, "transformed": transformed}
+        )
     return tables
 
 

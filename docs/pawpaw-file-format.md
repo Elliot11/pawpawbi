@@ -30,7 +30,7 @@ Sales report.pawpaw            (ZIP archive)
 │   │   └── <table>.json       Column types, names and descriptions for one table
 │   ├── relationships.json     How tables join to each other
 │   ├── diagram.json           Where each table sits on the Model data canvas
-│   └── transforms.json        Processing steps that build data/model/   (provisional)
+│   └── transforms.json        SQL transforms that build data/model/
 │
 ├── report/                    What the user sees                         (provisional)
 │   ├── report.json            Page order and report-wide settings
@@ -126,7 +126,7 @@ Identifies the project and the format version. Required.
 The project's data, stored as Parquet.
 
 - **`data/raw/`** is written only by dlt. Each table is a folder of one or more Parquet files that together make up the table; readers must treat the folder as a single table and never rely on file names. The `_dlt_loads`, `_dlt_pipeline_state` and `_dlt_version` folders are dlt's own records. They include the pipeline state dlt needs for incremental loading (fetching only new rows), so they must be kept.
-- **`data/model/`** is written by the pandas processing steps in `model/transforms.json`. It has the same layout as `raw/`. Everything in it can be rebuilt from `raw/` plus the transforms, so a "save without processed data" option could leave it out to make files smaller.
+- **`data/model/`** holds the results of the SQL transforms in `model/transforms.json`: `data/model/<table>/data.parquet` for each transformed table. When a table has one, it's used in place of its `raw/` version everywhere in the app. Everything in it can be rebuilt from `raw/` plus the transforms, so a "save without processed data" option could leave it out to make files smaller.
 
 ## model/
 
@@ -193,9 +193,24 @@ Where each table's card sits on the Model data canvas, in canvas pixels. Tables 
 }
 ```
 
-### model/transforms.json (provisional)
+### model/transforms.json
 
-The pandas processing steps that build `data/model/`, stored as **data, not code**: an ordered list of steps such as filter, rename, join, group and add-calculated-column, which the sidecar carries out with pandas. Storing Python code here would mean that opening a project someone sent you could run arbitrary code on your computer. If custom code is ever supported, it must require the user's explicit approval before running. The exact step definitions will be specified when processing is built.
+Each transformed table's SQL query. The query's result becomes `data/model/<table>/data.parquet` and is re-run whenever the table's source is refreshed.
+
+```json
+{
+  "tables": {
+    "monthly_sales": {
+      "sql": "SELECT order_id, CAST(order_date AS DATE) AS order_date, revenue FROM monthly_sales",
+      "updatedAt": "2026-10-17T11:20:00Z"
+    }
+  }
+}
+```
+
+- A query must be a **single read-only `SELECT`** (DuckDB SQL). It can refer to any table in the project by name, so it can join tables, and it always reads their original `raw/` data, never another transform's result.
+- Queries run in an in-memory DuckDB that can read only the project's `data/` folder: no other files, no network, no extensions, and no changing those settings. Projects can come from other people, so a transform must never be able to reach anything else on the computer.
+- Arbitrary code (Python and the like) is never stored here. If it's ever supported, it must require the user's explicit approval before running.
 
 ## report/ (provisional)
 

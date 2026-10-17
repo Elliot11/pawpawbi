@@ -3,6 +3,7 @@ import { computed, onActivated, onBeforeUnmount, onMounted, ref } from 'vue';
 import { errorMessage } from '../errors';
 import { plain } from '../plain';
 import type { ColumnKind, DataSource, TableSchema } from '../shared/types';
+import TransformEditor from './TransformEditor.vue';
 
 defineEmits<{ addData: [] }>();
 
@@ -61,7 +62,8 @@ function placeNewTables() {
   const placed = tables.value.filter((t) => positions.value[t.name]);
   const unplaced = tables.value.filter((t) => !positions.value[t.name]);
   const top = placed.length
-    ? Math.max(...placed.map((t) => positions.value[t.name].y)) + GRID_ROW_HEIGHT
+    ? Math.max(...placed.map((t) => positions.value[t.name].y)) +
+      GRID_ROW_HEIGHT
     : GRID_ORIGIN.y;
   unplaced.forEach((t, i) => {
     positions.value[t.name] = {
@@ -72,9 +74,27 @@ function placeNewTables() {
 }
 
 async function saveLayout() {
-  const layout = Object.fromEntries(tables.value.map((t) => [t.name, positions.value[t.name]]));
+  const layout = Object.fromEntries(
+    tables.value.map((t) => [t.name, positions.value[t.name]]),
+  );
   try {
     await window.api.data.saveDiagram(plain({ tables: layout }));
+  } catch (err) {
+    error.value = errorMessage(err);
+  }
+}
+
+// --- Table actions ------------------------------------------------------------------------------
+
+/** The table whose SQL transform is open, if any. */
+const transforming = ref<string | null>(null);
+const confirmingDelete = ref<string | null>(null);
+
+async function deleteTable(table: string) {
+  confirmingDelete.value = null;
+  try {
+    await window.api.data.deleteTable(table);
+    await load();
   } catch (err) {
     error.value = errorMessage(err);
   }
@@ -90,7 +110,13 @@ function tidyUp() {
 // --- Dragging tables and panning ------------------------------------------------------------
 
 type Drag =
-  | { kind: 'table'; table: string; start: Point; origin: Point; moved: boolean }
+  | {
+      kind: 'table';
+      table: string;
+      start: Point;
+      origin: Point;
+      moved: boolean;
+    }
   | { kind: 'pan'; start: Point; origin: Point };
 const drag = ref<Drag | null>(null);
 
@@ -116,7 +142,11 @@ function startPan(event: PointerEvent) {
   // Left or middle button on the empty canvas.
   if (event.button !== 0 && event.button !== 1) return;
   event.preventDefault();
-  drag.value = { kind: 'pan', start: { x: event.clientX, y: event.clientY }, origin: { ...pan.value } };
+  drag.value = {
+    kind: 'pan',
+    start: { x: event.clientX, y: event.clientY },
+    origin: { ...pan.value },
+  };
   listenForDrag();
 }
 
@@ -127,7 +157,10 @@ function onDragMove(event: PointerEvent) {
   const dy = event.clientY - d.start.y;
   if (d.kind === 'table') {
     d.moved ||= Math.abs(dx) + Math.abs(dy) > 2;
-    positions.value[d.table] = { x: Math.round(d.origin.x + dx / zoom.value), y: Math.round(d.origin.y + dy / zoom.value) };
+    positions.value[d.table] = {
+      x: Math.round(d.origin.x + dx / zoom.value),
+      y: Math.round(d.origin.y + dy / zoom.value),
+    };
   } else {
     pan.value = { x: d.origin.x + dx, y: d.origin.y + dy };
   }
@@ -150,20 +183,31 @@ onBeforeUnmount(onDragEnd);
 
 // --- Zoom ----------------------------------------------------------------------------------------
 
-const clampZoom = (value: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+const clampZoom = (value: number) =>
+  Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
 
 /** Zooms keeping the canvas point under (clientX, clientY) in place. */
 function zoomAt(clientX: number, clientY: number, nextZoom: number) {
   const rect = viewport.value!.getBoundingClientRect();
   const screen = { x: clientX - rect.left, y: clientY - rect.top };
-  const world = { x: (screen.x - pan.value.x) / zoom.value, y: (screen.y - pan.value.y) / zoom.value };
+  const world = {
+    x: (screen.x - pan.value.x) / zoom.value,
+    y: (screen.y - pan.value.y) / zoom.value,
+  };
   zoom.value = clampZoom(nextZoom);
-  pan.value = { x: screen.x - world.x * zoom.value, y: screen.y - world.y * zoom.value };
+  pan.value = {
+    x: screen.x - world.x * zoom.value,
+    y: screen.y - world.y * zoom.value,
+  };
 }
 
 function zoomBy(factor: number) {
   const rect = viewport.value!.getBoundingClientRect();
-  zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, zoom.value * factor);
+  zoomAt(
+    rect.left + rect.width / 2,
+    rect.top + rect.height / 2,
+    zoom.value * factor,
+  );
 }
 
 function onWheel(event: WheelEvent) {
@@ -172,16 +216,26 @@ function onWheel(event: WheelEvent) {
   if (!event.ctrlKey && list && list.scrollHeight > list.clientHeight) return;
   event.preventDefault();
   if (event.ctrlKey || event.metaKey) {
-    zoomAt(event.clientX, event.clientY, zoom.value * Math.exp(-event.deltaY * 0.002));
+    zoomAt(
+      event.clientX,
+      event.clientY,
+      zoom.value * Math.exp(-event.deltaY * 0.002),
+    );
   } else {
-    pan.value = { x: pan.value.x - event.deltaX, y: pan.value.y - event.deltaY };
+    pan.value = {
+      x: pan.value.x - event.deltaX,
+      y: pan.value.y - event.deltaY,
+    };
   }
 }
 
 /** Zooms and pans so every table is visible. */
 function fitToScreen() {
   if (!viewport.value || tables.value.length === 0) return;
-  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  let left = Infinity,
+    top = Infinity,
+    right = -Infinity,
+    bottom = -Infinity;
   for (const t of tables.value) {
     const p = positions.value[t.name];
     const height = cardElements.get(t.name)?.offsetHeight ?? GRID_ROW_HEIGHT;
@@ -192,10 +246,19 @@ function fitToScreen() {
   }
   const padding = 48;
   const { clientWidth, clientHeight } = viewport.value;
-  zoom.value = clampZoom(Math.min(1, (clientWidth - padding * 2) / (right - left), (clientHeight - padding * 2 - 60) / (bottom - top)));
+  zoom.value = clampZoom(
+    Math.min(
+      1,
+      (clientWidth - padding * 2) / (right - left),
+      (clientHeight - padding * 2 - 60) / (bottom - top),
+    ),
+  );
   pan.value = {
     x: (clientWidth - (right - left) * zoom.value) / 2 - left * zoom.value,
-    y: 60 + (clientHeight - 60 - (bottom - top) * zoom.value) / 2 - top * zoom.value,
+    y:
+      60 +
+      (clientHeight - 60 - (bottom - top) * zoom.value) / 2 -
+      top * zoom.value,
   };
 }
 
@@ -208,7 +271,8 @@ const sourceByTable = computed(() => {
 });
 
 /** dlt splits nested data into child tables named parent__child. */
-const parentOf = (table: string) => (table.includes('__') ? table.slice(0, table.lastIndexOf('__')) : null);
+const parentOf = (table: string) =>
+  table.includes('__') ? table.slice(0, table.lastIndexOf('__')) : null;
 
 const BADGES: Record<ColumnKind, { label: string; title: string }> = {
   integer: { label: '123', title: 'Whole number' },
@@ -222,7 +286,9 @@ const BADGES: Record<ColumnKind, { label: string; title: string }> = {
   other: { label: '?', title: 'Other' },
 };
 
-const totalColumns = computed(() => tables.value.reduce((sum, t) => sum + t.columns.length, 0));
+const totalColumns = computed(() =>
+  tables.value.reduce((sum, t) => sum + t.columns.length, 0),
+);
 
 function setCardElement(table: string, element: unknown) {
   if (element instanceof HTMLElement) cardElements.set(table, element);
@@ -232,86 +298,194 @@ function setCardElement(table: string, element: unknown) {
 
 <template>
   <div class="model">
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
+    <TransformEditor
+      v-if="transforming"
+      :key="transforming"
+      :table="transforming"
+      :tables="tables"
+      @back="transforming = null"
+      @changed="load"
+    />
 
-    <div v-if="loading" class="centered status">Loading tables…</div>
+    <template v-else>
+      <p v-if="error" class="error" role="alert">{{ error }}</p>
 
-    <div v-else-if="tables.length === 0 && !error" class="centered empty">
-      <div class="empty-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><path d="M3 4h7v6H3zM14 14h7v6h-7zM6.5 10v4a3 3 0 0 0 3 3H14" /></svg>
-      </div>
-      <h3>No tables yet</h3>
-      <p>Add data first. Each table you load will appear here with its columns.</p>
-      <button class="primary" @click="$emit('addData')">Add data</button>
-    </div>
+      <div v-if="loading" class="centered status">Loading tables…</div>
 
-    <div
-      v-else
-      ref="viewport"
-      class="viewport"
-      :class="{ panning: drag?.kind === 'pan', dragging: drag?.kind === 'table' }"
-      :style="{
-        backgroundPosition: `${pan.x}px ${pan.y}px`,
-        backgroundSize: `${20 * zoom}px ${20 * zoom}px`,
-      }"
-      @pointerdown="startPan"
-      @wheel="onWheel"
-    >
-      <div class="world" :style="{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }">
-        <!-- Relationship lines between tables will be drawn here, underneath the cards, in the
-             same coordinates as the cards' positions. -->
-        <svg class="links" aria-hidden="true"></svg>
-
-        <article
-          v-for="t in tables"
-          :key="t.name"
-          :ref="(el) => setCardElement(t.name, el)"
-          class="table-card"
-          :data-table="t.name"
-          :style="{
-            left: `${positions[t.name]?.x ?? 0}px`,
-            top: `${positions[t.name]?.y ?? 0}px`,
-            width: `${CARD_WIDTH}px`,
-            zIndex: stacking.indexOf(t.name) + 1,
-          }"
-          @pointerdown.stop="bringToFront(t.name)"
-        >
-          <header class="card-head" title="Drag to move" @pointerdown="startTableDrag($event, t.name)">
-            <h3 :title="t.name">{{ t.name }}</h3>
-            <small>
-              <template v-if="parentOf(t.name)">Nested in {{ parentOf(t.name) }}</template>
-              <template v-else>{{ sourceByTable.get(t.name) ?? 'Unknown source' }}</template>
-              · {{ t.rows.toLocaleString() }} rows
-            </small>
-          </header>
-          <ul class="columns" :aria-label="`Columns in ${t.name}`">
-            <li v-for="c in t.columns" :key="c.name" :data-column="c.name" :title="`${c.name} (${c.type})`">
-              <span class="badge" :class="c.kind" :title="BADGES[c.kind].title">{{ BADGES[c.kind].label }}</span>
-              <span class="column-name">{{ c.name }}</span>
-            </li>
-          </ul>
-          <footer class="card-foot">{{ t.columns.length }} {{ t.columns.length === 1 ? 'column' : 'columns' }}</footer>
-        </article>
-      </div>
-
-      <header class="overlay title" @pointerdown.stop>
-        <h2>Model data</h2>
+      <div v-else-if="tables.length === 0 && !error" class="centered empty">
+        <div class="empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M3 4h7v6H3zM14 14h7v6h-7zM6.5 10v4a3 3 0 0 0 3 3H14" />
+          </svg>
+        </div>
+        <h3>No tables yet</h3>
         <p>
-          {{ tables.length }} {{ tables.length === 1 ? 'table' : 'tables' }} · {{ totalColumns }} columns
+          Add data first. Each table you load will appear here with its columns.
         </p>
-      </header>
-
-      <div class="overlay toolbar" role="toolbar" aria-label="Canvas" @pointerdown.stop>
-        <button title="Zoom out" aria-label="Zoom out" @click="zoomBy(1 / 1.2)">−</button>
-        <span class="zoom-level">{{ Math.round(zoom * 100) }}%</span>
-        <button title="Zoom in" aria-label="Zoom in" @click="zoomBy(1.2)">+</button>
-        <span class="sep" aria-hidden="true"></span>
-        <button title="Show all tables" @click="fitToScreen">Fit</button>
-        <button title="Arrange tables in a grid" @click="tidyUp">Tidy up</button>
+        <button class="primary" @click="$emit('addData')">Add data</button>
       </div>
 
-      <p class="overlay hint" @pointerdown.stop>Drag tables by their name · drag the background to pan · Ctrl + scroll to zoom</p>
-    </div>
+      <div
+        v-else
+        ref="viewport"
+        class="viewport"
+        :class="{
+          panning: drag?.kind === 'pan',
+          dragging: drag?.kind === 'table',
+        }"
+        :style="{
+          backgroundPosition: `${pan.x}px ${pan.y}px`,
+          backgroundSize: `${20 * zoom}px ${20 * zoom}px`,
+        }"
+        @pointerdown="startPan"
+        @wheel="onWheel"
+      >
+        <div
+          class="world"
+          :style="{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+          }"
+        >
+          <!-- Relationship lines between tables will be drawn here, underneath the cards, in the
+             same coordinates as the cards' positions. -->
+          <svg class="links" aria-hidden="true"></svg>
+
+          <article
+            v-for="t in tables"
+            :key="t.name"
+            :ref="(el) => setCardElement(t.name, el)"
+            class="table-card"
+            :data-table="t.name"
+            :style="{
+              left: `${positions[t.name]?.x ?? 0}px`,
+              top: `${positions[t.name]?.y ?? 0}px`,
+              width: `${CARD_WIDTH}px`,
+              zIndex: stacking.indexOf(t.name) + 1,
+            }"
+            @pointerdown.stop="bringToFront(t.name)"
+          >
+            <header
+              class="card-head"
+              title="Drag to move"
+              @pointerdown="startTableDrag($event, t.name)"
+            >
+              <h3 :title="t.name">{{ t.name }}</h3>
+              <small>
+                <template v-if="parentOf(t.name)"
+                  >Nested in {{ parentOf(t.name) }}</template
+                >
+                <template v-else>{{
+                  sourceByTable.get(t.name) ?? 'Unknown source'
+                }}</template>
+                · {{ t.rows.toLocaleString() }} rows
+              </small>
+            </header>
+            <div class="card-tools">
+              <template v-if="confirmingDelete === t.name">
+                <span
+                  class="confirm-text"
+                  title="Refreshing its data source will load it again"
+                  >Delete this table?</span
+                >
+                <button class="tool danger-solid" @click="deleteTable(t.name)">
+                  Delete
+                </button>
+                <button class="tool" @click="confirmingDelete = null">
+                  Cancel
+                </button>
+              </template>
+              <template v-else>
+                <button
+                  class="tool"
+                  title="Transform this table with SQL"
+                  @click="transforming = t.name"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 6l-6 6 6 6M16 6l6 6-6 6" />
+                  </svg>
+                  Transform
+                </button>
+                <span
+                  v-if="t.transformed"
+                  class="sql-badge"
+                  title="This table shows the result of a SQL transform"
+                  >SQL</span
+                >
+                <button
+                  class="tool delete"
+                  title="Delete this table"
+                  @click="confirmingDelete = t.name"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"
+                    />
+                  </svg>
+                  Delete
+                </button>
+              </template>
+            </div>
+            <ul class="columns" :aria-label="`Columns in ${t.name}`">
+              <li
+                v-for="c in t.columns"
+                :key="c.name"
+                :data-column="c.name"
+                :title="`${c.name} (${c.type})`"
+              >
+                <span
+                  class="badge"
+                  :class="c.kind"
+                  :title="BADGES[c.kind].title"
+                  >{{ BADGES[c.kind].label }}</span
+                >
+                <span class="column-name">{{ c.name }}</span>
+              </li>
+            </ul>
+            <footer class="card-foot">
+              {{ t.columns.length }}
+              {{ t.columns.length === 1 ? 'column' : 'columns' }}
+            </footer>
+          </article>
+        </div>
+
+        <header class="overlay title" @pointerdown.stop>
+          <h2>Model data</h2>
+          <p>
+            {{ tables.length }} {{ tables.length === 1 ? 'table' : 'tables' }} ·
+            {{ totalColumns }} columns
+          </p>
+        </header>
+
+        <div
+          class="overlay toolbar"
+          role="toolbar"
+          aria-label="Canvas"
+          @pointerdown.stop
+        >
+          <button
+            title="Zoom out"
+            aria-label="Zoom out"
+            @click="zoomBy(1 / 1.2)"
+          >
+            −
+          </button>
+          <span class="zoom-level">{{ Math.round(zoom * 100) }}%</span>
+          <button title="Zoom in" aria-label="Zoom in" @click="zoomBy(1.2)">
+            +
+          </button>
+          <span class="sep" aria-hidden="true"></span>
+          <button title="Show all tables" @click="fitToScreen">Fit</button>
+          <button title="Arrange tables in a grid" @click="tidyUp">
+            Tidy up
+          </button>
+        </div>
+
+        <p class="overlay hint" @pointerdown.stop>
+          Drag tables by their name · drag the background to pan · Ctrl + scroll
+          to zoom
+        </p>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -396,6 +570,75 @@ function setCardElement(table: string, element: unknown) {
   font-size: 12px;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.card-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 38px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.tool {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tool:hover {
+  background: var(--surface-muted);
+  color: var(--ink);
+}
+
+.tool svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tool.delete {
+  margin-left: auto;
+}
+
+.tool.delete:hover {
+  background: #fbeceb;
+  color: var(--danger);
+}
+
+.tool.danger-solid {
+  margin-left: auto;
+  background: var(--danger);
+  color: #fff;
+}
+
+.confirm-text {
+  padding-left: 4px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sql-badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #eaf6ee;
+  color: #1d6b3a;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .columns {

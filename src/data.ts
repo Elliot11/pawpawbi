@@ -322,7 +322,12 @@ async function load(id: string, resources: string[]): Promise<LoadedTable[]> {
   const tables = result.tables.map((t) => t.name);
   await removeTables(source.tables.filter((t) => !tables.includes(t)));
   await writeSource({ ...source, resources, tables, lastLoadedAt: new Date().toISOString() });
-  return result.tables;
+
+  // The new data replaces the old, so tables with SQL transforms need them re-run.
+  const transformErrors = await reapplyTransforms(tables);
+  return result.tables.map((t) =>
+    transformErrors[t.name] ? { ...t, transformError: transformErrors[t.name] } : t,
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -359,6 +364,93 @@ async function saveDiagram(diagram: ModelDiagram) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// SQL transforms (model/transforms.json; results in data/model/<table>, see transforms.py)
+
+interface TransformsFile {
+  tables: Record<string, { sql: string; updatedAt: string }>;
+}
+
+const transformsPath = () => path.join(openProject().filesDir, 'model', 'transforms.json');
+const dataDir = () => path.join(openProject().filesDir, 'data');
+
+async function readTransforms(): Promise<TransformsFile> {
+  try {
+    const parsed = JSON.parse(await fs.readFile(transformsPath(), 'utf8'));
+    const tables: TransformsFile['tables'] = {};
+    for (const [table, t] of Object.entries(parsed?.tables ?? {})) {
+      const transform = t as { sql?: unknown; updatedAt?: unknown };
+      if (SAFE_TABLE.test(table) && typeof transform.sql === 'string') {
+        tables[table] = { sql: transform.sql, updatedAt: String(transform.updatedAt ?? '') };
+      }
+    }
+    return { tables };
+  } catch {
+    return { tables: {} };
+  }
+}
+
+async function writeTransforms(transforms: TransformsFile) {
+  await fs.mkdir(path.dirname(transformsPath()), { recursive: true });
+  await fs.writeFile(transformsPath(), JSON.stringify(transforms, null, 2) + '\n');
+  await markProjectChanged();
+}
+
+async function applyTransform(table: string, sql: string) {
+  if (!SAFE_TABLE.test(table)) throw new Error('Invalid table name.');
+  // Run it first, so a failing query is never saved.
+  const result = await callPython<{ rows: number }>('apply_transform', { data_dir: dataDir(), table, sql });
+  const transforms = await readTransforms();
+  transforms.tables[table] = { sql, updatedAt: new Date().toISOString() };
+  await writeTransforms(transforms);
+  return result;
+}
+
+async function removeTransform(table: string) {
+  await callPython('remove_transform', { data_dir: dataDir(), table });
+  const transforms = await readTransforms();
+  delete transforms.tables[table];
+  await writeTransforms(transforms);
+}
+
+/** Re-runs the transforms of freshly loaded tables. Returns an error message per failed table. */
+async function reapplyTransforms(tables: string[]): Promise<Record<string, string>> {
+  const transforms = (await readTransforms()).tables;
+  const errors: Record<string, string> = {};
+  for (const table of tables) {
+    const transform = transforms[table];
+    if (!transform) continue;
+    try {
+      await callPython('apply_transform', { data_dir: dataDir(), table, sql: transform.sql });
+    } catch (error) {
+      errors[table] = (error as Error).message;
+      // Don't leave the previous result over the new data: show the original until it's fixed.
+      // The query itself stays saved so it can be edited.
+      await callPython('remove_transform', { data_dir: dataDir(), table }).catch(() => {});
+    }
+  }
+  return errors;
+}
+
+/** Deletes a table and its nested child tables (parent__child), with their transforms and layout. */
+async function deleteTable(table: string) {
+  if (!SAFE_TABLE.test(table)) throw new Error('Invalid table name.');
+  const owner = (await readAllSources()).find((s) => s.tables.includes(table));
+  const doomed = [table, ...(owner?.tables ?? []).filter((t) => t.startsWith(`${table}__`))];
+
+  for (const t of doomed) await callPython('delete_table', { data_dir: dataDir(), table: t });
+
+  if (owner) await writeSource({ ...owner, tables: owner.tables.filter((t) => !doomed.includes(t)) });
+  const transforms = await readTransforms();
+  const diagram = await loadDiagram();
+  for (const t of doomed) {
+    delete transforms.tables[t];
+    delete diagram.tables[t];
+  }
+  await writeTransforms(transforms);
+  await saveDiagram(diagram);
+}
+
+// ---------------------------------------------------------------------------------------------
 // IPC
 
 async function pickPaths(
@@ -390,6 +482,15 @@ export function registerDataHandlers() {
   ipcMain.handle('data:describe-tables', () =>
     callPython<TableSchema[]>('describe_tables', { data_dir: path.join(openProject().filesDir, 'data') }),
   );
+  ipcMain.handle('data:get-transform', async (_event, table: string) =>
+    (await readTransforms()).tables[table]?.sql ?? null,
+  );
+  ipcMain.handle('data:preview-transform', (_event, sql: string) =>
+    callPython<TablePreview>('preview_transform', { data_dir: dataDir(), sql, limit: 200 }),
+  );
+  ipcMain.handle('data:apply-transform', (_event, table: string, sql: string) => applyTransform(table, sql));
+  ipcMain.handle('data:remove-transform', (_event, table: string) => removeTransform(table));
+  ipcMain.handle('data:delete-table', (_event, table: string) => deleteTable(table));
   ipcMain.handle('data:load-diagram', () => loadDiagram());
   ipcMain.handle('data:save-diagram', (_event, diagram: ModelDiagram) => saveDiagram(diagram));
   ipcMain.handle('data:preview-table', (_event, table: string, limit = 100) =>
