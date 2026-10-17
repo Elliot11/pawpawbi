@@ -402,7 +402,6 @@ const sqlName = (name: string) =>
             <button class="suggestion" @click="useName(nameProblem.suggestion)">
               Use {{ nameProblem.suggestion }}
             </button>
-            <span class="name-hint">or click Create table again to use it</span>
           </p>
         </div>
 
@@ -539,10 +538,6 @@ const sqlName = (name: string) =>
   margin: 0;
   color: var(--danger);
   font-size: 13px;
-}
-
-.name-hint {
-  color: var(--ink-muted);
 }
 
 .suggestion {
