@@ -31,6 +31,10 @@ data sources themselves.
   digits only (`parseManifest`). Source IDs (`SAFE_ID`) and table names (`SAFE_TABLE`) are
   checked before any path is built from them (`data.ts`, `credentials.ts`).
 - **Newer formats.** A file with a higher `formatVersion` is refused rather than half-understood.
+- **Stored dependencies.** `dependsOn` in `model/transformed.json` is only used to order rebuilds.
+  A tampered file can at worst produce a wrong order or a cycle; cycles are detected
+  (`buildOrder`) and those tables fail with an error instead of looping. When a query is saved in
+  the app, its dependencies are recomputed from the SQL rather than trusted.
 - **Saving.** Writes go to a temporary file that then replaces the original, so a failed save
   can't corrupt the project.
 

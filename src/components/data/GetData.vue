@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { errorMessage } from '../../errors';
-import type { ConnectorCatalog, ConnectorInfo, DataSource } from '../../shared/types';
+import type {
+  ConnectorCatalog,
+  ConnectorInfo,
+  DataSource,
+} from '../../shared/types';
 import ConnectorGallery from './ConnectorGallery.vue';
 import SourceSetup from './SourceSetup.vue';
 import TablePreview from './TablePreview.vue';
@@ -26,13 +30,17 @@ const confirmingRemove = ref<string | null>(null);
 const QUICK_PICKS = ['local_files', 'postgres', 'google_sheets', 'rest_api'];
 
 const unsubscribe = window.api.data.onProgress((p) => {
-  if (p.sourceId in refreshing.value) refreshing.value = { ...refreshing.value, [p.sourceId]: p.message };
+  if (p.sourceId in refreshing.value)
+    refreshing.value = { ...refreshing.value, [p.sourceId]: p.message };
 });
 onBeforeUnmount(unsubscribe);
 
 onMounted(async () => {
   try {
-    [catalog.value, sources.value] = await Promise.all([window.api.data.catalog(), window.api.data.listSources()]);
+    [catalog.value, sources.value] = await Promise.all([
+      window.api.data.catalog(),
+      window.api.data.listSources(),
+    ]);
   } catch (err) {
     error.value = errorMessage(err);
   } finally {
@@ -40,9 +48,12 @@ onMounted(async () => {
   }
 });
 
-const connectorFor = (type: string) => catalog.value?.connectors.find((c) => c.id === type);
+const connectorFor = (type: string) =>
+  catalog.value?.connectors.find((c) => c.id === type);
 const quickPicks = computed(() =>
-  QUICK_PICKS.map((id) => connectorFor(id)).filter((c): c is ConnectorInfo => Boolean(c)),
+  QUICK_PICKS.map((id) => connectorFor(id)).filter((c): c is ConnectorInfo =>
+    Boolean(c),
+  ),
 );
 
 async function reloadSources() {
@@ -68,7 +79,10 @@ async function refresh(source: DataSource) {
     await window.api.data.load(source.id, source.resources);
     await reloadSources();
   } catch (err) {
-    refreshErrors.value = { ...refreshErrors.value, [source.id]: errorMessage(err) };
+    refreshErrors.value = {
+      ...refreshErrors.value,
+      [source.id]: errorMessage(err),
+    };
   } finally {
     const { [source.id]: __, ...rest } = refreshing.value;
     refreshing.value = rest;
@@ -81,7 +95,10 @@ async function remove(source: DataSource) {
     await window.api.data.removeSource(source.id);
     await reloadSources();
   } catch (err) {
-    refreshErrors.value = { ...refreshErrors.value, [source.id]: errorMessage(err) };
+    refreshErrors.value = {
+      ...refreshErrors.value,
+      [source.id]: errorMessage(err),
+    };
   }
 }
 
@@ -91,7 +108,8 @@ function edit(source: DataSource) {
 }
 
 /** The data source that loaded a table. */
-const sourceOf = (table: string) => sources.value.find((s) => s.tables.includes(table));
+const sourceOf = (table: string) =>
+  sources.value.find((s) => s.tables.includes(table));
 
 function editTableSource(table: string) {
   const source = sourceOf(table);
@@ -105,7 +123,9 @@ async function previewFromSetup(table: string) {
   view.value = { name: 'preview', table, returnTo };
 }
 
-const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+const relativeTime = new Intl.RelativeTimeFormat(undefined, {
+  numeric: 'auto',
+});
 function timeAgo(iso: string) {
   const minutes = Math.round((Date.now() - Date.parse(iso)) / 60_000);
   if (minutes < 60) return relativeTime.format(-minutes, 'minute');
@@ -118,7 +138,9 @@ function timeAgo(iso: string) {
 <template>
   <div class="get-data">
     <p v-if="loading" class="status">Loading connectors…</p>
-    <p v-else-if="error" class="error" role="alert">Couldn't load the connector list: {{ error }}</p>
+    <p v-else-if="error" class="error" role="alert">
+      Couldn't load the connector list: {{ error }}
+    </p>
 
     <template v-else-if="catalog">
       <ConnectorGallery
@@ -152,61 +174,123 @@ function timeAgo(iso: string) {
         <header class="head">
           <div>
             <h2>Data</h2>
-            <p>Connect to your data. Each source loads into tables inside this project.</p>
+            <p>
+              Connect to your data. Each source loads into tables inside this
+              project.
+            </p>
           </div>
-          <button v-if="sources.length" class="primary" @click="view = { name: 'gallery' }">+ Add data source</button>
+          <button
+            v-if="sources.length"
+            class="primary"
+            @click="view = { name: 'gallery' }"
+          >
+            + Add data source
+          </button>
         </header>
 
         <div v-if="sources.length === 0" class="empty">
           <h3>Where does your data live?</h3>
-          <p>Choose a source to get started, or browse all {{ catalog.connectors.length }} connectors.</p>
+          <p>
+            Choose a source to get started, or browse all
+            {{ catalog.connectors.length }} connectors.
+          </p>
           <div class="quick">
-            <button v-for="c in quickPicks" :key="c.id" class="quick-card" @click="view = { name: 'setup', connector: c }">
-              <span class="monogram" aria-hidden="true">{{ c.name.charAt(0) }}</span>
+            <button
+              v-for="c in quickPicks"
+              :key="c.id"
+              class="quick-card"
+              @click="view = { name: 'setup', connector: c }"
+            >
+              <span class="monogram" aria-hidden="true">{{
+                c.name.charAt(0)
+              }}</span>
               {{ c.name }}
             </button>
           </div>
-          <button class="primary" @click="view = { name: 'gallery' }">Browse all connectors</button>
+          <button class="primary" @click="view = { name: 'gallery' }">
+            Browse all connectors
+          </button>
         </div>
 
         <ul v-else class="sources">
           <li v-for="s in sources" :key="s.id" class="source">
             <div class="source-head">
-              <span class="monogram" aria-hidden="true">{{ s.name.charAt(0) }}</span>
+              <span class="monogram" aria-hidden="true">{{
+                s.name.charAt(0)
+              }}</span>
               <div class="source-text">
                 <strong>{{ s.name }}</strong>
                 <small>
                   {{ connectorFor(s.type)?.name ?? s.type }} ·
-                  <template v-if="refreshing[s.id]">{{ refreshing[s.id] }}</template>
+                  <template v-if="refreshing[s.id]">{{
+                    refreshing[s.id]
+                  }}</template>
                   <template v-else-if="s.lastLoadedAt">
-                    {{ s.tables.length }} {{ s.tables.length === 1 ? 'table' : 'tables' }}, loaded {{ timeAgo(s.lastLoadedAt) }}
+                    {{ s.tables.length }}
+                    {{ s.tables.length === 1 ? 'table' : 'tables' }}, loaded
+                    {{ timeAgo(s.lastLoadedAt) }}
                   </template>
                   <template v-else>Not loaded yet</template>
                 </small>
               </div>
 
-              <div v-if="confirmingRemove === s.id" class="source-actions confirm">
+              <div
+                v-if="confirmingRemove === s.id"
+                class="source-actions confirm"
+              >
                 <span>Remove this source and its tables?</span>
                 <button class="danger" @click="remove(s)">Remove</button>
-                <button class="ghost" @click="confirmingRemove = null">Keep</button>
+                <button class="ghost" @click="confirmingRemove = null">
+                  Keep
+                </button>
               </div>
               <div v-else class="source-actions">
-                <button class="ghost" :disabled="s.id in refreshing" @click="refresh(s)">
-                  {{ s.id in refreshing ? 'Loading…' : s.lastLoadedAt ? 'Refresh' : 'Load' }}
+                <button
+                  class="ghost"
+                  :disabled="s.id in refreshing"
+                  @click="refresh(s)"
+                >
+                  {{
+                    s.id in refreshing
+                      ? 'Loading…'
+                      : s.lastLoadedAt
+                        ? 'Refresh'
+                        : 'Load'
+                  }}
                 </button>
-                <button class="ghost" :disabled="s.id in refreshing" @click="edit(s)">Edit</button>
-                <button class="ghost" :disabled="s.id in refreshing" @click="confirmingRemove = s.id">Remove</button>
+                <button
+                  class="ghost"
+                  :disabled="s.id in refreshing"
+                  @click="edit(s)"
+                >
+                  Edit
+                </button>
+                <button
+                  class="ghost"
+                  :disabled="s.id in refreshing"
+                  @click="confirmingRemove = s.id"
+                >
+                  Remove
+                </button>
               </div>
             </div>
 
-            <p v-if="refreshErrors[s.id]" class="error" role="alert">{{ refreshErrors[s.id] }}</p>
+            <p v-if="refreshErrors[s.id]" class="error" role="alert">
+              {{ refreshErrors[s.id] }}
+            </p>
 
             <div v-if="s.tables.length" class="table-chips">
               <button
                 v-for="t in s.tables"
                 :key="t"
                 class="chip"
-                @click="view = { name: 'preview', table: t, returnTo: { name: 'overview' } }"
+                @click="
+                  view = {
+                    name: 'preview',
+                    table: t,
+                    returnTo: { name: 'overview' },
+                  }
+                "
               >
                 {{ t }}
               </button>

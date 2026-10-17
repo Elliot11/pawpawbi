@@ -49,6 +49,17 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
   small models; rebuild only what's downstream of the loaded tables if it gets slow.
 - **Connectors needing extra packages require internet on first use**, which may not work on
   locked-down networks. Consider an offline bundle option.
-- **`npm audit`** reports two critical issues in the Forge template's build dependencies. Not yet
-  investigated.
+- **`npm audit`** reports two critical issues, both in build tools from the Forge template. What the
+  app ships has none (`npm audit --omit=dev`). Not yet investigated.
+- **Closing a project while a load or rebuild is running isn't prevented.** Closing deletes the
+  working folder the job is writing to. Block closing (or wait) while jobs run.
+- **Tables can't be renamed**, and deleting a table can't be undone.
+- **The in-place transform editor lists columns as currently shown**, so for a table that already
+  has a transform it shows the transformed columns, though the query reads the original ones.
+- **Files outside projects are never cleaned up**: saved credentials, dlt state and working folders
+  of deleted projects, and connector environments no longer used.
+- **The main process's logic has no automated tests** (opening and saving projects, rebuild
+  orchestration, refusing deletes). Only the pure parts (archive format, dependency ordering)
+  and the Python side are tested.
+- **About 54 files don't match the formatter.** `npm run lint:fix` would fix them in one commit.
 - **Opening and saving large projects copies all their data** (unzip and re-zip).

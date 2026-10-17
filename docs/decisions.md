@@ -47,6 +47,7 @@ into `python/sidecar/verified_sources/`.
 APIs) behind one programming model, and handles pagination, nested data and schemas.
 
 **Alternatives:**
+
 - **DuckDB's own extensions** for files and databases. They're faster for bulk copies, but we'd
   still need dlt for business apps, so we'd maintain two connector systems. They'd also download
   extensions at runtime, which the query sandbox blocks on purpose. Worth considering for specific
@@ -66,6 +67,7 @@ Everything that reads loaded data goes through one locked-down, in-memory DuckDB
 visuals. The file connectors read CSV with DuckDB and Excel with openpyxl. pandas isn't used.
 
 **Why:**
+
 - **Parquet storage:** plain files that travel inside the project, readable by many tools, compact
   and typed.
 - **DuckDB querying:** joins, aggregations for charts and filtering are SQL-shaped work, and DuckDB
@@ -77,6 +79,7 @@ visuals. The file connectors read CSV with DuckDB and Excel with openpyxl. panda
 - **Smaller app:** without pandas and numpy, the bundle is about 120 MB smaller.
 
 **Alternatives:**
+
 - **Store the data in a DuckDB database file** inside the project.
   - Only one process can write to a DuckDB file at a time, but loads run in their own processes
     while the sidecar reads.
@@ -87,6 +90,7 @@ visuals. The file connectors read CSV with DuckDB and Excel with openpyxl. panda
     views or macros.
 
   Worth reconsidering if projects get large enough to need indexes or incremental updates.
+
 - **pandas for reading and processing:** slower, loads whole tables into memory, and adds about
   120 MB.
 - **SQLite:** an older SQL dialect and slow on analytical queries.
@@ -181,6 +185,7 @@ DuckDB's own `get_table_names` resolves views to the files behind them, so it ca
 - **Safe deletes:** tables that others read can't be deleted.
 
 **Why:**
+
 - **SQL:** widely known and expressive (joins, window functions, dates), and DuckDB runs it fast
   while staying confined to the project's data folder.
 - **Separate transformed tables:** they keep combining data separate from the loaded tables, and
@@ -189,6 +194,7 @@ DuckDB's own `get_table_names` resolves views to the files behind them, so it ca
   table. Both were wanted.
 
 **Alternatives:**
+
 - **Only transformed tables:** simpler, with one concept instead of two, but rejected because
   quick in-place fixes were wanted.
 - **SQLite via pandas:** an older dialect, and slow because it copies data.
@@ -196,6 +202,7 @@ DuckDB's own `get_table_names` resolves views to the files behind them, so it ca
 - **A fixed list of step types** such as filter, rename and join: less flexible.
 
 **Consequences:**
+
 - Every load rebuilds all transforms and transformed tables. That's simple and always correct,
   but slower for large models.
 - Better type detection in a reload can change column types, which can affect a query.

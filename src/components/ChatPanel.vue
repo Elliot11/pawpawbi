@@ -13,13 +13,18 @@ const loading = ref(true);
 const thinking = ref(false);
 const scroller = ref<HTMLElement | null>(null);
 
-const canSend = computed(() => draft.value.trim() !== '' && !loading.value && !thinking.value);
+const canSend = computed(
+  () => draft.value.trim() !== '' && !loading.value && !thinking.value,
+);
 
 // How many of `messages` are already saved in the project. The intro message isn't saved
 // until the user replies, so opening a project and closing it again isn't a change.
 let savedCount = 0;
 
-const createMessage = (role: ChatMessage['role'], text: string): ChatMessage => ({
+const createMessage = (
+  role: ChatMessage['role'],
+  text: string,
+): ChatMessage => ({
   id: newId(),
   role,
   text,
@@ -82,7 +87,11 @@ function onKeydown(event: KeyboardEvent) {
       <div v-for="m in messages" :key="m.id" class="message" :class="m.role">
         {{ m.text }}
       </div>
-      <div v-if="thinking" class="message assistant typing" aria-label="Assistant is typing">
+      <div
+        v-if="thinking"
+        class="message assistant typing"
+        aria-label="Assistant is typing"
+      >
         <span></span><span></span><span></span>
       </div>
     </div>

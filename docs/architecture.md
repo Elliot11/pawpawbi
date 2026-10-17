@@ -32,24 +32,24 @@ flowchart LR
   J <--> X
 ```
 
-| Process | Code | Responsibilities |
-|---|---|---|
-| **Renderer** | `src/App.vue`, `src/views/`, `src/components/` | The whole UI. Sandboxed like a web page: no Node.js, no file system. Everything else goes through `window.api`. |
-| **Preload** | `src/preload.ts` | Defines `window.api`: a short list of named functions, each forwarding to one IPC channel. Types in `src/shared/types.ts`. |
-| **Main** | `src/main.ts` and the modules below | Owns the window, the open project, files on disk, credentials and the Python processes. |
-| **Python sidecar** | `python/sidecar/main.py` | Started on first use, lives until the app quits. Handles quick requests: the connector catalog, table schemas and previews, SQL transforms. |
-| **Connector job** | `python/sidecar/runner.py` | A fresh process for each "connect" or "load". Can be slow, can use a connector's own Python environment, and can crash without affecting the app. |
+| Process            | Code                                           | Responsibilities                                                                                                                                  |
+| ------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Renderer**       | `src/App.vue`, `src/views/`, `src/components/` | The whole UI. Sandboxed like a web page: no Node.js, no file system. Everything else goes through `window.api`.                                   |
+| **Preload**        | `src/preload.ts`                               | Defines `window.api`: a short list of named functions, each forwarding to one IPC channel. Types in `src/shared/types.ts`.                        |
+| **Main**           | `src/main.ts` and the modules below            | Owns the window, the open project, files on disk, credentials and the Python processes.                                                           |
+| **Python sidecar** | `python/sidecar/main.py`                       | Started on first use, lives until the app quits. Handles quick requests: the connector catalog, table schemas and previews, SQL transforms.       |
+| **Connector job**  | `python/sidecar/runner.py`                     | A fresh process for each "connect" or "load". Can be slow, can use a connector's own Python environment, and can crash without affecting the app. |
 
 ### Main-process modules
 
-| Module | Does |
-|---|---|
-| `main.ts` | Creates the window, registers IPC handlers, asks to save on close, opens external links in the browser. |
-| `projects.ts` | Creating, opening, saving and closing projects; working folders and crash recovery; the recent list; chat history and the current workflow step. |
-| `pawpaw-archive.ts` | Reading and writing `.pawpaw` ZIP files, including the safety checks on paths. No Electron imports, so it's testable with plain Node. |
-| `data.ts` | Data sources (`sources/*.json`), connector environments, running connector jobs, table schemas and previews, the model diagram, SQL transforms, deleting tables. |
-| `credentials.ts` | Encrypting and storing secrets with Electron's `safeStorage`. |
-| `python.ts` | Paths to the bundled Python, the shared flags and environment for Python processes, and the sidecar client (`callPython`). |
+| Module              | Does                                                                                                                                                                                                                                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `main.ts`           | Creates the window, registers IPC handlers, asks to save on close, opens external links in the browser.                                                                                                                                                                                                                   |
+| `projects.ts`       | Creating, opening, saving and closing projects; working folders and crash recovery; the recent list; chat history and the current workflow step.                                                                                                                                                                          |
+| `pawpaw-archive.ts` | Reading and writing `.pawpaw` ZIP files, including the safety checks on paths. No Electron imports, so it's testable with plain Node.                                                                                                                                                                                     |
+| `data.ts`           | Data sources (`sources/*.json`), connector environments, running connector jobs, table schemas and previews, the model diagram, in-place transforms and transformed tables, rebuilding them in dependency order after loads (`rebuildDerived`, `refreshAll`), and deleting tables (refused while other tables read them). |
+| `credentials.ts`    | Encrypting and storing secrets with Electron's `safeStorage`.                                                                                                                                                                                                                                                             |
+| `python.ts`         | Paths to the bundled Python, the shared flags and environment for Python processes, and the sidecar client (`callPython`).                                                                                                                                                                                                |
 
 ## Talking between processes
 
@@ -59,7 +59,8 @@ plain data (wrap Vue state in `plain()`). Errors arrive as rejected promises; sh
 `errorMessage()`.
 
 **Main → renderer.** Two event streams: `project:changed` (name, path, unsaved-changes flag) and
-`data:progress` (status messages while connecting or loading).
+`data:progress` (status messages while connecting, loading or rebuilding, tagged with the source's
+ID, or `ALL_SOURCES` during Refresh all data).
 
 **Main → sidecar.** One JSON object per line on the sidecar's stdin:
 `{"id": 1, "method": "describe_tables", "params": {...}}`, answered by one line on its stdout:
@@ -89,13 +90,13 @@ edits it in place:
 
 Data kept outside the project file, on this computer only:
 
-| Where (under `%APPDATA%\PawpawBI\`) | What |
-|---|---|
-| `credentials\<project>\<source>.bin` | Encrypted secrets for each data source |
-| `connector-envs\<connector>\` | Python environments for connectors that need extra packages |
-| `dlt\<project>\` | dlt's local pipeline state |
-| `recent-projects.json` | The start screen's recent list |
-| `workspaces\` | Working folders of open (or crashed) projects |
+| Where (under `%APPDATA%\PawpawBI\`)  | What                                                        |
+| ------------------------------------ | ----------------------------------------------------------- |
+| `credentials\<project>\<source>.bin` | Encrypted secrets for each data source                      |
+| `connector-envs\<connector>\`        | Python environments for connectors that need extra packages |
+| `dlt\<project>\`                     | dlt's local pipeline state                                  |
+| `recent-projects.json`               | The start screen's recent list                              |
+| `workspaces\`                        | Working folders of open (or crashed) projects               |
 
 ## Data flow
 
@@ -127,6 +128,7 @@ flowchart LR
    After each load, every in-place transform is re-applied, then transformed tables are rebuilt in
    dependency order (each after the transformed tables it reads). The order and cycle checks are
    in `src/shared/dependencies.ts`, and the orchestration is in `data.ts` (`rebuildDerived`).
+
 5. **Use.** The Model view and previews read schemas and rows through the sidecar. Visuals and
    relationships will read the same way.
 
@@ -137,6 +139,7 @@ fresh in-memory DuckDB, creates one view per table over that table's Parquet fil
 the connection down (see [security.md](security.md)). Nothing is stored in DuckDB.
 
 There are two views of the data:
+
 - **`current`** (previews, table info and transformed tables): every table as the app shows it,
   meaning loaded tables (with their in-place transform applied, if any) and transformed tables.
 - **`raw`** (in-place transforms): loaded tables' original data only, so in-place transforms never
@@ -167,8 +170,10 @@ Python.
   until an AI model is connected.
 - **Main area:** follows the workflow step. **Add data** is `components/data/GetData.vue` (the
   connector gallery, source setup and table previews). **Model data** is `ModelData.vue`, the
-  draggable table canvas, which opens `TransformEditor.vue` for SQL. **Build visuals** is
-  `ReportCanvas.vue`, an empty placeholder.
+  draggable table canvas: cards for loaded tables (orange) and transformed tables (purple),
+  dependency arrows on its SVG layer, a legend, and Refresh all data. It opens
+  `TransformEditor.vue` for SQL: a loaded table's in-place transform, or a new or existing
+  transformed table. **Build visuals** is `ReportCanvas.vue`, an empty placeholder.
 
 The current workflow step is saved with the project (`chat/session.json`).
 

@@ -18,7 +18,10 @@ const deps: DependencyMap = {
 };
 
 test('buildOrder puts each table after the transformed tables it reads', () => {
-  assert.deepEqual(buildOrder(deps), { order: ['by_region', 'top_regions', 'report'], blocked: [] });
+  assert.deepEqual(buildOrder(deps), {
+    order: ['by_region', 'top_regions', 'report'],
+    blocked: [],
+  });
 });
 
 test('buildOrder treats names that are not transformed tables as already built', () => {
@@ -36,8 +39,17 @@ test('buildOrder blocks a table that reads itself', () => {
 });
 
 test('findCycle returns the path of a circular reference', () => {
-  assert.deepEqual(findCycle({ ...deps, by_region: ['report'] }, 'by_region'), ['by_region', 'report', 'by_region']);
-  assert.deepEqual(findCycle({ a: ['b'], b: ['c'], c: ['a'] }, 'a'), ['a', 'b', 'c', 'a']);
+  assert.deepEqual(findCycle({ ...deps, by_region: ['report'] }, 'by_region'), [
+    'by_region',
+    'report',
+    'by_region',
+  ]);
+  assert.deepEqual(findCycle({ a: ['b'], b: ['c'], c: ['a'] }, 'a'), [
+    'a',
+    'b',
+    'c',
+    'a',
+  ]);
 });
 
 test('findCycle spots a table reading itself', () => {
@@ -54,13 +66,20 @@ test('findCycle ignores cycles the table is not part of', () => {
 });
 
 test('directDependents lists the transformed tables that read a table', () => {
-  assert.deepEqual(directDependents(deps, 'by_region'), ['report', 'top_regions']);
+  assert.deepEqual(directDependents(deps, 'by_region'), [
+    'report',
+    'top_regions',
+  ]);
   assert.deepEqual(directDependents(deps, 'sales'), ['by_region']);
   assert.deepEqual(directDependents(deps, 'report'), []);
 });
 
 test('downstreamOf lists everything affected by a change, in build order', () => {
-  assert.deepEqual(downstreamOf(deps, ['sales']), ['by_region', 'top_regions', 'report']);
+  assert.deepEqual(downstreamOf(deps, ['sales']), [
+    'by_region',
+    'top_regions',
+    'report',
+  ]);
   assert.deepEqual(downstreamOf(deps, ['targets']), ['report']);
   assert.deepEqual(downstreamOf(deps, ['top_regions']), ['report']);
   assert.deepEqual(downstreamOf(deps, ['unrelated']), []);

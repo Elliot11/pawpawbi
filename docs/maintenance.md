@@ -21,7 +21,7 @@ Read the docstring at the top of `connectors/base.py` first.
 2. **Write `build(settings)`.**
    - Convert form values with the helpers in `base.py` (`required`, `text`, `integer`, `boolean`,
      `lines`, `date`, `json_object`, `gcp_service_account`).
-   - Import connector-specific packages *inside* the function.
+   - Import connector-specific packages _inside_ the function.
    - Pass every argument explicitly: never rely on dlt's config or secrets files.
    - Only pass optional arguments the user filled in, so the source's defaults apply otherwise.
 3. **Describe the form** with `Field(...)`s:

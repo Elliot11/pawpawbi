@@ -1,6 +1,12 @@
 // Main-process handling of .pawpaw project files, the open project's working folder and the
 // recent projects list. File format and open/save behaviour: docs/pawpaw-file-format.md
-import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  type IpcMainInvokeEvent,
+} from 'electron';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -24,14 +30,17 @@ import type {
 
 const FORMAT_VERSION = 1;
 const PROJECT_EXTENSION = 'pawpaw';
-const PROJECT_FILTERS = [{ name: 'PawpawBI project', extensions: [PROJECT_EXTENSION] }];
+const PROJECT_FILTERS = [
+  { name: 'PawpawBI project', extensions: [PROJECT_EXTENSION] },
+];
 const MAX_RECENTS = 10;
 const WORKFLOW_STAGES: WorkflowStage[] = ['data', 'model', 'visuals'];
 
 // ---------------------------------------------------------------------------------------------
 // Recent projects
 
-const recentsPath = () => path.join(app.getPath('userData'), 'recent-projects.json');
+const recentsPath = () =>
+  path.join(app.getPath('userData'), 'recent-projects.json');
 
 async function readRecents(): Promise<RecentProject[]> {
   try {
@@ -85,8 +94,15 @@ const now = () => new Date().toISOString();
 
 function workspacePaths(id: string, filePath: string) {
   // Include the file's location so two copies of the same project never share a folder.
-  const key = createHash('sha1').update(path.resolve(filePath)).digest('hex').slice(0, 8);
-  const workspaceDir = path.join(app.getPath('userData'), 'workspaces', `${id}-${key}`);
+  const key = createHash('sha1')
+    .update(path.resolve(filePath))
+    .digest('hex')
+    .slice(0, 8);
+  const workspaceDir = path.join(
+    app.getPath('userData'),
+    'workspaces',
+    `${id}-${key}`,
+  );
   return {
     workspaceDir,
     filesDir: path.join(workspaceDir, 'project'),
@@ -94,7 +110,9 @@ function workspacePaths(id: string, filePath: string) {
   };
 }
 
-async function readWorkspaceState(statePath: string): Promise<WorkspaceState | null> {
+async function readWorkspaceState(
+  statePath: string,
+): Promise<WorkspaceState | null> {
   try {
     return JSON.parse(await fs.readFile(statePath, 'utf8'));
   } catch {
@@ -103,8 +121,15 @@ async function readWorkspaceState(statePath: string): Promise<WorkspaceState | n
 }
 
 async function writeWorkspaceState(s: Session) {
-  const state: WorkspaceState = { filePath: s.filePath, dirty: s.dirty, updatedAt: now() };
-  await fs.writeFile(path.join(s.workspaceDir, 'state.json'), JSON.stringify(state, null, 2));
+  const state: WorkspaceState = {
+    filePath: s.filePath,
+    dirty: s.dirty,
+    updatedAt: now(),
+  };
+  await fs.writeFile(
+    path.join(s.workspaceDir, 'state.json'),
+    JSON.stringify(state, null, 2),
+  );
 }
 
 async function writeJson(filePath: string, value: unknown) {
@@ -132,9 +157,12 @@ function toProject(s: Session): Project {
 function notifyChanged() {
   for (const win of BrowserWindow.getAllWindows()) {
     win.setTitle(
-      session ? `${session.manifest.name}${session.dirty ? ' •' : ''} - PawpawBI` : 'PawpawBI',
+      session
+        ? `${session.manifest.name}${session.dirty ? ' •' : ''} - PawpawBI`
+        : 'PawpawBI',
     );
-    if (process.platform === 'darwin') win.setDocumentEdited(session?.dirty ?? false);
+    if (process.platform === 'darwin')
+      win.setDocumentEdited(session?.dirty ?? false);
     if (session) win.webContents.send('project:changed', toProject(session));
   }
 }
@@ -152,10 +180,14 @@ function parseManifest(text: string): ProjectManifest {
   try {
     manifest = JSON.parse(text);
   } catch {
-    throw new InvalidProjectFileError('The project file is damaged: manifest.json is not valid JSON.');
+    throw new InvalidProjectFileError(
+      'The project file is damaged: manifest.json is not valid JSON.',
+    );
   }
   if (typeof manifest?.formatVersion !== 'number') {
-    throw new InvalidProjectFileError('The project file is damaged: it has no format version.');
+    throw new InvalidProjectFileError(
+      'The project file is damaged: it has no format version.',
+    );
   }
   if (manifest.formatVersion > FORMAT_VERSION) {
     throw new InvalidProjectFileError(
@@ -168,7 +200,9 @@ function parseManifest(text: string): ProjectManifest {
     !/^[a-z0-9]{1,32}$/.test(manifest.id) ||
     typeof manifest.name !== 'string'
   ) {
-    throw new InvalidProjectFileError('The project file is damaged: manifest.json is incomplete.');
+    throw new InvalidProjectFileError(
+      'The project file is damaged: manifest.json is incomplete.',
+    );
   }
   return manifest;
 }
@@ -195,7 +229,11 @@ async function readLegacyProject(filePath: string): Promise<ProjectManifest> {
   };
 }
 
-async function askToRecover(win: BrowserWindow, name: string, state: WorkspaceState) {
+async function askToRecover(
+  win: BrowserWindow,
+  name: string,
+  state: WorkspaceState,
+) {
   const { response } = await dialog.showMessageBox(win, {
     type: 'question',
     buttons: ['Recover', 'Discard'],
@@ -209,7 +247,10 @@ async function askToRecover(win: BrowserWindow, name: string, state: WorkspaceSt
   return response === 0;
 }
 
-async function openProjectFile(filePath: string, win: BrowserWindow): Promise<Project> {
+async function openProjectFile(
+  filePath: string,
+  win: BrowserWindow,
+): Promise<Project> {
   if (session) throw new Error('Close the open project first.');
 
   const isZip = await isZipFile(filePath);
@@ -219,10 +260,16 @@ async function openProjectFile(filePath: string, win: BrowserWindow): Promise<Pr
   const paths = workspacePaths(manifest.id, filePath);
 
   const previous = await readWorkspaceState(paths.statePath);
-  const recover = previous?.dirty === true && (await askToRecover(win, manifest.name, previous));
+  const recover =
+    previous?.dirty === true &&
+    (await askToRecover(win, manifest.name, previous));
 
   if (!recover) {
-    await fs.rm(paths.workspaceDir, { recursive: true, force: true, maxRetries: 5 });
+    await fs.rm(paths.workspaceDir, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+    });
     await fs.mkdir(paths.filesDir, { recursive: true });
     if (isZip) {
       await extractArchive(filePath, paths.filesDir);
@@ -233,7 +280,9 @@ async function openProjectFile(filePath: string, win: BrowserWindow): Promise<Pr
 
   session = {
     manifest: recover
-      ? parseManifest(await fs.readFile(path.join(paths.filesDir, 'manifest.json'), 'utf8'))
+      ? parseManifest(
+          await fs.readFile(path.join(paths.filesDir, 'manifest.json'), 'utf8'),
+        )
       : manifest,
     filePath,
     workspaceDir: paths.workspaceDir,
@@ -253,7 +302,10 @@ async function createProject(win: BrowserWindow): Promise<Project | null> {
   const { canceled, filePath } = await dialog.showSaveDialog(win, {
     title: 'Create project',
     buttonLabel: 'Create',
-    defaultPath: path.join(app.getPath('documents'), `Untitled report.${PROJECT_EXTENSION}`),
+    defaultPath: path.join(
+      app.getPath('documents'),
+      `Untitled report.${PROJECT_EXTENSION}`,
+    ),
     filters: PROJECT_FILTERS,
   });
   if (canceled || !filePath) return null;
@@ -268,7 +320,11 @@ async function createProject(win: BrowserWindow): Promise<Project | null> {
     modifiedWith: appLabel(),
   };
   const paths = workspacePaths(manifest.id, filePath);
-  await fs.rm(paths.workspaceDir, { recursive: true, force: true, maxRetries: 5 });
+  await fs.rm(paths.workspaceDir, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+  });
   await writeJson(path.join(paths.filesDir, 'manifest.json'), manifest);
   await packArchive(paths.filesDir, filePath);
 
@@ -308,7 +364,11 @@ export async function closeProject(win: BrowserWindow): Promise<boolean> {
   }
   const closing = session;
   session = null;
-  await fs.rm(closing.workspaceDir, { recursive: true, force: true, maxRetries: 5 });
+  await fs.rm(closing.workspaceDir, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+  });
   notifyChanged();
   return true;
 }
@@ -332,7 +392,9 @@ async function loadChat(): Promise<ChatState> {
 
   let stage: WorkflowStage = 'data';
   try {
-    const saved = JSON.parse(await fs.readFile(path.join(chatDir, 'session.json'), 'utf8'));
+    const saved = JSON.parse(
+      await fs.readFile(path.join(chatDir, 'session.json'), 'utf8'),
+    );
     if (WORKFLOW_STAGES.includes(saved?.stage)) stage = saved.stage;
   } catch {
     // No saved session yet.
@@ -340,7 +402,9 @@ async function loadChat(): Promise<ChatState> {
 
   let lines: string[] = [];
   try {
-    lines = (await fs.readFile(path.join(chatDir, 'messages.jsonl'), 'utf8')).split('\n');
+    lines = (
+      await fs.readFile(path.join(chatDir, 'messages.jsonl'), 'utf8')
+    ).split('\n');
   } catch {
     // No messages yet.
   }
@@ -356,8 +420,12 @@ async function loadChat(): Promise<ChatState> {
 }
 
 async function setStage(stage: WorkflowStage) {
-  if (!WORKFLOW_STAGES.includes(stage)) throw new Error(`Unknown workflow stage: ${stage}`);
-  await writeJson(path.join(requireSession().filesDir, 'chat', 'session.json'), { stage });
+  if (!WORKFLOW_STAGES.includes(stage))
+    throw new Error(`Unknown workflow stage: ${stage}`);
+  await writeJson(
+    path.join(requireSession().filesDir, 'chat', 'session.json'),
+    { stage },
+  );
   await markDirty();
 }
 
@@ -374,15 +442,19 @@ async function appendChat(messages: ChatMessage[], stage: WorkflowStage) {
 // ---------------------------------------------------------------------------------------------
 // IPC
 
-const windowFor = (event: IpcMainInvokeEvent) => BrowserWindow.fromWebContents(event.sender)!;
+const windowFor = (event: IpcMainInvokeEvent) =>
+  BrowserWindow.fromWebContents(event.sender)!;
 
 /** Turns failures into a message for the start screen instead of a rejected promise. */
-async function toOpenResult(action: () => Promise<Project | null>): Promise<OpenResult> {
+async function toOpenResult(
+  action: () => Promise<Project | null>,
+): Promise<OpenResult> {
   try {
     const project = await action();
     return project && { project };
   } catch (error) {
-    if (error instanceof InvalidProjectFileError) return { error: error.message };
+    if (error instanceof InvalidProjectFileError)
+      return { error: error.message };
     console.error(error);
     return { error: `Something went wrong: ${(error as Error).message}` };
   }
@@ -391,7 +463,9 @@ async function toOpenResult(action: () => Promise<Project | null>): Promise<Open
 export function registerProjectHandlers() {
   ipcMain.handle('projects:list-recent', () => readRecents());
 
-  ipcMain.handle('projects:create', (event) => toOpenResult(() => createProject(windowFor(event))));
+  ipcMain.handle('projects:create', (event) =>
+    toOpenResult(() => createProject(windowFor(event))),
+  );
 
   ipcMain.handle('projects:open', (event) =>
     toOpenResult(async () => {
@@ -409,7 +483,8 @@ export function registerProjectHandlers() {
   ipcMain.handle('projects:open-recent', async (event, filePath: string) => {
     // Only reopen paths we handed out ourselves, not arbitrary files.
     const recent = (await readRecents()).find((r) => r.path === filePath);
-    if (!recent) return { error: 'That project is no longer in your recent projects.' };
+    if (!recent)
+      return { error: 'That project is no longer in your recent projects.' };
     try {
       await fs.access(filePath);
     } catch {
@@ -424,8 +499,12 @@ export function registerProjectHandlers() {
   ipcMain.handle('projects:save', () => saveProject());
   ipcMain.handle('projects:close', (event) => closeProject(windowFor(event)));
   ipcMain.handle('projects:load-chat', () => loadChat());
-  ipcMain.handle('projects:append-chat', (_event, messages: ChatMessage[], stage: WorkflowStage) =>
-    appendChat(messages, stage),
+  ipcMain.handle(
+    'projects:append-chat',
+    (_event, messages: ChatMessage[], stage: WorkflowStage) =>
+      appendChat(messages, stage),
   );
-  ipcMain.handle('projects:set-stage', (_event, stage: WorkflowStage) => setStage(stage));
+  ipcMain.handle('projects:set-stage', (_event, stage: WorkflowStage) =>
+    setStage(stage),
+  );
 }

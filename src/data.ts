@@ -1,7 +1,13 @@
 // Main-process side of getting data: the connector catalog, data sources saved in the open
 // project (sources/<id>.json), each connector's Python environment, and running connector jobs
 // with python/sidecar/runner.py. File format: docs/pawpaw-file-format.md
-import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  type IpcMainInvokeEvent,
+} from 'electron';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -9,8 +15,21 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { deleteSecrets, readSecrets, writeSecrets } from './credentials';
 import { markProjectChanged, openProject } from './projects';
-import { PYTHON_FLAGS, callPython, pythonEnv, pythonExe, pythonRoot, sidecarDir } from './python';
-import { buildOrder, directDependents, downstreamOf, findCycle, type DependencyMap } from './shared/dependencies';
+import {
+  PYTHON_FLAGS,
+  callPython,
+  pythonEnv,
+  pythonExe,
+  pythonRoot,
+  sidecarDir,
+} from './python';
+import {
+  buildOrder,
+  directDependents,
+  downstreamOf,
+  findCycle,
+  type DependencyMap,
+} from './shared/dependencies';
 import { newId } from './shared/ids';
 import type {
   ConnectorCatalog,
@@ -90,7 +109,10 @@ async function readSource(id: string): Promise<SourceFile> {
 
 async function writeSource(source: SourceFile) {
   await fs.mkdir(sourcesDir(), { recursive: true });
-  await fs.writeFile(sourcePath(source.id), JSON.stringify(source, null, 2) + '\n');
+  await fs.writeFile(
+    sourcePath(source.id),
+    JSON.stringify(source, null, 2) + '\n',
+  );
   await markProjectChanged();
 }
 
@@ -115,7 +137,9 @@ async function readAllSources(): Promise<SourceFile[]> {
 }
 
 async function toDataSource(source: SourceFile): Promise<DataSource> {
-  const secrets = await readSecrets(openProject().id, source.id).catch(() => ({}));
+  const secrets = await readSecrets(openProject().id, source.id).catch(
+    () => ({}),
+  );
   return { ...source, savedSecrets: Object.keys(secrets) };
 }
 
@@ -155,7 +179,11 @@ async function saveSource(input: SaveSourceInput): Promise<DataSource> {
 async function removeTables(tables: string[]) {
   for (const table of tables) {
     if (!SAFE_TABLE.test(table)) continue;
-    await fs.rm(path.join(rawDataDir(), table), { recursive: true, force: true, maxRetries: 5 });
+    await fs.rm(path.join(rawDataDir(), table), {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+    });
   }
 }
 
@@ -186,37 +214,57 @@ async function removeSource(id: string) {
 
 const installs = new Map<string, Promise<string>>();
 
-function ensureEnvironment(info: ConnectorInfo, onProgress: (message: string) => void): Promise<string> {
+function ensureEnvironment(
+  info: ConnectorInfo,
+  onProgress: (message: string) => void,
+): Promise<string> {
   if (info.packages.length === 0) return Promise.resolve(pythonExe);
   let install = installs.get(info.id);
   if (!install) {
-    install = prepareEnvironment(info, onProgress).finally(() => installs.delete(info.id));
+    install = prepareEnvironment(info, onProgress).finally(() =>
+      installs.delete(info.id),
+    );
     installs.set(info.id, install);
   }
   return install;
 }
 
-async function prepareEnvironment(info: ConnectorInfo, onProgress: (message: string) => void) {
+async function prepareEnvironment(
+  info: ConnectorInfo,
+  onProgress: (message: string) => void,
+) {
   const envDir = path.join(app.getPath('userData'), 'connector-envs', info.id);
   const envPython =
     process.platform === 'win32'
       ? path.join(envDir, 'Scripts', 'python.exe')
       : path.join(envDir, 'bin', 'python3');
   const constraintsPath = path.join(pythonRoot, 'constraints.txt');
-  const constraints = await fs.readFile(constraintsPath, 'utf8').catch(() => '');
+  const constraints = await fs
+    .readFile(constraintsPath, 'utf8')
+    .catch(() => '');
 
   // Rebuild when the app's Python moves (e.g. after an update) or the pinned packages change.
   const stamp = createHash('sha256')
     .update([pythonExe, ...info.packages, constraints].join('\n'))
     .digest('hex');
   const stampPath = path.join(envDir, '.pawpaw-stamp');
-  if ((await fs.readFile(stampPath, 'utf8').catch(() => '')) === stamp) return envPython;
+  if ((await fs.readFile(stampPath, 'utf8').catch(() => '')) === stamp)
+    return envPython;
 
-  onProgress(`Downloading the ${info.name} connector. This only happens the first time…`);
+  onProgress(
+    `Downloading the ${info.name} connector. This only happens the first time…`,
+  );
   await fs.rm(envDir, { recursive: true, force: true, maxRetries: 5 });
   // Without its own pip: it uses the bundled pip through the shared packages, which is newer
   // than the one Python's venv would install and supports --uploaded-prior-to.
-  await runProcess(pythonExe, [...PYTHON_FLAGS, '-m', 'venv', '--system-site-packages', '--without-pip', envDir]);
+  await runProcess(pythonExe, [
+    ...PYTHON_FLAGS,
+    '-m',
+    'venv',
+    '--system-site-packages',
+    '--without-pip',
+    envDir,
+  ]);
   await runProcess(
     envPython,
     [
@@ -235,7 +283,10 @@ async function prepareEnvironment(info: ConnectorInfo, onProgress: (message: str
       ...info.packages,
     ],
     (line) => {
-      const match = /^(Collecting|Downloading|Installing collected packages)\s*:?\s*(\S+)?/.exec(line);
+      const match =
+        /^(Collecting|Downloading|Installing collected packages)\s*:?\s*(\S+)?/.exec(
+          line,
+        );
       if (match) onProgress(`${match[1]} ${match[2] ?? ''}`.trim());
     },
   );
@@ -244,7 +295,11 @@ async function prepareEnvironment(info: ConnectorInfo, onProgress: (message: str
 }
 
 /** Runs a command to completion; rejects with the end of its output if it fails. */
-function runProcess(command: string, args: string[], onLine?: (line: string) => void) {
+function runProcess(
+  command: string,
+  args: string[],
+  onLine?: (line: string) => void,
+) {
   return new Promise<void>((resolve, reject) => {
     const proc = spawn(command, args, { windowsHide: true, env: pythonEnv() });
     const tail: string[] = [];
@@ -258,7 +313,12 @@ function runProcess(command: string, args: string[], onLine?: (line: string) => 
     proc.on('error', reject);
     proc.on('close', (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`Downloading the connector failed:\n${tail.slice(-6).join('\n')}`));
+      else
+        reject(
+          new Error(
+            `Downloading the connector failed:\n${tail.slice(-6).join('\n')}`,
+          ),
+        );
     });
   });
 }
@@ -269,18 +329,28 @@ function runProcess(command: string, args: string[], onLine?: (line: string) => 
 const runningJobs = new Set<string>();
 
 function sendProgress(progress: DataProgress) {
-  for (const win of BrowserWindow.getAllWindows()) win.webContents.send('data:progress', progress);
+  for (const win of BrowserWindow.getAllWindows())
+    win.webContents.send('data:progress', progress);
 }
 
-function runJob<T>(python: string, job: Record<string, unknown>, onProgress: (message: string) => void) {
+function runJob<T>(
+  python: string,
+  job: Record<string, unknown>,
+  onProgress: (message: string) => void,
+) {
   const project = openProject();
   return new Promise<T>((resolve, reject) => {
-    const proc = spawn(python, [...PYTHON_FLAGS, path.join(sidecarDir, 'runner.py')], {
-      windowsHide: true,
-      // Each project keeps its own dlt pipeline state.
-      env: pythonEnv(path.join(app.getPath('userData'), 'dlt', project.id)),
-    });
-    let outcome: { ok: true; value: T } | { ok: false; error: Error } | null = null;
+    const proc = spawn(
+      python,
+      [...PYTHON_FLAGS, path.join(sidecarDir, 'runner.py')],
+      {
+        windowsHide: true,
+        // Each project keeps its own dlt pipeline state.
+        env: pythonEnv(path.join(app.getPath('userData'), 'dlt', project.id)),
+      },
+    );
+    let outcome: { ok: true; value: T } | { ok: false; error: Error } | null =
+      null;
     const stderr: string[] = [];
 
     readline.createInterface({ input: proc.stdout }).on('line', (line) => {
@@ -291,7 +361,8 @@ function runJob<T>(python: string, job: Record<string, unknown>, onProgress: (me
         return;
       }
       if (event.event === 'progress') onProgress(event.message);
-      else if (event.event === 'result') outcome = { ok: true, value: event.result };
+      else if (event.event === 'result')
+        outcome = { ok: true, value: event.result };
       else if (event.event === 'error') {
         console.error(`[connector] ${event.detail}`);
         outcome = { ok: false, error: new Error(event.message) };
@@ -305,7 +376,12 @@ function runJob<T>(python: string, job: Record<string, unknown>, onProgress: (me
     proc.on('close', (code) => {
       if (outcome?.ok) resolve(outcome.value);
       else if (outcome) reject(outcome.error);
-      else reject(new Error(`The connector stopped unexpectedly (exit code ${code}).\n${stderr.slice(-3).join('\n')}`));
+      else
+        reject(
+          new Error(
+            `The connector stopped unexpectedly (exit code ${code}).\n${stderr.slice(-3).join('\n')}`,
+          ),
+        );
     });
     // Settings (including secrets) go over stdin, never on the command line.
     proc.stdin.end(JSON.stringify(job) + '\n');
@@ -324,8 +400,15 @@ async function runSourceJob<T>(
     const source = await readSource(id);
     const info = await connector(source.type);
     const python = await ensureEnvironment(info, onProgress);
-    const settings = { ...source.options, ...(await readSecrets(openProject().id, id)) };
-    return await runJob<T>(python, { ...job, connector: info.id, settings }, onProgress);
+    const settings = {
+      ...source.options,
+      ...(await readSecrets(openProject().id, id)),
+    };
+    return await runJob<T>(
+      python,
+      { ...job, connector: info.id, settings },
+      onProgress,
+    );
   } finally {
     runningJobs.delete(id);
   }
@@ -346,7 +429,10 @@ async function loadSource(
       resources,
       data_dir: dataDir(),
       pipeline_name: `pawpaw_${id}`,
-      reserved_tables: [...others.flatMap((s) => s.tables), ...transformedNames],
+      reserved_tables: [
+        ...others.flatMap((s) => s.tables),
+        ...transformedNames,
+      ],
     },
     onProgress,
   );
@@ -355,36 +441,54 @@ async function loadSource(
   const source = await readSource(id);
   const tables = result.tables.map((t) => t.name);
   await removeTables(source.tables.filter((t) => !tables.includes(t)));
-  await writeSource({ ...source, resources, tables, lastLoadedAt: new Date().toISOString() });
+  await writeSource({
+    ...source,
+    resources,
+    tables,
+    lastLoadedAt: new Date().toISOString(),
+  });
   return result.tables;
 }
 
 /** Loads one source, then re-applies transforms and rebuilds transformed tables. */
 async function load(id: string, resources: string[]): Promise<LoadedTable[]> {
   const loaded = await loadSource(id, resources);
-  const { inPlaceErrors } = await rebuildDerived((message) => sendProgress({ sourceId: id, message }));
-  return loaded.map((t) => (inPlaceErrors[t.name] ? { ...t, transformError: inPlaceErrors[t.name] } : t));
+  const { inPlaceErrors } = await rebuildDerived((message) =>
+    sendProgress({ sourceId: id, message }),
+  );
+  return loaded.map((t) =>
+    inPlaceErrors[t.name] ? { ...t, transformError: inPlaceErrors[t.name] } : t,
+  );
 }
 
 /** Loads every source in turn, then re-applies transforms and rebuilds transformed tables once. */
 async function refreshAll(): Promise<RefreshAllResult> {
   const sources = await readAllSources();
   const failedSources: RefreshAllResult['failedSources'] = [];
-  const progress = (message: string) => sendProgress({ sourceId: ALL_SOURCES, message });
+  const progress = (message: string) =>
+    sendProgress({ sourceId: ALL_SOURCES, message });
   for (const [i, source] of sources.entries()) {
     const prefix = `${source.name} (${i + 1} of ${sources.length})`;
     progress(`${prefix}: starting…`);
     try {
-      await loadSource(source.id, source.resources, (message) => progress(`${prefix}: ${message}`));
+      await loadSource(source.id, source.resources, (message) =>
+        progress(`${prefix}: ${message}`),
+      );
     } catch (error) {
-      failedSources.push({ name: source.name, error: (error as Error).message });
+      failedSources.push({
+        name: source.name,
+        error: (error as Error).message,
+      });
     }
   }
   const { inPlaceErrors, transformedErrors } = await rebuildDerived(progress);
   return {
     sourceCount: sources.length,
     failedSources,
-    failedTables: Object.entries({ ...inPlaceErrors, ...transformedErrors }).map(([name, error]) => ({
+    failedTables: Object.entries({
+      ...inPlaceErrors,
+      ...transformedErrors,
+    }).map(([name, error]) => ({
       name,
       error,
     })),
@@ -394,7 +498,8 @@ async function refreshAll(): Promise<RefreshAllResult> {
 // ---------------------------------------------------------------------------------------------
 // Model diagram (model/diagram.json)
 
-const diagramPath = () => path.join(openProject().filesDir, 'model', 'diagram.json');
+const diagramPath = () =>
+  path.join(openProject().filesDir, 'model', 'diagram.json');
 
 /** Keeps only well-formed table positions, rounded to whole pixels. */
 function cleanDiagram(value: unknown): ModelDiagram {
@@ -402,8 +507,15 @@ function cleanDiagram(value: unknown): ModelDiagram {
   const raw = (value as ModelDiagram | null)?.tables;
   if (raw && typeof raw === 'object') {
     for (const [table, position] of Object.entries(raw)) {
-      if (SAFE_TABLE.test(table) && Number.isFinite(position?.x) && Number.isFinite(position?.y)) {
-        tables[table] = { x: Math.round(position.x), y: Math.round(position.y) };
+      if (
+        SAFE_TABLE.test(table) &&
+        Number.isFinite(position?.x) &&
+        Number.isFinite(position?.y)
+      ) {
+        tables[table] = {
+          x: Math.round(position.x),
+          y: Math.round(position.y),
+        };
       }
     }
   }
@@ -420,7 +532,10 @@ async function loadDiagram(): Promise<ModelDiagram> {
 
 async function saveDiagram(diagram: ModelDiagram) {
   await fs.mkdir(path.dirname(diagramPath()), { recursive: true });
-  await fs.writeFile(diagramPath(), JSON.stringify(cleanDiagram(diagram), null, 2) + '\n');
+  await fs.writeFile(
+    diagramPath(),
+    JSON.stringify(cleanDiagram(diagram), null, 2) + '\n',
+  );
   await markProjectChanged();
 }
 
@@ -437,7 +552,8 @@ interface TransformsFile {
   tables: Record<string, { sql: string; updatedAt: string }>;
 }
 
-const transformsPath = () => path.join(openProject().filesDir, 'model', 'transforms.json');
+const transformsPath = () =>
+  path.join(openProject().filesDir, 'model', 'transforms.json');
 const dataDir = () => path.join(openProject().filesDir, 'data');
 
 async function readTransforms(): Promise<TransformsFile> {
@@ -447,7 +563,10 @@ async function readTransforms(): Promise<TransformsFile> {
     for (const [table, t] of Object.entries(parsed?.tables ?? {})) {
       const transform = t as { sql?: unknown; updatedAt?: unknown };
       if (SAFE_TABLE.test(table) && typeof transform.sql === 'string') {
-        tables[table] = { sql: transform.sql, updatedAt: String(transform.updatedAt ?? '') };
+        tables[table] = {
+          sql: transform.sql,
+          updatedAt: String(transform.updatedAt ?? ''),
+        };
       }
     }
     return { tables };
@@ -458,14 +577,21 @@ async function readTransforms(): Promise<TransformsFile> {
 
 async function writeTransforms(transforms: TransformsFile) {
   await fs.mkdir(path.dirname(transformsPath()), { recursive: true });
-  await fs.writeFile(transformsPath(), JSON.stringify(transforms, null, 2) + '\n');
+  await fs.writeFile(
+    transformsPath(),
+    JSON.stringify(transforms, null, 2) + '\n',
+  );
   await markProjectChanged();
 }
 
 async function applyTransform(table: string, sql: string) {
   if (!SAFE_TABLE.test(table)) throw new Error('Invalid table name.');
   // Run it first, so a failing query is never saved.
-  const result = await callPython<{ rows: number }>('apply_transform', { data_dir: dataDir(), table, sql });
+  const result = await callPython<{ rows: number }>('apply_transform', {
+    data_dir: dataDir(),
+    table,
+    sql,
+  });
   const transforms = await readTransforms();
   transforms.tables[table] = { sql, updatedAt: new Date().toISOString() };
   await writeTransforms(transforms);
@@ -484,17 +610,26 @@ async function removeTransform(table: string) {
 /** Re-runs every in-place transform. Returns an error message per failed table. */
 async function reapplyTransforms(): Promise<Record<string, string>> {
   const transforms = (await readTransforms()).tables;
-  const loaded = new Set(await callPython<string[]>('list_tables', { data_dir: dataDir() }));
+  const loaded = new Set(
+    await callPython<string[]>('list_tables', { data_dir: dataDir() }),
+  );
   const errors: Record<string, string> = {};
   for (const [table, transform] of Object.entries(transforms)) {
     if (!loaded.has(table)) continue;
     try {
-      await callPython('apply_transform', { data_dir: dataDir(), table, sql: transform.sql });
+      await callPython('apply_transform', {
+        data_dir: dataDir(),
+        table,
+        sql: transform.sql,
+      });
     } catch (error) {
       errors[table] = (error as Error).message;
       // Don't leave the previous result over the new data: show the original until it's fixed.
       // The query itself stays saved so it can be edited.
-      await callPython('remove_transform', { data_dir: dataDir(), table }).catch(() => {});
+      await callPython('remove_transform', {
+        data_dir: dataDir(),
+        table,
+      }).catch(() => {});
     }
   }
   return errors;
@@ -503,10 +638,19 @@ async function reapplyTransforms(): Promise<Record<string, string>> {
 // --- Transformed tables ----------------------------------------------------------------------
 
 interface TransformedFile {
-  tables: Record<string, { sql: string; dependsOn: string[]; updatedAt: string; error: string | null }>;
+  tables: Record<
+    string,
+    {
+      sql: string;
+      dependsOn: string[];
+      updatedAt: string;
+      error: string | null;
+    }
+  >;
 }
 
-const transformedPath = () => path.join(openProject().filesDir, 'model', 'transformed.json');
+const transformedPath = () =>
+  path.join(openProject().filesDir, 'model', 'transformed.json');
 /** Names for new transformed tables: also what dlt produces for loaded tables. */
 const TRANSFORMED_NAME = /^[a-z][a-z0-9_]{0,62}$/;
 
@@ -515,11 +659,18 @@ async function readTransformed(): Promise<TransformedFile> {
     const parsed = JSON.parse(await fs.readFile(transformedPath(), 'utf8'));
     const tables: TransformedFile['tables'] = {};
     for (const [table, t] of Object.entries(parsed?.tables ?? {})) {
-      const def = t as { sql?: unknown; dependsOn?: unknown; updatedAt?: unknown; error?: unknown };
+      const def = t as {
+        sql?: unknown;
+        dependsOn?: unknown;
+        updatedAt?: unknown;
+        error?: unknown;
+      };
       if (!SAFE_TABLE.test(table) || typeof def.sql !== 'string') continue;
       tables[table] = {
         sql: def.sql,
-        dependsOn: Array.isArray(def.dependsOn) ? def.dependsOn.filter((d): d is string => typeof d === 'string') : [],
+        dependsOn: Array.isArray(def.dependsOn)
+          ? def.dependsOn.filter((d): d is string => typeof d === 'string')
+          : [],
         updatedAt: String(def.updatedAt ?? ''),
         error: typeof def.error === 'string' ? def.error : null,
       };
@@ -537,7 +688,9 @@ async function writeTransformed(file: TransformedFile) {
 }
 
 const dependencyMap = (file: TransformedFile): DependencyMap =>
-  Object.fromEntries(Object.entries(file.tables).map(([name, t]) => [name, t.dependsOn]));
+  Object.fromEntries(
+    Object.entries(file.tables).map(([name, t]) => [name, t.dependsOn]),
+  );
 
 /**
  * Rebuilds transformed tables, which must be in build order. A table whose query fails, or that
@@ -555,12 +708,20 @@ async function rebuildTransformed(
     onProgress?.(`Building ${name} (${i + 1} of ${names.length})…`);
     try {
       const failed = def.dependsOn.find((d) => d in errors);
-      if (failed) throw new Error(`It reads ${failed}, which couldn't be built.`);
-      await callPython('build_table', { data_dir: dataDir(), table: name, sql: def.sql });
+      if (failed)
+        throw new Error(`It reads ${failed}, which couldn't be built.`);
+      await callPython('build_table', {
+        data_dir: dataDir(),
+        table: name,
+        sql: def.sql,
+      });
       def.error = null;
     } catch (error) {
       errors[name] = def.error = (error as Error).message;
-      await callPython('clear_table', { data_dir: dataDir(), table: name }).catch(() => {});
+      await callPython('clear_table', {
+        data_dir: dataDir(),
+        table: name,
+      }).catch(() => {});
     }
   }
   if (names.length) await writeTransformed(file);
@@ -578,8 +739,12 @@ async function rebuildDerived(onProgress?: (message: string) => void) {
   if (blocked.length) {
     const latest = await readTransformed();
     for (const name of blocked) {
-      transformedErrors[name] = latest.tables[name].error = 'It’s part of a circular reference.';
-      await callPython('clear_table', { data_dir: dataDir(), table: name }).catch(() => {});
+      transformedErrors[name] = latest.tables[name].error =
+        'It’s part of a circular reference.';
+      await callPython('clear_table', {
+        data_dir: dataDir(),
+        table: name,
+      }).catch(() => {});
     }
     await writeTransformed(latest);
   }
@@ -592,7 +757,9 @@ async function rebuildDownstream(changed: string[]) {
   return rebuildTransformed(downstreamOf(dependencyMap(file), changed));
 }
 
-async function saveTransformed(input: SaveTransformedInput): Promise<{ rows: number }> {
+async function saveTransformed(
+  input: SaveTransformedInput,
+): Promise<{ rows: number }> {
   const name = input.name.trim();
   if (!TRANSFORMED_NAME.test(name)) {
     throw new Error(
@@ -600,11 +767,14 @@ async function saveTransformed(input: SaveTransformedInput): Promise<{ rows: num
     );
   }
   const file = await readTransformed();
-  const loaded = await callPython<string[]>('list_tables', { data_dir: dataDir() });
+  const loaded = await callPython<string[]>('list_tables', {
+    data_dir: dataDir(),
+  });
   if (input.isNew && (name in file.tables || loaded.includes(name))) {
     throw new Error(`There's already a table called ${name}.`);
   }
-  if (!input.isNew && !(name in file.tables)) throw new Error(`There's no transformed table called ${name}.`);
+  if (!input.isNew && !(name in file.tables))
+    throw new Error(`There's no transformed table called ${name}.`);
 
   const dependsOn = await callPython<string[]>('query_tables', {
     data_dir: dataDir(),
@@ -622,8 +792,17 @@ async function saveTransformed(input: SaveTransformedInput): Promise<{ rows: num
   }
 
   // Build it first, so a failing query is never saved.
-  const result = await callPython<{ rows: number }>('build_table', { data_dir: dataDir(), table: name, sql: input.sql });
-  file.tables[name] = { sql: input.sql, dependsOn, updatedAt: new Date().toISOString(), error: null };
+  const result = await callPython<{ rows: number }>('build_table', {
+    data_dir: dataDir(),
+    table: name,
+    sql: input.sql,
+  });
+  file.tables[name] = {
+    sql: input.sql,
+    dependsOn,
+    updatedAt: new Date().toISOString(),
+    error: null,
+  };
   await writeTransformed(file);
   await rebuildDownstream([name]);
   return result;
@@ -640,11 +819,14 @@ async function listTransformed(): Promise<TransformedTable[]> {
 async function dependentsOf(tables: string[]): Promise<string[]> {
   const deps = dependencyMap(await readTransformed());
   const users = new Set(tables.flatMap((t) => directDependents(deps, t)));
-  for (const [table, transform] of Object.entries((await readTransforms()).tables)) {
+  for (const [table, transform] of Object.entries(
+    (await readTransforms()).tables,
+  )) {
     if (tables.includes(table)) continue;
-    const reads = await callPython<string[]>('query_tables', { data_dir: dataDir(), sql: transform.sql }).catch(
-      () => [],
-    );
+    const reads = await callPython<string[]>('query_tables', {
+      data_dir: dataDir(),
+      sql: transform.sql,
+    }).catch(() => []);
     if (reads.some((r) => tables.includes(r))) users.add(table);
   }
   for (const t of tables) users.delete(t);
@@ -660,7 +842,12 @@ async function deleteTable(table: string) {
   const transformed = await readTransformed();
   const owner = (await readAllSources()).find((s) => s.tables.includes(table));
   const doomed =
-    table in transformed.tables ? [table] : [table, ...(owner?.tables ?? []).filter((t) => t.startsWith(`${table}__`))];
+    table in transformed.tables
+      ? [table]
+      : [
+          table,
+          ...(owner?.tables ?? []).filter((t) => t.startsWith(`${table}__`)),
+        ];
 
   const users = await dependentsOf(doomed);
   if (users.length) {
@@ -674,8 +861,13 @@ async function deleteTable(table: string) {
     delete transformed.tables[table];
     await writeTransformed(transformed);
   } else {
-    for (const t of doomed) await callPython('delete_table', { data_dir: dataDir(), table: t });
-    if (owner) await writeSource({ ...owner, tables: owner.tables.filter((t) => !doomed.includes(t)) });
+    for (const t of doomed)
+      await callPython('delete_table', { data_dir: dataDir(), table: t });
+    if (owner)
+      await writeSource({
+        ...owner,
+        tables: owner.tables.filter((t) => !doomed.includes(t)),
+      });
     const transforms = await readTransforms();
     for (const t of doomed) delete transforms.tables[t];
     await writeTransforms(transforms);
@@ -696,7 +888,11 @@ async function pickPaths(
   const win = BrowserWindow.fromWebContents(event.sender)!;
   const { canceled, filePaths } = await dialog.showOpenDialog(win, {
     properties:
-      kind === 'folder' ? ['openDirectory'] : kind === 'files' ? ['openFile', 'multiSelections'] : ['openFile'],
+      kind === 'folder'
+        ? ['openDirectory']
+        : kind === 'files'
+          ? ['openFile', 'multiSelections']
+          : ['openFile'],
     filters: filters.map((f) => ({ name: f.name, extensions: f.extensions })),
   });
   return canceled ? [] : filePaths;
@@ -704,33 +900,65 @@ async function pickPaths(
 
 export function registerDataHandlers() {
   ipcMain.handle('data:catalog', () => catalog());
-  ipcMain.handle('data:list-sources', async () => Promise.all((await readAllSources()).map(toDataSource)));
-  ipcMain.handle('data:save-source', (_event, input: SaveSourceInput) => saveSource(input));
-  ipcMain.handle('data:remove-source', (_event, id: string) => removeSource(id));
+  ipcMain.handle('data:list-sources', async () =>
+    Promise.all((await readAllSources()).map(toDataSource)),
+  );
+  ipcMain.handle('data:save-source', (_event, input: SaveSourceInput) =>
+    saveSource(input),
+  );
+  ipcMain.handle('data:remove-source', (_event, id: string) =>
+    removeSource(id),
+  );
   ipcMain.handle('data:discover', (_event, id: string) =>
     runSourceJob<DiscoveredResource[]>(id, { action: 'discover' }),
   );
-  ipcMain.handle('data:load', (_event, id: string, resources: string[]) => load(id, resources));
+  ipcMain.handle('data:load', (_event, id: string, resources: string[]) =>
+    load(id, resources),
+  );
   ipcMain.handle('data:list-tables', () =>
-    callPython<string[]>('list_tables', { data_dir: path.join(openProject().filesDir, 'data') }),
+    callPython<string[]>('list_tables', {
+      data_dir: path.join(openProject().filesDir, 'data'),
+    }),
   );
   ipcMain.handle('data:describe-tables', () =>
-    callPython<TableSchema[]>('describe_tables', { data_dir: path.join(openProject().filesDir, 'data') }),
+    callPython<TableSchema[]>('describe_tables', {
+      data_dir: path.join(openProject().filesDir, 'data'),
+    }),
   );
-  ipcMain.handle('data:get-transform', async (_event, table: string) =>
-    (await readTransforms()).tables[table]?.sql ?? null,
+  ipcMain.handle(
+    'data:get-transform',
+    async (_event, table: string) =>
+      (await readTransforms()).tables[table]?.sql ?? null,
   );
-  ipcMain.handle('data:preview-transform', (_event, sql: string, kind: TableKind = 'loaded') =>
-    callPython<TablePreview>('preview_transform', { data_dir: dataDir(), sql, kind, limit: 200 }),
+  ipcMain.handle(
+    'data:preview-transform',
+    (_event, sql: string, kind: TableKind = 'loaded') =>
+      callPython<TablePreview>('preview_transform', {
+        data_dir: dataDir(),
+        sql,
+        kind,
+        limit: 200,
+      }),
   );
   ipcMain.handle('data:list-transformed', () => listTransformed());
-  ipcMain.handle('data:save-transformed', (_event, input: SaveTransformedInput) => saveTransformed(input));
+  ipcMain.handle(
+    'data:save-transformed',
+    (_event, input: SaveTransformedInput) => saveTransformed(input),
+  );
   ipcMain.handle('data:refresh-all', () => refreshAll());
-  ipcMain.handle('data:apply-transform', (_event, table: string, sql: string) => applyTransform(table, sql));
-  ipcMain.handle('data:remove-transform', (_event, table: string) => removeTransform(table));
-  ipcMain.handle('data:delete-table', (_event, table: string) => deleteTable(table));
+  ipcMain.handle('data:apply-transform', (_event, table: string, sql: string) =>
+    applyTransform(table, sql),
+  );
+  ipcMain.handle('data:remove-transform', (_event, table: string) =>
+    removeTransform(table),
+  );
+  ipcMain.handle('data:delete-table', (_event, table: string) =>
+    deleteTable(table),
+  );
   ipcMain.handle('data:load-diagram', () => loadDiagram());
-  ipcMain.handle('data:save-diagram', (_event, diagram: ModelDiagram) => saveDiagram(diagram));
+  ipcMain.handle('data:save-diagram', (_event, diagram: ModelDiagram) =>
+    saveDiagram(diagram),
+  );
   ipcMain.handle('data:preview-table', (_event, table: string, limit = 100) =>
     callPython<TablePreview>('preview_table', {
       data_dir: path.join(openProject().filesDir, 'data'),

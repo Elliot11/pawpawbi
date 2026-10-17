@@ -62,6 +62,12 @@ obvious from the code. Keep this file current when a convention changes.
 - The user has said **don't load data into DuckDB**. DuckDB is only a query engine over Parquet
   files; data lives as Parquet in `data/raw` and `data/model`.
 - Data loads are full refreshes (`write_disposition="replace"`, `refresh="drop_resources"`).
+- **Two kinds of table**: loaded (with optional in-place transforms, which read original data
+  only) and transformed (built by SQL from any tables). Names are unique across both. Anything
+  that changes a table must trigger rebuilds of what depends on it, in order
+  (`rebuildDerived` / `rebuildDownstream` in `src/data.ts`, ordering in
+  `src/shared/dependencies.ts`, tested in `tests/node/`). Deleting a table others read is refused.
+  Spec: [docs/pawpaw-file-format.md](docs/pawpaw-file-format.md).
 
 ## Style
 

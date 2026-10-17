@@ -6,7 +6,9 @@ import { STAGES } from '../workflow';
 const props = defineProps<{ stage: WorkflowStage }>();
 defineEmits<{ select: [stage: WorkflowStage] }>();
 
-const currentIndex = computed(() => STAGES.findIndex((s) => s.id === props.stage));
+const currentIndex = computed(() =>
+  STAGES.findIndex((s) => s.id === props.stage),
+);
 
 // Lucide-style 24×24 stroke icons.
 const ICONS: Record<WorkflowStage, string> = {
@@ -27,7 +29,9 @@ const ICONS: Record<WorkflowStage, string> = {
         :aria-current="i === currentIndex ? 'step' : undefined"
         @click="$emit('select', s.id)"
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path :d="ICONS[s.id]" /></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path :d="ICONS[s.id]" />
+        </svg>
         {{ s.label }}
       </button>
     </li>

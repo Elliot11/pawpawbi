@@ -2,7 +2,11 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { registerDataHandlers } from './data';
-import { closeProject, hasOpenProject, registerProjectHandlers } from './projects';
+import {
+  closeProject,
+  hasOpenProject,
+  registerProjectHandlers,
+} from './projects';
 import { registerPythonHandlers } from './python';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -55,7 +59,9 @@ const createWindow = () => {
         projectClosed = true;
         mainWindow.close();
       })
-      .catch((error: Error) => dialog.showErrorBox("Couldn't save the project", error.message));
+      .catch((error: Error) =>
+        dialog.showErrorBox("Couldn't save the project", error.message),
+      );
   });
 
   // Open the DevTools in their own window during development so they don't squash the layout.

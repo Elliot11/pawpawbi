@@ -1,7 +1,7 @@
 # The .pawpaw file format
 
 **Format version:** 1
-**Status:** Draft. Sections marked *provisional* describe features that aren't built yet and may change before they are.
+**Status:** Draft. Sections marked _provisional_ describe features that aren't built yet and may change before they are.
 
 A `.pawpaw` file is a standard ZIP archive containing one PawpawBI project: its data, its data model, its report and its assistant conversation. Everything inside is an ordinary file (JSON, JSON Lines, Parquet, PNG), so a project can be unzipped and inspected with everyday tools.
 
@@ -87,13 +87,13 @@ Identifies the project and the format version. Required.
 }
 ```
 
-| Field | Required | Meaning |
-|---|---|---|
-| `formatVersion` | Yes | Version of this specification the file follows. See [Versioning](#versioning) |
-| `id` | Yes | Permanent unique ID. Stays the same when the file is renamed, copied or moved; used to find the project's working folder |
-| `name` | Yes | Display name. Defaults to the file name when the project is created; the user can change it independently |
-| `createdAt`, `modifiedAt` | Yes | When the project was created and last saved |
-| `createdWith`, `modifiedWith` | Yes | App name and version that created and last saved the file. Useful for diagnosing compatibility problems |
+| Field                         | Required | Meaning                                                                                                                  |
+| ----------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `formatVersion`               | Yes      | Version of this specification the file follows. See [Versioning](#versioning)                                            |
+| `id`                          | Yes      | Permanent unique ID. Stays the same when the file is renamed, copied or moved; used to find the project's working folder |
+| `name`                        | Yes      | Display name. Defaults to the file name when the project is created; the user can change it independently                |
+| `createdAt`, `modifiedAt`     | Yes      | When the project was created and last saved                                                                              |
+| `createdWith`, `modifiedWith` | Yes      | App name and version that created and last saved the file. Useful for diagnosing compatibility problems                  |
 
 ## Data sources
 
@@ -113,13 +113,13 @@ Identifies the project and the format version. Required.
 }
 ```
 
-| Field | Meaning |
-|---|---|
-| `type` | Connector ID from the catalog in `python/sidecar/connectors/`, e.g. `local_files`, `postgres`, `salesforce` |
-| `options` | The connector's non-secret settings, by field key: file path, host, database name, user name and so on |
-| `resources` | The connector resources the user chose to load. Empty means the connector's defaults |
-| `tables` | The tables in `data/raw/` this source produced. No two sources may produce the same table |
-| `lastLoadedAt` | When the data was last loaded |
+| Field          | Meaning                                                                                                     |
+| -------------- | ----------------------------------------------------------------------------------------------------------- |
+| `type`         | Connector ID from the catalog in `python/sidecar/connectors/`, e.g. `local_files`, `postgres`, `salesforce` |
+| `options`      | The connector's non-secret settings, by field key: file path, host, database name, user name and so on      |
+| `resources`    | The connector resources the user chose to load. Empty means the connector's defaults                        |
+| `tables`       | The tables in `data/raw/` this source produced. No two sources may produce the same table                   |
+| `lastLoadedAt` | When the data was last loaded                                                                               |
 
 **Credentials** (passwords, API keys, tokens: every connector field marked `secret`) are stored in the operating system's secure storage on the user's machine, via Electron's `safeStorage`, keyed by project ID and source ID. They are never in the file. When someone opens a project on another computer, the data and report work immediately; refreshing a source asks them to sign in again.
 
@@ -130,7 +130,7 @@ Identifies the project and the format version. Required.
 The project's data, stored as Parquet.
 
 - **`data/raw/`** is written only by dlt. Each table is a folder of one or more Parquet files that together make up the table; readers must treat the folder as a single table and never rely on file names. The `_dlt_loads`, `_dlt_pipeline_state` and `_dlt_version` folders are dlt's own records. They include the pipeline state dlt needs for incremental loading (fetching only new rows), so they must be kept.
-There are two kinds of table:
+  There are two kinds of table:
 
 - **Loaded tables** come from data loads. Their data is in `raw/`.
 - **Transformed tables** are built by a SQL query from other tables. Their data is in `transformed/`.
@@ -145,7 +145,7 @@ Loaded and transformed table names are unique across both kinds. Everything in `
 
 ## model/
 
-What the user and the assistant have worked out about the data, typically during the *Model data* step. None of this changes the data in `raw/`; it describes how to interpret it.
+What the user and the assistant have worked out about the data, typically during the _Model data_ step. None of this changes the data in `raw/`; it describes how to interpret it.
 
 ### model/tables/&lt;table&gt;.json
 
@@ -159,19 +159,24 @@ One file per table (loaded or transformed). A table with no file here is used as
   "description": "One row per order, exported from the sales system.",
   "columns": {
     "order_date": { "type": "date", "displayName": "Order date" },
-    "revenue": { "type": "currency", "currency": "AUD", "description": "Excludes GST" },
+    "revenue": {
+      "type": "currency",
+      "currency": "AUD",
+      "description": "Excludes GST"
+    },
     "order_id": { "role": "key" }
   }
 }
 ```
 
-| Field | Meaning |
-|---|---|
-| `layer` | `raw`, `model` or `transformed`: which folder under `data/` the table is in |
-| `displayName`, `description` | How the table is labelled in the app and explained to the assistant |
-| `columns` | Per-column overrides, by column name. Only columns with something to say need an entry |
+| Field                        | Meaning                                                                                |
+| ---------------------------- | -------------------------------------------------------------------------------------- |
+| `layer`                      | `raw`, `model` or `transformed`: which folder under `data/` the table is in            |
+| `displayName`, `description` | How the table is labelled in the app and explained to the assistant                    |
+| `columns`                    | Per-column overrides, by column name. Only columns with something to say need an entry |
 
 Column fields, all optional:
+
 - `type`: how to interpret values, overriding what was stored. One of `text`, `integer`, `decimal`, `currency`, `percentage`, `boolean`, `date`, `datetime`.
 - `role`: `key` (uniquely identifies a row), `measure` (a number to add up or average) or `dimension` (something to group by).
 - `displayName`, `description`, `hidden` (`true` to keep it out of the report builder), and `format` for display (e.g. `"0.0%"`).
@@ -242,11 +247,11 @@ Transformed tables: new tables built from other tables. The query's result becom
 }
 ```
 
-| Field | Meaning |
-|---|---|
-| `sql` | The query that builds the table |
+| Field       | Meaning                                                               |
+| ----------- | --------------------------------------------------------------------- |
+| `sql`       | The query that builds the table                                       |
 | `dependsOn` | The tables the query reads, worked out from the query when it's saved |
-| `error` | Why the last build failed, or `null` |
+| `error`     | Why the last build failed, or `null`                                  |
 
 - The query can read any other table by name, loaded or transformed, as the app shows it (a loaded table's in-place transform result if it has one).
 - Circular references (a table that reads itself, directly or through other transformed tables) are refused when saving.

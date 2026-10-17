@@ -31,7 +31,8 @@ async function save() {
     await window.api.projects.save();
   } catch (error) {
     console.error(error);
-    saveError.value = "Couldn't save. Check the file isn't open in another program.";
+    saveError.value =
+      "Couldn't save. Check the file isn't open in another program.";
   } finally {
     saving.value = false;
   }
@@ -42,7 +43,8 @@ async function close() {
     if (await window.api.projects.close()) emit('close');
   } catch (error) {
     console.error(error);
-    saveError.value = "Couldn't save. Check the file isn't open in another program.";
+    saveError.value =
+      "Couldn't save. Check the file isn't open in another program.";
   }
 }
 
@@ -61,7 +63,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   <div class="workspace">
     <header class="topbar">
       <button class="back" title="Back to projects" @click="close">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15 18l-6-6 6-6" />
+        </svg>
         Projects
       </button>
       <span class="divider" aria-hidden="true"></span>
@@ -72,8 +76,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       </div>
 
       <div class="save-area">
-        <span v-if="saveError" class="save-error" role="alert">{{ saveError }}</span>
-        <span v-else class="save-status">{{ project.dirty ? 'Unsaved changes' : 'Saved' }}</span>
+        <span v-if="saveError" class="save-error" role="alert">{{
+          saveError
+        }}</span>
+        <span v-else class="save-status">{{
+          project.dirty ? 'Unsaved changes' : 'Saved'
+        }}</span>
         <button
           class="save"
           :disabled="!project.dirty || saving"
@@ -92,7 +100,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
              half-finished data source setup. -->
         <KeepAlive>
           <GetData v-if="stage === 'data'" />
-          <ModelData v-else-if="stage === 'model'" @add-data="goToStage('data')" />
+          <ModelData
+            v-else-if="stage === 'model'"
+            @add-data="goToStage('data')"
+          />
           <ReportCanvas v-else />
         </KeepAlive>
       </section>

@@ -23,7 +23,9 @@ const sidecarScript = path.join(sidecarDir, 'main.py');
 export const PYTHON_FLAGS = ['-E', '-s', '-B', '-u', '-X', 'utf8'];
 
 /** Environment for Python processes. dltDataDir is where dlt keeps local pipeline state. */
-export function pythonEnv(dltDataDir = path.join(app.getPath('userData'), 'dlt')) {
+export function pythonEnv(
+  dltDataDir = path.join(app.getPath('userData'), 'dlt'),
+) {
   return {
     ...process.env,
     // Keep dlt's pipeline state in the app's data folder rather than ~/.dlt,
@@ -47,7 +49,10 @@ class PythonSidecar {
     const proc = this.process ?? this.start();
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
+      this.pending.set(id, {
+        resolve: resolve as (value: unknown) => void,
+        reject,
+      });
       proc.stdin.write(JSON.stringify({ id, method, params }) + '\n');
     });
   }
@@ -62,8 +67,12 @@ class PythonSidecar {
       env: pythonEnv(),
     });
 
-    readline.createInterface({ input: proc.stdout }).on('line', (line) => this.onLine(line));
-    proc.stderr.on('data', (data) => console.error(`[python] ${String(data).trimEnd()}`));
+    readline
+      .createInterface({ input: proc.stdout })
+      .on('line', (line) => this.onLine(line));
+    proc.stderr.on('data', (data) =>
+      console.error(`[python] ${String(data).trimEnd()}`),
+    );
     proc.on('error', (error) => this.failAll(error));
     proc.on('exit', (code) => {
       this.process = null;
@@ -101,7 +110,8 @@ class PythonSidecar {
 const sidecar = new PythonSidecar();
 
 /** Calls a method in python/sidecar/main.py. */
-export const callPython = <T>(method: string, params?: unknown) => sidecar.call<T>(method, params);
+export const callPython = <T>(method: string, params?: unknown) =>
+  sidecar.call<T>(method, params);
 
 export function registerPythonHandlers() {
   ipcMain.handle('python:info', () => sidecar.call<PythonInfo>('info'));

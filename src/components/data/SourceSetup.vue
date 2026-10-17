@@ -35,21 +35,32 @@ const settings = reactive<Record<string, unknown>>(
   Object.fromEntries(
     props.connector.fields.map((f) => [
       f.key,
-      props.source?.options[f.key] ?? f.default ?? (f.type === 'checkbox' ? false : f.type === 'files' ? [] : ''),
+      props.source?.options[f.key] ??
+        f.default ??
+        (f.type === 'checkbox' ? false : f.type === 'files' ? [] : ''),
     ]),
   ),
 );
 
-const basicFields = computed(() => props.connector.fields.filter((f) => !f.advanced));
-const advancedFields = computed(() => props.connector.fields.filter((f) => f.advanced));
-const isSaved = (key: string) => savedSource.value?.savedSecrets.includes(key) ?? false;
+const basicFields = computed(() =>
+  props.connector.fields.filter((f) => !f.advanced),
+);
+const advancedFields = computed(() =>
+  props.connector.fields.filter((f) => f.advanced),
+);
+const isSaved = (key: string) =>
+  savedSource.value?.savedSecrets.includes(key) ?? false;
 
 const missing = computed(() =>
   props.connector.fields
     .filter((f) => f.required)
     .filter((f) => {
       const value = settings[f.key];
-      const empty = value === '' || value === null || value === undefined || (Array.isArray(value) && !value.length);
+      const empty =
+        value === '' ||
+        value === null ||
+        value === undefined ||
+        (Array.isArray(value) && !value.length);
       return empty && !(f.secret && isSaved(f.key));
     })
     .map((f) => f.label),
@@ -59,7 +70,9 @@ const resources = ref<DiscoveredResource[]>([]);
 const chosen = ref<Set<string>>(new Set());
 const filter = ref('');
 const visibleResources = computed(() =>
-  resources.value.filter((r) => r.name.toLowerCase().includes(filter.value.toLowerCase())),
+  resources.value.filter((r) =>
+    r.name.toLowerCase().includes(filter.value.toLowerCase()),
+  ),
 );
 const loaded = ref<LoadedTable[]>([]);
 
@@ -92,7 +105,9 @@ async function connect() {
     const previous = savedSource.value.resources;
     chosen.value = new Set(
       resources.value
-        .filter((r) => (previous.length ? previous.includes(r.name) : r.selected))
+        .filter((r) =>
+          previous.length ? previous.includes(r.name) : r.selected,
+        )
         .map((r) => r.name),
     );
     // Nothing to choose between: go straight to loading.
@@ -115,7 +130,9 @@ async function load() {
   error.value = '';
   progress.value = 'Starting…';
   try {
-    loaded.value = await window.api.data.load(savedSource.value.id, [...chosen.value]);
+    loaded.value = await window.api.data.load(savedSource.value.id, [
+      ...chosen.value,
+    ]);
     step.value = 'finished';
   } catch (err) {
     error.value = errorMessage(err);
@@ -134,25 +151,47 @@ function selectAll(selected: boolean) {
   chosen.value = new Set(selected ? resources.value.map((r) => r.name) : []);
 }
 
-const totalRows = computed(() => loaded.value.reduce((sum, t) => sum + t.rows, 0));
+const totalRows = computed(() =>
+  loaded.value.reduce((sum, t) => sum + t.rows, 0),
+);
 const formatNumber = (n: number) => n.toLocaleString();
 </script>
 
 <template>
   <div class="setup">
     <header class="head">
-      <span class="monogram" aria-hidden="true">{{ connector.name.charAt(0) }}</span>
+      <span class="monogram" aria-hidden="true">{{
+        connector.name.charAt(0)
+      }}</span>
       <div class="head-text">
         <h2>{{ source ? `Edit ${source.name}` : connector.name }}</h2>
         <p>{{ connector.description }}</p>
       </div>
-      <a v-if="connector.docsUrl" class="docs" :href="connector.docsUrl" target="_blank" rel="noreferrer">Docs ↗</a>
+      <a
+        v-if="connector.docsUrl"
+        class="docs"
+        :href="connector.docsUrl"
+        target="_blank"
+        rel="noreferrer"
+        >Docs ↗</a
+      >
     </header>
 
     <ol class="steps" aria-label="Progress">
-      <li :class="{ current: step === 'settings', done: step !== 'settings' }">Connect</li>
-      <li :class="{ current: step === 'tables', done: step === 'loading' || step === 'finished' }">Choose tables</li>
-      <li :class="{ current: step === 'loading', done: step === 'finished' }">Load</li>
+      <li :class="{ current: step === 'settings', done: step !== 'settings' }">
+        Connect
+      </li>
+      <li
+        :class="{
+          current: step === 'tables',
+          done: step === 'loading' || step === 'finished',
+        }"
+      >
+        Choose tables
+      </li>
+      <li :class="{ current: step === 'loading', done: step === 'finished' }">
+        Load
+      </li>
     </ol>
 
     <p v-if="error" class="error" role="alert">{{ error }}</p>
@@ -161,7 +200,12 @@ const formatNumber = (n: number) => n.toLocaleString();
     <form v-if="step === 'settings'" class="form" @submit.prevent="connect">
       <div class="field-name">
         <label for="source-name">Name</label>
-        <input id="source-name" v-model="name" type="text" :placeholder="connector.name" />
+        <input
+          id="source-name"
+          v-model="name"
+          type="text"
+          :placeholder="connector.name"
+        />
       </div>
 
       <ConnectorFieldInput
@@ -173,7 +217,11 @@ const formatNumber = (n: number) => n.toLocaleString();
       />
 
       <template v-if="advancedFields.length">
-        <button type="button" class="toggle" @click="showAdvanced = !showAdvanced">
+        <button
+          type="button"
+          class="toggle"
+          @click="showAdvanced = !showAdvanced"
+        >
           {{ showAdvanced ? 'Hide' : 'Show' }} advanced settings
         </button>
         <ConnectorFieldInput
@@ -186,12 +234,23 @@ const formatNumber = (n: number) => n.toLocaleString();
       </template>
 
       <p v-if="connector.packages.length" class="note">
-        The first time you use this connector, PawpawBI downloads the components it needs. This needs an internet connection.
+        The first time you use this connector, PawpawBI downloads the components
+        it needs. This needs an internet connection.
       </p>
-      <p class="note">Passwords and keys are encrypted on this computer and are never saved in the project file.</p>
+      <p class="note">
+        Passwords and keys are encrypted on this computer and are never saved in
+        the project file.
+      </p>
 
       <div class="actions">
-        <button type="button" class="ghost" :disabled="busy" @click="$emit('cancel')">Cancel</button>
+        <button
+          type="button"
+          class="ghost"
+          :disabled="busy"
+          @click="$emit('cancel')"
+        >
+          Cancel
+        </button>
         <button type="submit" class="primary" :disabled="busy">
           {{ busy ? progress || 'Connecting…' : 'Connect' }}
         </button>
@@ -202,10 +261,16 @@ const formatNumber = (n: number) => n.toLocaleString();
     <div v-else-if="step === 'tables'" class="tables">
       <div class="tables-head">
         <p>
-          <strong>{{ resources.length }}</strong> tables available. Choose the ones to load.
+          <strong>{{ resources.length }}</strong> tables available. Choose the
+          ones to load.
         </p>
         <div class="tables-tools">
-          <input v-if="resources.length > 8" v-model="filter" type="search" placeholder="Filter tables…" />
+          <input
+            v-if="resources.length > 8"
+            v-model="filter"
+            type="search"
+            placeholder="Filter tables…"
+          />
           <button class="link" @click="selectAll(true)">Select all</button>
           <button class="link" @click="selectAll(false)">None</button>
         </div>
@@ -213,7 +278,11 @@ const formatNumber = (n: number) => n.toLocaleString();
       <ul class="resource-list">
         <li v-for="r in visibleResources" :key="r.name">
           <label>
-            <input type="checkbox" :checked="chosen.has(r.name)" @change="toggle(r.name)" />
+            <input
+              type="checkbox"
+              :checked="chosen.has(r.name)"
+              @change="toggle(r.name)"
+            />
             {{ r.name }}
           </label>
         </li>
@@ -236,7 +305,10 @@ const formatNumber = (n: number) => n.toLocaleString();
     <!-- 4. Finished -->
     <div v-else class="finished">
       <div class="success">
-        <strong>Loaded {{ formatNumber(totalRows) }} rows into {{ loaded.length }} {{ loaded.length === 1 ? 'table' : 'tables' }}</strong>
+        <strong
+          >Loaded {{ formatNumber(totalRows) }} rows into {{ loaded.length }}
+          {{ loaded.length === 1 ? 'table' : 'tables' }}</strong
+        >
         <p>Save the project to keep this data.</p>
       </div>
       <ul class="loaded-list">
@@ -244,7 +316,11 @@ const formatNumber = (n: number) => n.toLocaleString();
           <button class="loaded" @click="$emit('preview', t.name)">
             <span>{{ t.name }}</span>
             <small>{{ formatNumber(t.rows) }} rows</small>
-            <small v-if="t.transformError" class="transform-error" :title="t.transformError">
+            <small
+              v-if="t.transformError"
+              class="transform-error"
+              :title="t.transformError"
+            >
               SQL transform failed, showing original data
             </small>
             <span class="preview-link">Preview →</span>

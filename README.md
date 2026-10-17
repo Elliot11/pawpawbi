@@ -12,7 +12,9 @@ ordinary files and folders, defined in [docs/pawpaw-file-format.md](docs/pawpaw-
 
 Early development. Working: projects (create, open, save, crash recovery), 47 data connectors
 (the file connectors and SQLite are tested, the rest aren't yet: see
-[docs/connectors.md](docs/connectors.md)), the Model data canvas, and SQL transforms. Not built
+[docs/connectors.md](docs/connectors.md)), the Model data canvas with dependency lines, SQL
+transforms of loaded tables, transformed tables built from other tables, and refreshing
+everything in dependency order. Not built
 yet: relationships between tables, visuals, and connecting the assistant to an AI model (its
 replies are placeholders). Known issues and the backlog are in [TODO.md](TODO.md).
 
@@ -32,18 +34,18 @@ pinned versions change.
 
 ## Scripts
 
-| Command | What it does |
-|---|---|
-| `npm start` | Runs the app in development mode. Edits to Vue files reload instantly; edits to `src/main.ts`, `src/projects.ts`, `src/data.ts`, etc. (the main process) need a restart. |
-| `npm run typecheck` | Type-checks all TypeScript and Vue files. |
-| `npm test` | Runs every automated test (`test:node` then `test:python`). |
-| `npm run test:node` | Tests for the TypeScript main-process code, e.g. the `.pawpaw` archive format. |
-| `npm run test:python` | Tests for the Python side: connectors, the job runner, SQL transforms and their security lockdown. |
-| `npm run lint` / `lint:fix` | Lints and checks formatting (oxlint and oxfmt). |
-| `npm run package` | Builds the app into `out/` without an installer. |
-| `npm run make` | Builds the Windows installer into `out/make/`. |
-| `npm run setup:python` | Downloads Python and installs `python/requirements.txt` (runs automatically before start, package and make). |
-| `npm run lock:python` | Reinstalls Python packages from scratch and rewrites `python/constraints.txt`. Run after editing `requirements.txt`. |
+| Command                     | What it does                                                                                                                                                             |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `npm start`                 | Runs the app in development mode. Edits to Vue files reload instantly; edits to `src/main.ts`, `src/projects.ts`, `src/data.ts`, etc. (the main process) need a restart. |
+| `npm run typecheck`         | Type-checks all TypeScript and Vue files.                                                                                                                                |
+| `npm test`                  | Runs every automated test (`test:node` then `test:python`).                                                                                                              |
+| `npm run test:node`         | Tests for the TypeScript main-process code, e.g. the `.pawpaw` archive format.                                                                                           |
+| `npm run test:python`       | Tests for the Python side: connectors, the job runner, SQL transforms and their security lockdown.                                                                       |
+| `npm run lint` / `lint:fix` | Lints and checks formatting (oxlint and oxfmt).                                                                                                                          |
+| `npm run package`           | Builds the app into `out/` without an installer.                                                                                                                         |
+| `npm run make`              | Builds the Windows installer into `out/make/`.                                                                                                                           |
+| `npm run setup:python`      | Downloads Python and installs `python/requirements.txt` (runs automatically before start, package and make).                                                             |
+| `npm run lock:python`       | Reinstalls Python packages from scratch and rewrites `python/constraints.txt`. Run after editing `requirements.txt`.                                                     |
 
 ## Project layout
 
@@ -52,11 +54,13 @@ src/                     Electron app (TypeScript)
   main.ts                  Main process: window, app lifecycle
   projects.ts              Open, save, close, crash recovery, recent projects, chat files
   pawpaw-archive.ts        Reading and writing .pawpaw ZIP files
-  data.ts                  Data sources, connector environments, load jobs, transforms
+  data.ts                  Data sources, connector environments, load jobs, transforms,
+                           transformed tables and rebuilding them in order
   credentials.ts           Encrypted storage for passwords and API keys
   python.ts                Starts and talks to the Python sidecar
   preload.ts               The window.api bridge between the page and the main process
-  shared/                  Types and helpers used by both sides
+  shared/                  Types and helpers used by both sides (dependencies.ts: build
+                           order and circular-reference checks for transformed tables)
   App.vue, views/, components/   The UI (Vue)
 python/
   requirements.txt         Bundled Python packages (exact pins)

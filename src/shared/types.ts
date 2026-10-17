@@ -159,7 +159,16 @@ export interface RefreshAllResult {
 /** DataProgress.sourceId for progress while refreshing every source. */
 export const ALL_SOURCES = '*';
 
-export type ColumnKind = 'integer' | 'decimal' | 'text' | 'boolean' | 'date' | 'datetime' | 'time' | 'nested' | 'other';
+export type ColumnKind =
+  | 'integer'
+  | 'decimal'
+  | 'text'
+  | 'boolean'
+  | 'date'
+  | 'datetime'
+  | 'time'
+  | 'nested'
+  | 'other';
 
 export interface TableSchema {
   name: string;
@@ -222,7 +231,10 @@ export interface DataApi {
   deleteTable: (table: string) => Promise<void>;
   previewTable: (table: string, limit?: number) => Promise<TablePreview>;
   /** Shows a file or folder picker. Resolves to the chosen paths, or [] if cancelled. */
-  pickPaths: (kind: 'file' | 'files' | 'folder', filters?: ConnectorField['fileFilters']) => Promise<string[]>;
+  pickPaths: (
+    kind: 'file' | 'files' | 'folder',
+    filters?: ConnectorField['fileFilters'],
+  ) => Promise<string[]>;
   onProgress: (callback: (progress: DataProgress) => void) => () => void;
 }
 

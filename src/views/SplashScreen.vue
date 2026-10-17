@@ -44,9 +44,12 @@ async function run(action: () => Promise<OpenResult>) {
 
 const createProject = () => run(window.api.projects.create);
 const openProject = () => run(window.api.projects.open);
-const openRecent = (recent: RecentProject) => run(() => window.api.projects.openRecent(recent.path));
+const openRecent = (recent: RecentProject) =>
+  run(() => window.api.projects.openRecent(recent.path));
 
-const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+const relativeTime = new Intl.RelativeTimeFormat(undefined, {
+  numeric: 'auto',
+});
 
 function timeAgo(iso: string) {
   const minutes = Math.round((Date.now() - Date.parse(iso)) / 60_000);
@@ -63,7 +66,9 @@ function timeAgo(iso: string) {
       <div class="brand">
         <img class="logo" src="/favicon.svg" alt="" />
         <h1>PawpawBI</h1>
-        <p class="tagline">Turn your data into reports, with an assistant guiding each step.</p>
+        <p class="tagline">
+          Turn your data into reports, with an assistant guiding each step.
+        </p>
       </div>
 
       <div class="actions">
@@ -79,7 +84,9 @@ function timeAgo(iso: string) {
         <button class="action" :disabled="busy" @click="openProject">
           <span class="action-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24">
-              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <path
+                d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+              />
             </svg>
           </span>
           <span class="action-text">
@@ -90,7 +97,10 @@ function timeAgo(iso: string) {
       </div>
 
       <p class="version">
-        Version {{ version }}<template v-if="pythonVersion"> · Python {{ pythonVersion }}</template>
+        Version {{ version
+        }}<template v-if="pythonVersion">
+          · Python {{ pythonVersion }}</template
+        >
       </p>
     </section>
 
@@ -101,12 +111,16 @@ function timeAgo(iso: string) {
       <ul v-if="recents.length" class="recent-list">
         <li v-for="recent in recents" :key="recent.path">
           <button class="recent" :disabled="busy" @click="openRecent(recent)">
-            <span class="recent-initial" aria-hidden="true">{{ recent.name.charAt(0) }}</span>
+            <span class="recent-initial" aria-hidden="true">{{
+              recent.name.charAt(0)
+            }}</span>
             <span class="recent-text">
               <strong>{{ recent.name }}</strong>
               <small :title="recent.path">{{ recent.path }}</small>
             </span>
-            <time :datetime="recent.openedAt">{{ timeAgo(recent.openedAt) }}</time>
+            <time :datetime="recent.openedAt">{{
+              timeAgo(recent.openedAt)
+            }}</time>
           </button>
         </li>
       </ul>

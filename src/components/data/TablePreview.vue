@@ -21,7 +21,10 @@ const notice = ref('');
 
 async function loadPreview() {
   try {
-    preview.value = await window.api.data.previewTable(props.table, PREVIEW_ROWS);
+    preview.value = await window.api.data.previewTable(
+      props.table,
+      PREVIEW_ROWS,
+    );
   } catch (err) {
     error.value = errorMessage(err);
   }
@@ -30,7 +33,8 @@ async function loadPreview() {
 onMounted(loadPreview);
 
 const unsubscribe = window.api.data.onProgress((p) => {
-  if (refreshing.value && p.sourceId === props.source?.id) progress.value = p.message;
+  if (refreshing.value && p.sourceId === props.source?.id)
+    progress.value = p.message;
 });
 onBeforeUnmount(unsubscribe);
 
@@ -43,7 +47,10 @@ async function refresh() {
   error.value = '';
   notice.value = '';
   try {
-    const tables = await window.api.data.load(source.id, plain(source.resources));
+    const tables = await window.api.data.load(
+      source.id,
+      plain(source.resources),
+    );
     const loaded = tables.find((t) => t.name === props.table);
     if (!loaded) {
       error.value = `${source.name} no longer has a table called ${props.table}.`;

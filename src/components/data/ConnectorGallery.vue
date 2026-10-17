@@ -15,7 +15,9 @@ const matches = computed(() => {
   const words = query.value.toLowerCase().split(/\s+/).filter(Boolean);
   return props.catalog.connectors.filter((c) => {
     if (category.value && c.category !== category.value) return false;
-    const haystack = [c.name, c.description, c.category, ...c.keywords].join(' ').toLowerCase();
+    const haystack = [c.name, c.description, c.category, ...c.keywords]
+      .join(' ')
+      .toLowerCase();
     return words.every((word) => haystack.includes(word));
   });
 });
@@ -23,11 +25,15 @@ const matches = computed(() => {
 /** Results grouped by category, in catalog order. */
 const groups = computed(() =>
   props.catalog.categories
-    .map((name) => ({ name, connectors: matches.value.filter((c) => c.category === name) }))
+    .map((name) => ({
+      name,
+      connectors: matches.value.filter((c) => c.category === name),
+    }))
     .filter((group) => group.connectors.length > 0),
 );
 
-const countFor = (name: string) => props.catalog.connectors.filter((c) => c.category === name).length;
+const countFor = (name: string) =>
+  props.catalog.connectors.filter((c) => c.category === name).length;
 </script>
 
 <template>
@@ -35,18 +41,34 @@ const countFor = (name: string) => props.catalog.connectors.filter((c) => c.cate
     <header class="head">
       <div>
         <h2>Add a data source</h2>
-        <p>{{ catalog.connectors.length }} connectors for files, databases and business apps.</p>
+        <p>
+          {{ catalog.connectors.length }} connectors for files, databases and
+          business apps.
+        </p>
       </div>
       <button class="ghost" @click="$emit('cancel')">Cancel</button>
     </header>
 
     <div class="search">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
-      <input ref="searchInput" v-model="query" type="search" placeholder="Search, e.g. Excel, Postgres, Salesforce…" />
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="11" cy="11" r="7" />
+        <path d="M20 20l-3.5-3.5" />
+      </svg>
+      <input
+        ref="searchInput"
+        v-model="query"
+        type="search"
+        placeholder="Search, e.g. Excel, Postgres, Salesforce…"
+      />
     </div>
 
     <div class="chips" role="tablist" aria-label="Categories">
-      <button role="tab" :aria-selected="category === null" :class="{ active: category === null }" @click="category = null">
+      <button
+        role="tab"
+        :aria-selected="category === null"
+        :class="{ active: category === null }"
+        @click="category = null"
+      >
         All
       </button>
       <button
@@ -65,19 +87,29 @@ const countFor = (name: string) => props.catalog.connectors.filter((c) => c.cate
       <section v-for="group in groups" :key="group.name">
         <h3>{{ group.name }}</h3>
         <div class="grid">
-          <button v-for="c in group.connectors" :key="c.id" class="card" @click="$emit('choose', c)">
-            <span class="monogram" aria-hidden="true">{{ c.name.charAt(0) }}</span>
+          <button
+            v-for="c in group.connectors"
+            :key="c.id"
+            class="card"
+            @click="$emit('choose', c)"
+          >
+            <span class="monogram" aria-hidden="true">{{
+              c.name.charAt(0)
+            }}</span>
             <span class="card-text">
               <strong>{{ c.name }}</strong>
               <small>{{ c.description }}</small>
-              <span v-if="c.packages.length" class="badge">Downloads on first use</span>
+              <span v-if="c.packages.length" class="badge"
+                >Downloads on first use</span
+              >
             </span>
           </button>
         </div>
       </section>
 
       <p v-if="groups.length === 0" class="none">
-        No connectors match "{{ query }}". The <strong>REST API</strong> connector works with most web services.
+        No connectors match "{{ query }}". The
+        <strong>REST API</strong> connector works with most web services.
       </p>
     </div>
   </div>
