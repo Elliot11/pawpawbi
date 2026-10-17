@@ -52,19 +52,21 @@ flowchart LR
 | `background.ts`     | Tracks each project's background work, so saving can wait for it and closing can wait for it or stop it. No Electron imports, so it's tested with plain Node.                                                                                                                                                                                   |
 | `credentials.ts`    | Encrypting and storing secrets with Electron's `safeStorage`.                                                                                                                                                                                                                                                                                   |
 | `report.ts`         | The report site: serving it to the app on the `pawpaw-report:` scheme, datasets (refreshed after loads and rebuilds), export, and the network and navigation lockdown that keeps the report frame sandboxed. File handling is in `report-site.ts` (no Electron imports, tested with plain Node); a new site's files are `src/report-template/`. |
+| `assistant/`        | The chat assistant: settings and encrypted API keys, the Anthropic and OpenAI adapters, the tool loop, the tools and the instructions. Everything except `index.ts`, `settings.ts` and `tools.ts` has no Electron imports and is tested with plain Node. Details: [assistant.md](assistant.md).                                                 |
 | `python.ts`         | Paths to the bundled Python, the shared flags and environment for Python processes, and the sidecar client (`callPython`).                                                                                                                                                                                                                      |
 
 ## Talking between processes
 
 **Renderer → main.** Every call is `window.api.<area>.<method>()` → `ipcRenderer.invoke('<area>:<method>')`
-→ an `ipcMain.handle` in the main process. Areas: `projects`, `data`, `report`, `python`. Values must be
+→ an `ipcMain.handle` in the main process. Areas: `projects`, `data`, `report`, `assistant`, `python`. Values must be
 plain data (wrap Vue state in `plain()`). Errors arrive as rejected promises; show them with
 `errorMessage()`.
 
 **Main → renderer.** Two event streams: `project:changed` (name, path, unsaved-changes flag) and
 `data:progress` (status messages while connecting, loading or rebuilding, tagged with the source's
-ID, or `ALL_SOURCES` during Refresh all data), and `report:navigated` (the report frame followed a
-link to another page).
+ID, or `ALL_SOURCES` during Refresh all data), `report:navigated` (the report frame followed a
+link to another page), and `assistant:event` (a reply's text as it streams, its tools, and each
+message as it's saved).
 
 **Main → sidecar.** One JSON object per line on the sidecar's stdin:
 `{"id": 1, "method": "describe_tables", "params": {...}}`, answered by one line on its stdout:
@@ -190,8 +192,8 @@ Python.
 (`views/ProjectWorkspace.vue`). In a project:
 
 - **Top bar:** back to projects, the project name, the workflow steps (`WorkflowSteps.vue`), and Save.
-- **Left:** the assistant chat (`ChatPanel.vue`). Its replies are placeholders in `src/workflow.ts`
-  until an AI model is connected.
+- **Left:** the assistant chat (`ChatPanel.vue`), with its settings (`AssistantSettings.vue`):
+  replies from Claude or ChatGPT with the user's own key ([assistant.md](assistant.md)).
 - **Main area:** follows the workflow step. **Add data** is `components/data/GetData.vue` (the
   connector gallery, source setup and table previews). **Model data** is `ModelData.vue`, the
   draggable table canvas: cards for loaded tables (orange) and transformed tables (purple),

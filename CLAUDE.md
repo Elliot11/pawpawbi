@@ -60,6 +60,12 @@ obvious from the code. Keep this file current when a convention changes.
   library is `src/report-template/assets/charts.js`; its API is
   [docs/report-pages.md](docs/report-pages.md) (update both together) and keeps the series colour
   order and mark rules described there. Spec: [docs/pawpaw-file-format.md](docs/pawpaw-file-format.md).
+- **The assistant** (`src/assistant/`, [docs/assistant.md](docs/assistant.md)) runs on the user's
+  own Anthropic or OpenAI key, or a local Ollama model, called with plain `fetch` from the main
+  process (no SDKs). Keep its conversation, tools and prompts provider-neutral (`types.ts`) and
+  usable by small local models; provider specifics stay in `anthropic.ts` / `openai.ts` /
+  `ollama.ts`, each tested with streams in the API's format. Keys never reach the
+  renderer, logs or prompts. Tool results go to the provider: never include secrets.
 - **The report is untrusted HTML in the app.** It's shown only in the `sandbox="allow-scripts"`
   frame in `ReportCanvas.vue`, served by `src/report.ts` with `SITE_CSP`, with all web requests
   blocked (`lockDownNetwork`). Don't loosen any of these, and don't add web requests to the

@@ -161,7 +161,7 @@ function toDataset(
   return { name, ...entry };
 }
 
-async function listDatasets(): Promise<Dataset[]> {
+export async function listDatasets(): Promise<Dataset[]> {
   const file = await readDatasets(filesDir());
   return Object.entries(file.datasets)
     .map(([name, entry]) => toDataset(name, entry))

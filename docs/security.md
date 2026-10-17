@@ -117,6 +117,36 @@ frame, policy and network lockdown were checked by hand with a hostile page.
 Once exported and hosted, the report is an ordinary website: its data files are readable by
 anyone who can reach it, so private reports need access control on the host.
 
+## The assistant
+
+- **API keys** for Anthropic and OpenAI are stored encrypted with `safeStorage` under
+  `%APPDATA%\PawpawBI\assistant\`, never in a project. They're read only in the main process,
+  sent only to their provider, and never returned to the UI, logged or put in the model's
+  context.
+- **What's sent to the provider:** the user's messages, a snapshot of the project (names of
+  sources, tables, pages and datasets, row counts) and every tool result, which can include
+  samples of the data (up to 50 rows per query). The settings screen says so. Secret source
+  settings are never included (`list_sources` returns non-secret settings and only which secrets
+  are saved).
+- **Read-only tools.** The tools can't change the project, read files outside it or reach the
+  network. Queries go through `engine.select()` in the locked-down engine like every other query.
+- **Untrusted content.** Data, page HTML and project files are untrusted and may contain text
+  written to steer the model ("ignore your instructions…"). The system prompt says content is
+  data, not instructions, but that's not a guarantee; what limits the damage is that the tools
+  can only read. Any future tool that changes the project must keep changes undoable and ask
+  before deleting anything.
+- **Ollama** runs on this computer (`127.0.0.1:11434`): with it chosen, nothing in the chat
+  leaves the computer. It needs no key.
+- **Network.** Provider calls use Node's `fetch` in the main process, so they're outside the
+  window's network lockdown (which stays complete for the app's pages). Only the provider's
+  fixed API address is called; the `PAWPAW_*_API` overrides for testing are ignored in packaged
+  builds.
+- **Rendering replies.** The chat shows replies as text, with code and bold formatting built from
+  Vue elements (`chat-format.ts`), never `v-html`, so a reply can't inject markup.
+
+**Rules:** never pass an API key to the renderer or into a prompt; never add a tool that returns
+secrets; keep tools read-only unless their changes can be undone.
+
 ## Credentials
 
 - Connector fields marked `secret=True` are split off when a source is saved (`saveSource` in

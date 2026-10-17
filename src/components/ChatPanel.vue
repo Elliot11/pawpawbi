@@ -1,73 +1,149 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue';
-import { plain } from '../plain';
-import { newId } from '../shared/ids';
-import type { ChatMessage, WorkflowStage } from '../shared/types';
-import { INTRO_MESSAGE, replyTo } from '../workflow';
+// The assistant chat. Replies come from the model chosen in Assistant settings, run by the
+// main process (src/assistant/), which saves every message to the project and streams
+// progress here: text as it's written, and each tool it uses.
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { PROVIDERS } from '../assistant/models';
+import { blocks } from '../chat-format';
+import { errorMessage } from '../errors';
+import type {
+  AssistantEnd,
+  AssistantSettings as Settings,
+  ChatMessage,
+  WorkflowStage,
+} from '../shared/types';
+import { INTRO_MESSAGE } from '../workflow';
+import AssistantSettings from './AssistantSettings.vue';
 
 // Shared with the workspace's step tracker in the top bar.
 const stage = defineModel<WorkflowStage>('stage', { required: true });
 const messages = ref<ChatMessage[]>([]);
 const draft = ref('');
 const loading = ref(true);
-const thinking = ref(false);
+const replying = ref(false);
+const liveText = ref('');
+const liveTools = ref<{ id: string; summary: string; status: string }[]>([]);
+const error = ref('');
+const canRetry = ref(false);
+const endNote = ref('');
+const settings = ref<Settings | null>(null);
+const showSettings = ref(false);
 const scroller = ref<HTMLElement | null>(null);
 
-const canSend = computed(
-  () => draft.value.trim() !== '' && !loading.value && !thinking.value,
+// The welcome message is shown until the first reply, which saves it with the conversation.
+const intro: ChatMessage = {
+  id: 'intro',
+  role: 'assistant',
+  text: INTRO_MESSAGE,
+  createdAt: '',
+};
+const shown = computed(() =>
+  messages.value.length ? messages.value : [intro],
 );
 
-// How many of `messages` are already saved in the project. The intro message isn't saved
-// until the user replies, so opening a project and closing it again isn't a change.
-let savedCount = 0;
-
-const createMessage = (
-  role: ChatMessage['role'],
-  text: string,
-): ChatMessage => ({
-  id: newId(),
-  role,
-  text,
-  createdAt: new Date().toISOString(),
-});
-
-onMounted(async () => {
-  const chat = await window.api.projects.loadChat();
-  stage.value = chat.stage;
-  messages.value = chat.messages.length
-    ? chat.messages
-    : [createMessage('assistant', INTRO_MESSAGE)];
-  savedCount = chat.messages.length;
-  loading.value = false;
-  await scrollToBottom('auto');
-});
+// The chosen provider is set up: a key saved, or (for Ollama) a model chosen.
+const ready = computed(() => !!settings.value?.ready);
+const modelLabel = computed(() =>
+  settings.value && ready.value
+    ? `${PROVIDERS[settings.value.provider].product} · ${settings.value.models[settings.value.provider]}`
+    : '',
+);
+const canSend = computed(
+  () =>
+    draft.value.trim() !== '' &&
+    !loading.value &&
+    !replying.value &&
+    ready.value,
+);
 
 async function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
   await nextTick();
   scroller.value?.scrollTo({ top: scroller.value.scrollHeight, behavior });
 }
 
-async function addMessage(role: ChatMessage['role'], text: string) {
-  messages.value.push(createMessage(role, text));
-  const unsaved = messages.value.slice(savedCount);
-  savedCount = messages.value.length;
-  await window.api.projects.appendChat(plain(unsaved), stage.value);
-  await scrollToBottom();
+let stopListening: (() => void) | null = null;
+
+onMounted(async () => {
+  stopListening = window.api.assistant.onEvent((event) => {
+    if (event.type === 'text') {
+      liveText.value += event.text;
+    } else if (event.type === 'tool') {
+      // Once its result is saved, the saved message shows the tool instead.
+      if (messages.value.some((m) => m.toolCallId === event.id)) return;
+      const existing = liveTools.value.find((t) => t.id === event.id);
+      if (existing) existing.status = event.status;
+      else
+        liveTools.value.push({
+          id: event.id,
+          summary: event.summary,
+          status: event.status,
+        });
+    } else {
+      const m = event.message;
+      if (!messages.value.some((x) => x.id === m.id)) messages.value.push(m);
+      // A saved message replaces what was shown live.
+      if (m.role === 'assistant') liveText.value = '';
+      if (m.role === 'tool') {
+        liveTools.value = liveTools.value.filter((t) => t.id !== m.toolCallId);
+      }
+    }
+    scrollToBottom();
+  });
+
+  const [chat, current] = await Promise.all([
+    window.api.projects.loadChat(),
+    window.api.assistant.getSettings(),
+  ]);
+  stage.value = chat.stage;
+  messages.value = chat.messages;
+  settings.value = current;
+  loading.value = false;
+  await scrollToBottom('auto');
+});
+
+onBeforeUnmount(() => stopListening?.());
+
+const END_NOTES: Partial<Record<AssistantEnd, string>> = {
+  steps:
+    'The assistant stopped after a lot of steps. Say “carry on” to let it continue.',
+  length: 'The reply was cut off because it got too long.',
+  refused: 'The model declined to answer that.',
+  stopped: 'Stopped.',
+};
+
+async function run(request: () => Promise<AssistantEnd>, text?: string) {
+  replying.value = true;
+  error.value = '';
+  endNote.value = '';
+  canRetry.value = false;
+  const before = messages.value.length;
+  try {
+    endNote.value = END_NOTES[await request()] ?? '';
+  } catch (e) {
+    error.value = errorMessage(e);
+    // If the message wasn't saved, give it back to edit; otherwise offer to try again.
+    if (messages.value.length === before && text !== undefined) {
+      draft.value = text;
+    } else {
+      canRetry.value = true;
+    }
+  } finally {
+    replying.value = false;
+    liveText.value = '';
+    liveTools.value = [];
+    await scrollToBottom();
+  }
 }
 
-async function send() {
+function send() {
   if (!canSend.value) return;
   const text = draft.value.trim();
   draft.value = '';
-  await addMessage('user', text);
-
-  thinking.value = true;
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  const reply = replyTo(stage.value);
-  stage.value = reply.stage;
-  thinking.value = false;
-  await addMessage('assistant', reply.text);
+  run(() => window.api.assistant.send(text), text);
 }
+
+const retry = () => run(() => window.api.assistant.retry());
+const stop = () => window.api.assistant.stop();
 
 function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey) {
@@ -75,24 +151,121 @@ function onKeydown(event: KeyboardEvent) {
     send();
   }
 }
+
+const copied = ref('');
+async function copy(text: string, id: string) {
+  await navigator.clipboard.writeText(text);
+  copied.value = id;
+  setTimeout(
+    () => (copied.value = copied.value === id ? '' : copied.value),
+    1500,
+  );
+}
 </script>
 
 <template>
   <aside class="chat">
     <div class="chat-header">
-      <h2>Assistant</h2>
+      <div class="title">
+        <h2>Assistant</h2>
+        <small v-if="modelLabel" class="model">{{ modelLabel }}</small>
+      </div>
+      <button
+        class="icon"
+        title="Assistant settings"
+        aria-label="Assistant settings"
+        @click="showSettings = true"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68 1.65 1.65 0 0 0 10 3.17V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+          />
+        </svg>
+      </button>
+    </div>
+
+    <div v-if="!loading && !ready" class="setup">
+      <p>
+        Get started by setting up an assistant from Anthropic, OpenAI or Ollama.
+      </p>
+      <button class="setup-button" @click="showSettings = true">
+        Set up the assistant
+      </button>
     </div>
 
     <div ref="scroller" class="messages">
-      <div v-for="m in messages" :key="m.id" class="message" :class="m.role">
-        {{ m.text }}
+      <template v-for="m in shown" :key="m.id">
+        <div v-if="m.role === 'user'" class="message user">{{ m.text }}</div>
+        <div
+          v-else-if="m.role === 'tool'"
+          class="activity"
+          :class="{ failed: m.isError }"
+        >
+          <span class="mark" aria-hidden="true">{{
+            m.isError ? '!' : '✓'
+          }}</span>
+          {{ m.summary ?? m.toolName }}{{ m.isError ? ': didn’t work' : '' }}
+        </div>
+        <div v-else-if="m.text" class="message assistant">
+          <template v-for="(b, i) in blocks(m.text)" :key="i">
+            <div v-if="b.kind === 'code'" class="code">
+              <button class="copy" @click="copy(b.text, `${m.id}-${i}`)">
+                {{ copied === `${m.id}-${i}` ? 'Copied' : 'Copy' }}
+              </button>
+              <pre><code>{{ b.text }}</code></pre>
+            </div>
+            <p v-else class="prose">
+              <template v-for="(p, j) in b.parts" :key="j">
+                <code v-if="p.kind === 'code'">{{ p.text }}</code>
+                <strong v-else-if="p.kind === 'bold'">{{ p.text }}</strong>
+                <template v-else>{{ p.text }}</template>
+              </template>
+            </p>
+          </template>
+        </div>
+      </template>
+
+      <div
+        v-for="t in liveTools"
+        :key="t.id"
+        class="activity"
+        :class="{
+          running: t.status === 'running',
+          failed: t.status === 'failed',
+        }"
+      >
+        <span class="mark" aria-hidden="true">{{
+          t.status === 'running' ? '' : t.status === 'failed' ? '!' : '✓'
+        }}</span>
+        {{ t.summary }}…
+      </div>
+      <div v-if="liveText" class="message assistant">
+        <template v-for="(b, i) in blocks(liveText)" :key="i">
+          <div v-if="b.kind === 'code'" class="code">
+            <pre><code>{{ b.text }}</code></pre>
+          </div>
+          <p v-else class="prose">
+            <template v-for="(p, j) in b.parts" :key="j">
+              <code v-if="p.kind === 'code'">{{ p.text }}</code>
+              <strong v-else-if="p.kind === 'bold'">{{ p.text }}</strong>
+              <template v-else>{{ p.text }}</template>
+            </template>
+          </p>
+        </template>
       </div>
       <div
-        v-if="thinking"
+        v-else-if="replying && !liveTools.some((t) => t.status === 'running')"
         class="message assistant typing"
         aria-label="Assistant is typing"
       >
         <span></span><span></span><span></span>
+      </div>
+
+      <p v-if="endNote" class="note">{{ endNote }}</p>
+      <div v-if="error" class="chat-error" role="alert">
+        {{ error }}
+        <button v-if="canRetry" class="retry" @click="retry">Try again</button>
       </div>
     </div>
 
@@ -105,9 +278,20 @@ function onKeydown(event: KeyboardEvent) {
       ></textarea>
       <div class="composer-footer">
         <small>Shift + Enter for a new line</small>
-        <button type="submit" class="send" :disabled="!canSend">Send</button>
+        <button v-if="replying" type="button" class="send stop" @click="stop">
+          Stop
+        </button>
+        <button v-else type="submit" class="send" :disabled="!canSend">
+          Send
+        </button>
       </div>
     </form>
+
+    <AssistantSettings
+      v-if="showSettings"
+      @close="showSettings = false"
+      @changed="settings = $event"
+    />
   </aside>
 </template>
 
@@ -242,5 +426,206 @@ function onKeydown(event: KeyboardEvent) {
 .send:disabled {
   background: var(--surface-muted);
   color: var(--ink-faint);
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.model {
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink-muted);
+}
+
+.icon:hover {
+  border-color: var(--border);
+  color: var(--ink);
+}
+
+.icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.message.assistant {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  white-space: normal;
+}
+
+.prose {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.prose code,
+.code pre {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 12px;
+}
+
+.prose code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgb(22 22 26 / 0.07);
+}
+
+.code {
+  position: relative;
+}
+
+.code pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  background: #1b1b20;
+  color: #f2f1ee;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 6px;
+  background: #2a2a31;
+  color: #f2f1ee;
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.code:hover .copy,
+.copy:focus-visible {
+  opacity: 1;
+}
+
+.activity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #eaf6ee;
+  color: #1d6b3a;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.activity.failed .mark {
+  background: #fbeceb;
+  color: var(--danger);
+}
+
+.activity.running .mark {
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  background: none;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.note {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.chat-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: #fbeceb;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.retry {
+  padding: 3px 10px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.setup {
+  margin: 16px 16px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.setup p {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.setup-button {
+  padding: 6px 14px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.send.stop {
+  background: var(--ink);
 }
 </style>

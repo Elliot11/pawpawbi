@@ -24,18 +24,32 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
   `model/relationships.json`. The canvas has an SVG layer and column anchors ready for this.
 - **Column types and descriptions** in the model (`model/tables/<table>.json`), e.g. marking a
   text column as a date.
-- **The assistant (phases 2 to 4 of the plan).** Settings for an OpenAI or Anthropic key,
-  provider adapters, the tool loop, tools to edit data sources, transforms, datasets and report
-  files with Undo, and the prompts, guides and evaluation tasks (decision 16).
+- **The assistant's editing tools (phase 3).** Tools to add and edit data sources (asking the user
+  for secrets in the form), run loads, create transforms and transformed tables, and write
+  datasets and report files, each change listed in the chat with Undo; deletions ask first.
+- **The assistant's guides and evaluation tasks (phase 4).** Guides for adding data, modelling and
+  SQL alongside the report guide, a tuned system prompt, and sample tasks run against both
+  providers.
 - **Publish to S3 and CloudFront** from the app. For now, Export writes the site to a folder.
 - **More for the report:** stacked bars, area and scatter charts, filters within a page, dark
   mode, printing a page, an editor with syntax highlighting, reordering pages, renaming the
   report, and updating a report's copy of `charts.js` when the app's version improves.
-- **Connect the assistant to an AI model.** Replies are placeholders (`src/workflow.ts`).
 - **Project thumbnails** (`thumbnail.png`) for the start screen.
 - **Incremental loading**: refresh only new or changed rows instead of reloading everything.
 - **A proper SQL editor** in the transform screen: syntax highlighting and autocomplete (e.g.
   CodeMirror) instead of a plain text box.
+
+## Linux compatibility
+
+PawpawBI targets Windows. Before shipping Linux builds:
+
+- **Refuse to save secrets without a real password store.** On Windows, `safeStorage` protects
+  secrets with DPAPI (the user's Windows sign-in), and on macOS with the Keychain. On Linux, if no
+  password store (GNOME Keyring/libsecret or KWallet) is found, Electron falls back to
+  `basic_text`: a fixed built-in password, which is effectively plain text, and
+  `isEncryptionAvailable()` doesn't catch it. In `credentials.ts` and `assistant/settings.ts`,
+  also check `safeStorage.getSelectedStorageBackend() !== 'basic_text'` before saving, and tell
+  the user to set up a password store.
 
 ## Known issues and limitations
 
@@ -63,6 +77,17 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
 - **Unsaved edits in the report's file editor are lost** if the project is closed first.
 - **An exported report doesn't work opened straight from disk** (browsers block reading its data
   files from `file://`); it needs a web server or host.
+- **The assistant hasn't been tried against the real APIs with a working key.** Both APIs were
+  reached and rejected an invalid key as expected, and a full reply with tools was checked against
+  a local stand-in that streams in Anthropic's format. Try a real conversation with each provider.
+- **The assistant doesn't show what a reply cost**, though usage is reported by the adapters.
+- **Local models through Ollama are much less capable** than Claude or ChatGPT, and thinking is
+  turned off for speed. The context window is fixed at 16,384 tokens, so long conversations with
+  big tool results may lose earlier detail. Only Ollama at the default address
+  (`127.0.0.1:11434`) is supported.
+- **The Ollama option hasn't been tried on a computer without a capable GPU**, where replies may be
+  very slow.
+- **Long conversations are cut to the last 80 messages** with no summary of what came before.
 - **The report sandbox has no automated test.** The frame, policy and network lockdown were
   checked by hand with a hostile page; an Electron-driven test would catch regressions.
 - **The in-place transform editor lists columns as currently shown**, so for a table that already

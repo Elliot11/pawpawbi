@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
+import { registerAssistantHandlers } from './assistant';
 import { work } from './background';
 import { registerDataHandlers } from './data';
 import {
@@ -93,6 +94,7 @@ app.whenReady().then(async () => {
   registerPythonHandlers();
   registerDataHandlers();
   registerReportHandlers();
+  registerAssistantHandlers();
 
   createWindow();
 

@@ -35,11 +35,24 @@ export interface RecentProject {
 
 export type WorkflowStage = 'data' | 'model' | 'visuals';
 
+/**
+ * A message in chat/messages.jsonl. Tool messages, and the tool calls on assistant messages,
+ * record the assistant's work so the conversation can continue where it left off.
+ */
 export interface ChatMessage {
   id: string;
-  role: 'assistant' | 'user';
+  role: 'assistant' | 'user' | 'tool';
+  /** For a tool message: the result given to the model. */
   text: string;
   createdAt: string;
+  /** Assistant messages: the tools it asked to run. */
+  toolCalls?: { id: string; name: string; input: Record<string, unknown> }[];
+  /** Tool messages: which call this answers, and whether it failed. */
+  toolCallId?: string;
+  toolName?: string;
+  isError?: boolean;
+  /** Tool messages: a few words for the chat, e.g. "Previewing orders". */
+  summary?: string;
 }
 
 export interface ChatState {
@@ -320,4 +333,48 @@ export interface ReportApi {
   exportSite: () => Promise<string | null>;
   /** Called with the page shown when the preview moves to another page (e.g. a link). */
   onNavigated: (callback: (pageId: string) => void) => () => void;
+}
+
+// --- The assistant (src/assistant/) -----------------------------------------------------------
+
+export type AssistantProvider = 'anthropic' | 'openai' | 'ollama';
+
+/** The assistant's settings. API keys never leave the main process; only whether one is saved. */
+export interface AssistantSettings {
+  provider: AssistantProvider;
+  models: Record<AssistantProvider, string>;
+  hasKey: Record<AssistantProvider, boolean>;
+  /** Whether the chosen provider is set up: a key saved, or (for Ollama) a model chosen. */
+  ready: boolean;
+}
+
+/** Sent while the assistant replies. */
+export type AssistantEvent =
+  | { type: 'text'; text: string }
+  | {
+      type: 'tool';
+      id: string;
+      summary: string;
+      status: 'running' | 'done' | 'failed';
+    }
+  | { type: 'message'; message: ChatMessage };
+
+export type AssistantEnd = 'end' | 'length' | 'refused' | 'steps' | 'stopped';
+
+export interface AssistantApi {
+  getSettings: () => Promise<AssistantSettings>;
+  /** Chooses the provider and its model. */
+  saveSettings: (provider: AssistantProvider, model: string) => Promise<void>;
+  /** Saves a provider's API key (encrypted on this computer). */
+  setKey: (provider: AssistantProvider, key: string) => Promise<void>;
+  removeKey: (provider: AssistantProvider) => Promise<void>;
+  /** The models the saved key can use. Also checks the key works. */
+  listModels: (provider: AssistantProvider) => Promise<string[]>;
+  /** Sends a message and resolves when the reply is finished. Progress arrives through onEvent. */
+  send: (text: string) => Promise<AssistantEnd>;
+  /** Tries the last reply again (after an error), without sending a new message. */
+  retry: () => Promise<AssistantEnd>;
+  /** Stops the reply in progress. */
+  stop: () => Promise<void>;
+  onEvent: (callback: (event: AssistantEvent) => void) => () => void;
 }

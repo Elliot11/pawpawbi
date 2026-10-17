@@ -60,7 +60,7 @@ const SAFE_TABLE = /^[A-Za-z0-9_]+$/;
 
 let catalogRequest: Promise<ConnectorCatalog> | null = null;
 
-function catalog(): Promise<ConnectorCatalog> {
+export function catalog(): Promise<ConnectorCatalog> {
   catalogRequest ??= callPython<ConnectorCatalog>('catalog').catch((error) => {
     catalogRequest = null; // Retry next time.
     throw error;
@@ -78,7 +78,7 @@ async function connector(id: string): Promise<ConnectorInfo> {
 // Data sources in the open project
 
 /** sources/<id>.json. Secrets are never stored here; see credentials.ts. */
-interface SourceFile {
+export interface SourceFile {
   id: string;
   type: string;
   name: string;
@@ -118,7 +118,7 @@ async function writeSource(source: SourceFile) {
   await markProjectChanged();
 }
 
-async function readAllSources(): Promise<SourceFile[]> {
+export async function readAllSources(): Promise<SourceFile[]> {
   let names: string[];
   try {
     names = await fs.readdir(sourcesDir());
@@ -138,7 +138,7 @@ async function readAllSources(): Promise<SourceFile[]> {
   return sources.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function toDataSource(source: SourceFile): Promise<DataSource> {
+export async function toDataSource(source: SourceFile): Promise<DataSource> {
   const secrets = await readSecrets(openProject().id, source.id).catch(
     () => ({}),
   );
@@ -583,7 +583,7 @@ async function saveDiagram(diagram: ModelDiagram) {
 // Transformed tables read the tables as currently shown, so they're built in dependency order
 // (src/shared/dependencies.ts) after the in-place transforms.
 
-interface TransformsFile {
+export interface TransformsFile {
   tables: Record<string, { sql: string; updatedAt: string }>;
 }
 
@@ -591,7 +591,7 @@ const transformsPath = () =>
   path.join(openProject().filesDir, 'model', 'transforms.json');
 const dataDir = () => path.join(openProject().filesDir, 'data');
 
-async function readTransforms(): Promise<TransformsFile> {
+export async function readTransforms(): Promise<TransformsFile> {
   try {
     const parsed = JSON.parse(await fs.readFile(transformsPath(), 'utf8'));
     const tables: TransformsFile['tables'] = {};
@@ -852,7 +852,7 @@ async function saveTransformed(
   return result;
 }
 
-async function listTransformed(): Promise<TransformedTable[]> {
+export async function listTransformed(): Promise<TransformedTable[]> {
   const file = await readTransformed();
   return Object.entries(file.tables).map(([name, t]) => ({ name, ...t }));
 }

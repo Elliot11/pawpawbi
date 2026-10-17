@@ -1,0 +1,125 @@
+// One reply from the assistant: call the model, run the tools it asks for, give it the
+// results, and repeat until it answers (or a step limit is reached). Provider-neutral, and no
+// Electron imports, so it's tested with a fake provider (tests/node/assistant-loop.test.ts).
+import type { ModelRequest, Provider, ToolCall, ToolSpec, Turn } from './types';
+
+/** Tool results longer than this are cut, so one big result can't swamp the conversation. */
+export const MAX_RESULT_CHARS = 20_000;
+
+export interface LoopOptions {
+  provider: Provider;
+  model: string;
+  system: string;
+  context: string;
+  tools: ToolSpec[];
+  /** The conversation so far, ending with the user's new message. */
+  history: Turn[];
+  signal: AbortSignal;
+  maxSteps?: number;
+  maxTokens?: number;
+  onText?: (text: string) => void;
+  onToolStart?: (call: ToolCall, summary: string) => void;
+  onToolEnd?: (call: ToolCall, ok: boolean) => void;
+  /** Each new turn (the model's replies and tool results), to save it. */
+  onTurn: (turn: Turn) => Promise<void> | void;
+}
+
+export type LoopEnd = 'end' | 'length' | 'refused' | 'steps' | 'stopped';
+
+/** A tool's result as text for the model. */
+export function resultText(value: unknown): string {
+  const text =
+    typeof value === 'string'
+      ? value
+      : (JSON.stringify(value ?? null) ?? 'null');
+  return text.length > MAX_RESULT_CHARS
+    ? `${text.slice(0, MAX_RESULT_CHARS)}\n[Cut short: the full result was ${text.length.toLocaleString('en')} characters. Ask for less, e.g. fewer rows or columns.]`
+    : text;
+}
+
+const isAbort = (error: unknown) =>
+  (error as Error)?.name === 'AbortError' ||
+  (error as Error)?.name === 'TimeoutError';
+
+export async function runAssistant(options: LoopOptions): Promise<LoopEnd> {
+  const { provider, signal, onTurn } = options;
+  const tools = new Map(options.tools.map((t) => [t.name, t]));
+  const turns = [...options.history];
+  const save = async (turn: Turn) => {
+    turns.push(turn);
+    await onTurn(turn);
+  };
+
+  for (let step = 0; step < (options.maxSteps ?? 12); step++) {
+    const request: ModelRequest = {
+      model: options.model,
+      system: options.system,
+      context: options.context,
+      turns,
+      tools: options.tools.map(({ name, description, parameters }) => ({
+        name,
+        description,
+        parameters,
+      })),
+      maxTokens: options.maxTokens ?? 8192,
+    };
+    let partial = '';
+    let response;
+    try {
+      response = await provider.complete(
+        request,
+        (text) => {
+          partial += text;
+          options.onText?.(text);
+        },
+        signal,
+      );
+    } catch (error) {
+      if (!isAbort(error) && !signal.aborted) throw error;
+      // Stopped: keep what had been written so far.
+      if (partial) await save({ role: 'assistant', text: partial });
+      return 'stopped';
+    }
+
+    const calls = response.toolCalls;
+    if (response.text || calls.length) {
+      await save({
+        role: 'assistant',
+        text: response.text,
+        ...(calls.length ? { toolCalls: calls } : {}),
+      });
+    }
+    if (response.stop !== 'tools' || !calls.length)
+      return response.stop === 'tools' ? 'end' : response.stop;
+
+    for (const call of calls) {
+      if (signal.aborted) return 'stopped';
+      const tool = tools.get(call.name);
+      let summary = call.name;
+      try {
+        summary = tool?.describe(call.input) ?? call.name;
+      } catch {
+        // Keep the tool's name.
+      }
+      options.onToolStart?.(call, summary);
+      let content: string;
+      let ok = true;
+      try {
+        if (!tool) throw new Error(`There's no tool called ${call.name}.`);
+        content = resultText(await tool.run(call.input));
+      } catch (error) {
+        ok = false;
+        content = (error as Error)?.message || String(error);
+      }
+      await save({
+        role: 'tool',
+        toolCallId: call.id,
+        name: call.name,
+        content,
+        ...(ok ? {} : { isError: true }),
+      });
+      options.onToolEnd?.(call, ok);
+    }
+  }
+  return 'steps';
+}

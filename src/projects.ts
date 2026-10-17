@@ -263,7 +263,7 @@ export const markProjectChanged = () => markDirty();
 // ---------------------------------------------------------------------------------------------
 // Chat (chat/session.json and chat/messages.jsonl)
 
-async function loadChat(): Promise<ChatState> {
+export async function loadChat(): Promise<ChatState> {
   const chatDir = path.join(requireSession().filesDir, 'chat');
 
   let stage: WorkflowStage = 'data';
@@ -305,13 +305,19 @@ async function setStage(stage: WorkflowStage) {
   await markDirty();
 }
 
-async function appendChat(messages: ChatMessage[], stage: WorkflowStage) {
+/** Adds messages to the end of the conversation. */
+export async function appendChatMessages(messages: ChatMessage[]) {
   const chatDir = path.join(requireSession().filesDir, 'chat');
   await fs.mkdir(chatDir, { recursive: true });
   await fs.appendFile(
     path.join(chatDir, 'messages.jsonl'),
     messages.map((m) => JSON.stringify(m) + '\n').join(''),
   );
+  await markDirty();
+}
+
+async function appendChat(messages: ChatMessage[], stage: WorkflowStage) {
+  await appendChatMessages(messages);
   await setStage(stage);
 }
 

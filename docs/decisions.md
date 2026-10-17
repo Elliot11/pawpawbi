@@ -289,17 +289,24 @@ and the full raw data published.
 - Datasets refer to tables and columns by name, so renaming or deleting them makes the dataset's
   next refresh fail; its previous data is kept and the error shown.
 
-## 16. The assistant works with the user's own OpenAI or Anthropic key
+## 16. The assistant works with the user's own OpenAI or Anthropic key, or Ollama locally
 
-**Decision:** The assistant runs on ChatGPT (OpenAI) or Claude (Anthropic), with an API key the
-user provides and chooses between. Keys are stored with OS encryption and never put in a project
+**Decision:** The assistant runs on ChatGPT (OpenAI) or Claude (Anthropic) with an API key the
+user provides, or on a model running in Ollama on the user's computer, which needs no key and
+keeps everything local. Keys are stored with OS encryption and never put in a project
 or in the model's context. The conversation, tools and guides are written once, provider-neutral;
-a small adapter per provider translates tool calls and streaming.
+a small adapter per provider translates tool calls and streaming. The adapters call the APIs
+with plain HTTPS from the main process rather than the providers' SDKs. Details:
+[assistant.md](assistant.md).
 
 **Why:** Users already have accounts with one or the other, and it avoids running a PawpawBI
-service. Keeping the prompts and tools neutral means both providers get the same abilities, and
-the same evaluation tasks can check both.
+service. Ollama is for people who don't want their data sent anywhere, or don't have a key. Keeping the prompts and tools neutral means both providers get the same abilities, and
+the same evaluation tasks can check both. Without SDKs there are no dependencies to pin and
+update, and the parts used (streamed messages with tool calls) are small and stable.
 
-**Consequences:** Each provider's tool-calling format has to be kept working; adapter tests use
-recorded responses. Without a key, the assistant explains how to add one and the rest of the app
+**Alternatives considered:** driving the user's own Claude Code install (`claude -p`) with their Claude subscription. 
+
+**Consequences:** Each provider's tool-calling format has to be kept working by us; adapter
+tests use streams in each API's documented format. Local models are much less capable, so
+prompts and tools must also work acceptably with them. Without a key, the assistant explains how to add one and the rest of the app
 works by hand.

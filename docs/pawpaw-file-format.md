@@ -370,12 +370,24 @@ The conversation with the assistant, so it can pick up where it left off.
   { "stage": "model" }
   ```
   `stage` is `data`, `model` or `visuals`.
-- **`chat/messages.jsonl`** holds one message per line, oldest first, so new messages can be appended without rewriting the whole file:
+- **`chat/messages.jsonl`** holds one message per line, oldest first, so new messages can be appended without rewriting the whole file. Besides what the user and assistant say, it records the assistant's work (the tools it used and their results), so the conversation can continue where it left off:
+
   ```json
   {"id":"m1","role":"assistant","text":"Hi! Let's build your report together…","createdAt":"2026-10-17T09:30:02Z"}
-  {"id":"m2","role":"user","text":"A CSV export of monthly sales","createdAt":"2026-10-17T09:31:15Z"}
+  {"id":"m2","role":"user","text":"How many orders are there by region?","createdAt":"2026-10-17T09:31:15Z"}
+  {"id":"m3","role":"assistant","text":"Let me check.","toolCalls":[{"id":"toolu_1","name":"run_query","input":{"sql":"SELECT region, count(*) AS orders FROM orders GROUP BY 1"}}],"createdAt":"2026-10-17T09:31:17Z"}
+  {"id":"m4","role":"tool","text":"{\"columns\":[\"region VARCHAR\",\"orders BIGINT\"],\"rows\":[[\"North\",100]],\"total_rows\":1}","toolCallId":"toolu_1","toolName":"run_query","summary":"Running a query","createdAt":"2026-10-17T09:31:17Z"}
+  {"id":"m5","role":"assistant","text":"North has 100 orders.","createdAt":"2026-10-17T09:31:19Z"}
   ```
-  `role` is `assistant` or `user`.
+
+  | Field        | Meaning                                                                                         |
+  | ------------ | ----------------------------------------------------------------------------------------------- |
+  | `role`       | `user`, `assistant` or `tool`                                                                   |
+  | `text`       | What was said; for a tool message, the result given to the model (at most 20,000 characters)    |
+  | `toolCalls`  | Assistant messages: the tools it asked to run, each with an `id`, `name` and `input`            |
+  | `toolCallId` | Tool messages: the call this answers. Also `toolName`, `summary` (shown in the chat), `isError` |
+
+  Tool results can contain samples of the project's data. A damaged line is skipped.
 
 ## Opening and saving
 

@@ -16,9 +16,9 @@ Early development. Working: projects (create, open, save, crash recovery), 47 da
 transforms of loaded tables, transformed tables built from other tables, refreshing
 everything in dependency order, and the report: a static website of charts (bars, lines, headline
 numbers, tables) that every new project starts with, fed by datasets and exportable for hosting
-anywhere, e.g. S3 ([docs/report-pages.md](docs/report-pages.md)). Not built yet: relationships
-between tables, and connecting the assistant to an AI model (its replies are placeholders, so it
-can't build the report yet). Known issues and the backlog are in [TODO.md](TODO.md).
+anywhere, e.g. S3 ([docs/report-pages.md](docs/report-pages.md)). The assistant chats with Claude or ChatGPT using your own API key, or a local model in Ollama, and
+can look at everything in the project ([docs/assistant.md](docs/assistant.md)); it can't change
+anything yet. Not built yet: the assistant's editing tools, and relationships between tables. Known issues and the backlog are in [TODO.md](TODO.md).
 
 ## Getting started
 
@@ -58,7 +58,10 @@ src/                     Electron app (TypeScript)
   pawpaw-archive.ts        Reading and writing .pawpaw ZIP files
   data.ts                  Data sources, connector environments, load jobs, transforms,
                            transformed tables and rebuilding them in order
-  credentials.ts           Encrypted storage for passwords and API keys
+  credentials.ts           Encrypted storage for data sources' passwords and API keys
+  assistant/               The chat assistant: providers, tool loop, tools, instructions
+  report.ts, report-site.ts  The report site: serving it, datasets, export
+  report-template/         The files a new report starts with
   python.ts                Starts and talks to the Python sidecar
   preload.ts               The window.api bridge between the page and the main process
   shared/                  Types and helpers used by both sides (dependencies.ts: build

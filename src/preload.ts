@@ -2,6 +2,8 @@
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type {
+  AssistantApi,
+  AssistantEvent,
   DataApi,
   DataProgress,
   Project,
@@ -92,6 +94,26 @@ const report: ReportApi = {
   },
 };
 
+const assistant: AssistantApi = {
+  getSettings: () => ipcRenderer.invoke('assistant:get-settings'),
+  saveSettings: (provider, model) =>
+    ipcRenderer.invoke('assistant:save-settings', provider, model),
+  setKey: (provider, key) =>
+    ipcRenderer.invoke('assistant:set-key', provider, key),
+  removeKey: (provider) => ipcRenderer.invoke('assistant:remove-key', provider),
+  listModels: (provider) =>
+    ipcRenderer.invoke('assistant:list-models', provider),
+  send: (text) => ipcRenderer.invoke('assistant:send', text),
+  retry: () => ipcRenderer.invoke('assistant:retry'),
+  stop: () => ipcRenderer.invoke('assistant:stop'),
+  onEvent: (callback) => {
+    const listener = (_event: IpcRendererEvent, event: AssistantEvent) =>
+      callback(event);
+    ipcRenderer.on('assistant:event', listener);
+    return () => ipcRenderer.removeListener('assistant:event', listener);
+  },
+};
+
 // Expose a small, explicit API to the renderer (available as window.api).
 contextBridge.exposeInMainWorld('api', {
   getAppVersion: (): Promise<string> => ipcRenderer.invoke('app:get-version'),
@@ -99,4 +121,5 @@ contextBridge.exposeInMainWorld('api', {
   data,
   python,
   report,
+  assistant,
 });

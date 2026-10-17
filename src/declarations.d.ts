@@ -19,5 +19,6 @@ interface Window {
     data: import('./shared/types').DataApi;
     python: import('./shared/types').PythonApi;
     report: import('./shared/types').ReportApi;
+    assistant: import('./shared/types').AssistantApi;
   };
 }
