@@ -2,10 +2,13 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import type { Project } from '../shared/types';
 import ChatPanel from '../components/ChatPanel.vue';
+import GetData from '../components/data/GetData.vue';
 import ReportCanvas from '../components/ReportCanvas.vue';
 
 const props = defineProps<{ project: Project }>();
 const emit = defineEmits<{ close: [] }>();
+
+const tab = ref<'data' | 'report'>('data');
 
 const saving = ref(false);
 const saveError = ref('');
@@ -70,7 +73,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
     <div class="body">
       <ChatPanel />
-      <ReportCanvas />
+      <section class="main">
+        <nav class="tabs" role="tablist" aria-label="Project views">
+          <button role="tab" :aria-selected="tab === 'data'" :class="{ active: tab === 'data' }" @click="tab = 'data'">
+            Data
+          </button>
+          <button role="tab" :aria-selected="tab === 'report'" :class="{ active: tab === 'report' }" @click="tab = 'report'">
+            Report
+          </button>
+        </nav>
+        <div class="tab-body">
+          <!-- Kept alive so switching tabs doesn't lose a half-finished data source setup. -->
+          <KeepAlive>
+            <GetData v-if="tab === 'data'" />
+            <ReportCanvas v-else />
+          </KeepAlive>
+        </div>
+      </section>
     </div>
   </div>
 </template>
@@ -173,5 +192,43 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   display: flex;
   flex: 1;
   min-height: 0;
+}
+
+.main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tabs {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  padding: 8px 16px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.tabs button {
+  padding: 8px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+
+.tabs button.active {
+  border-bottom-color: var(--accent);
+  color: var(--ink);
+}
+
+.tab-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg);
 }
 </style>

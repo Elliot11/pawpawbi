@@ -45,6 +45,115 @@ export interface ChatState {
   messages: ChatMessage[];
 }
 
+// --- Data connectors (python/sidecar/connectors) --------------------------------------------
+
+export type ConnectorFieldType =
+  | 'text'
+  | 'password'
+  | 'number'
+  | 'textarea'
+  | 'select'
+  | 'checkbox'
+  | 'date'
+  | 'file'
+  | 'files'
+  | 'folder';
+
+export interface ConnectorField {
+  key: string;
+  label: string;
+  type: ConnectorFieldType;
+  required: boolean;
+  /** Stored encrypted on this computer, never in the project file. */
+  secret: boolean;
+  help: string;
+  placeholder: string;
+  default: unknown;
+  options: { value: string; label: string }[];
+  fileFilters: { name: string; extensions: string[] }[];
+  advanced: boolean;
+}
+
+export interface ConnectorInfo {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  fields: ConnectorField[];
+  /** Python packages downloaded the first time the connector is used. */
+  packages: string[];
+  docsUrl: string;
+  keywords: string[];
+}
+
+export interface ConnectorCatalog {
+  categories: string[];
+  connectors: ConnectorInfo[];
+}
+
+/** A configured data source: sources/<id>.json in the project, plus which secrets are saved. */
+export interface DataSource {
+  id: string;
+  /** Connector ID. */
+  type: string;
+  name: string;
+  /** Non-secret settings. */
+  options: Record<string, unknown>;
+  /** Resources the user chose to load; empty means the connector's defaults. */
+  resources: string[];
+  tables: string[];
+  lastLoadedAt: string | null;
+  /** Keys of secret fields that have a saved value on this computer. */
+  savedSecrets: string[];
+}
+
+export interface SaveSourceInput {
+  /** Omit to create a new source. */
+  id?: string;
+  type: string;
+  name: string;
+  /** All field values. Secret fields left empty keep their saved value. */
+  settings: Record<string, unknown>;
+}
+
+export interface DiscoveredResource {
+  name: string;
+  selected: boolean;
+}
+
+export interface LoadedTable {
+  name: string;
+  rows: number;
+}
+
+export interface TablePreview {
+  columns: { name: string; dtype: string }[];
+  rows: unknown[][];
+  row_count: number;
+}
+
+export interface DataProgress {
+  sourceId: string;
+  message: string;
+}
+
+export interface DataApi {
+  catalog: () => Promise<ConnectorCatalog>;
+  listSources: () => Promise<DataSource[]>;
+  saveSource: (input: SaveSourceInput) => Promise<DataSource>;
+  /** Removes the source, its saved credentials and its tables. */
+  removeSource: (id: string) => Promise<void>;
+  /** Connects and lists the tables the source can load. Downloads the connector first if needed. */
+  discover: (id: string) => Promise<DiscoveredResource[]>;
+  /** Loads the chosen resources (a full refresh) into the project. */
+  load: (id: string, resources: string[]) => Promise<LoadedTable[]>;
+  listTables: () => Promise<string[]>;
+  previewTable: (table: string, limit?: number) => Promise<TablePreview>;
+  /** Shows a file or folder picker. Resolves to the chosen paths, or [] if cancelled. */
+  pickPaths: (kind: 'file' | 'files' | 'folder', filters?: ConnectorField['fileFilters']) => Promise<string[]>;
+  onProgress: (callback: (progress: DataProgress) => void) => () => void;
+}
+
 export interface PythonInfo {
   version: string;
   executable: string;

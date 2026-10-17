@@ -102,6 +102,7 @@ Identifies the project and the format version. Required.
   "options": {
     "path": "C:/Users/Elliot/Documents/Monthly Sales.csv"
   },
+  "resources": ["Monthly Sales"],
   "tables": ["monthly_sales"],
   "lastLoadedAt": "2026-10-17T09:41:12Z"
 }
@@ -109,12 +110,13 @@ Identifies the project and the format version. Required.
 
 | Field | Meaning |
 |---|---|
-| `type` | Kind of source: `file` now; database and API types (e.g. `postgres`, `salesforce`) later |
-| `options` | Type-specific settings needed to reconnect: file path, host, database name, user name and so on |
-| `tables` | The tables in `data/raw/` this source produced |
+| `type` | Connector ID from the catalog in `python/sidecar/connectors/`, e.g. `local_files`, `postgres`, `salesforce` |
+| `options` | The connector's non-secret settings, by field key: file path, host, database name, user name and so on |
+| `resources` | The connector resources the user chose to load. Empty means the connector's defaults |
+| `tables` | The tables in `data/raw/` this source produced. No two sources may produce the same table |
 | `lastLoadedAt` | When the data was last loaded |
 
-**Credentials** (passwords, API keys, tokens) are stored in the operating system's secure storage on the user's machine, via Electron's `safeStorage`, keyed by project ID and source ID. They are never in the file. When someone opens a project on another computer, the data and report work immediately; refreshing a source asks them to sign in again.
+**Credentials** (passwords, API keys, tokens: every connector field marked `secret`) are stored in the operating system's secure storage on the user's machine, via Electron's `safeStorage`, keyed by project ID and source ID. They are never in the file. When someone opens a project on another computer, the data and report work immediately; refreshing a source asks them to sign in again.
 
 **File paths** in `options` point to the original location on the computer that loaded them. On another computer that path may not exist. The data already loaded is unaffected; only refreshing needs the user to locate the file again.
 

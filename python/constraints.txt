@@ -4,16 +4,19 @@ certifi==2026.7.22
 charset-normalizer==3.5.2
 click==8.5.0
 dlt==1.30.0
+et_xmlfile==2.0.0
 fsspec==2026.9.0
 gitdb==4.0.12
 GitPython==3.2.1
 giturlparse==0.16.0
+greenlet==3.5.6
 humanize==4.16.0
 idna==3.20
 jsonpath-ng==1.11.0
 markdown-it-py==4.2.0
 mdurl==0.1.2
 numpy==2.5.4
+openpyxl==3.1.5
 orjson==3.13.0
 packaging==26.3
 pandas==3.0.6
@@ -35,6 +38,7 @@ setuptools==84.0.0
 simplejson==4.2.0
 six==1.17.0
 smmap==5.0.3
+SQLAlchemy==2.0.54
 sqlglot==30.23.0
 tenacity==9.2.1
 tomlkit==0.15.2

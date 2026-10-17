@@ -12,6 +12,7 @@ import platform
 import sys
 from importlib.metadata import version
 
+import connectors
 import datasets
 
 
@@ -26,6 +27,7 @@ def info(_params):
 
 METHODS = {
     "info": info,
+    "catalog": connectors.catalog,
     "load_file": datasets.load_file,
     "list_tables": datasets.list_tables,
     "preview_table": datasets.preview_table,

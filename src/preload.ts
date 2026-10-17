@@ -1,7 +1,7 @@
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import type { Project, ProjectsApi, PythonApi } from './shared/types';
+import type { DataApi, DataProgress, Project, ProjectsApi, PythonApi } from './shared/types';
 
 const projects: ProjectsApi = {
   listRecent: () => ipcRenderer.invoke('projects:list-recent'),
@@ -19,6 +19,23 @@ const projects: ProjectsApi = {
   },
 };
 
+const data: DataApi = {
+  catalog: () => ipcRenderer.invoke('data:catalog'),
+  listSources: () => ipcRenderer.invoke('data:list-sources'),
+  saveSource: (input) => ipcRenderer.invoke('data:save-source', input),
+  removeSource: (id) => ipcRenderer.invoke('data:remove-source', id),
+  discover: (id) => ipcRenderer.invoke('data:discover', id),
+  load: (id, resources) => ipcRenderer.invoke('data:load', id, resources),
+  listTables: () => ipcRenderer.invoke('data:list-tables'),
+  previewTable: (table, limit) => ipcRenderer.invoke('data:preview-table', table, limit),
+  pickPaths: (kind, filters) => ipcRenderer.invoke('data:pick-paths', kind, filters),
+  onProgress: (callback) => {
+    const listener = (_event: IpcRendererEvent, progress: DataProgress) => callback(progress);
+    ipcRenderer.on('data:progress', listener);
+    return () => ipcRenderer.removeListener('data:progress', listener);
+  },
+};
+
 const python: PythonApi = {
   info: () => ipcRenderer.invoke('python:info'),
 };
@@ -27,5 +44,6 @@ const python: PythonApi = {
 contextBridge.exposeInMainWorld('api', {
   getAppVersion: (): Promise<string> => ipcRenderer.invoke('app:get-version'),
   projects,
+  data,
   python,
 });

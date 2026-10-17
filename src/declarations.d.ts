@@ -11,6 +11,7 @@ interface Window {
   api: {
     getAppVersion: () => Promise<string>;
     projects: import('./shared/types').ProjectsApi;
+    data: import('./shared/types').DataApi;
     python: import('./shared/types').PythonApi;
   };
 }

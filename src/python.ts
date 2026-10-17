@@ -6,16 +6,32 @@ import path from 'node:path';
 import readline from 'node:readline';
 import type { PythonInfo } from './shared/types';
 
-const pythonRoot = app.isPackaged
+export const pythonRoot = app.isPackaged
   ? path.join(process.resourcesPath, 'python')
   : path.join(app.getAppPath(), 'python');
 
-const pythonExe =
+export const pythonExe =
   process.platform === 'win32'
     ? path.join(pythonRoot, 'runtime', 'python.exe')
     : path.join(pythonRoot, 'runtime', 'bin', 'python3');
 
-const sidecarScript = path.join(pythonRoot, 'sidecar', 'main.py');
+export const sidecarDir = path.join(pythonRoot, 'sidecar');
+const sidecarScript = path.join(sidecarDir, 'main.py');
+
+// -E/-s ignore the user's PYTHON* env vars and user site-packages, -B avoids writing
+// .pyc files into the app folder, -u disables output buffering, -X utf8 fixes encoding.
+export const PYTHON_FLAGS = ['-E', '-s', '-B', '-u', '-X', 'utf8'];
+
+/** Environment for Python processes. dltDataDir is where dlt keeps local pipeline state. */
+export function pythonEnv(dltDataDir = path.join(app.getPath('userData'), 'dlt')) {
+  return {
+    ...process.env,
+    // Keep dlt's pipeline state in the app's data folder rather than ~/.dlt,
+    // and don't send dlt's anonymous usage telemetry.
+    DLT_DATA_DIR: dltDataDir,
+    RUNTIME__DLTHUB_TELEMETRY: 'false',
+  };
+}
 
 interface Pending {
   resolve: (value: unknown) => void;
@@ -41,17 +57,9 @@ class PythonSidecar {
   }
 
   private start() {
-    // -E/-s ignore the user's PYTHON* env vars and user site-packages, -B avoids writing
-    // .pyc files into the app folder, -u disables output buffering, -X utf8 fixes encoding.
-    const proc = spawn(pythonExe, ['-E', '-s', '-B', '-u', '-X', 'utf8', sidecarScript], {
+    const proc = spawn(pythonExe, [...PYTHON_FLAGS, sidecarScript], {
       windowsHide: true,
-      env: {
-        ...process.env,
-        // Keep dlt's pipeline state in the app's data folder rather than ~/.dlt,
-        // and don't send dlt's anonymous usage telemetry.
-        DLT_DATA_DIR: path.join(app.getPath('userData'), 'dlt'),
-        RUNTIME__DLTHUB_TELEMETRY: 'false',
-      },
+      env: pythonEnv(),
     });
 
     readline.createInterface({ input: proc.stdout }).on('line', (line) => this.onLine(line));
@@ -91,6 +99,9 @@ class PythonSidecar {
 }
 
 const sidecar = new PythonSidecar();
+
+/** Calls a method in python/sidecar/main.py. */
+export const callPython = <T>(method: string, params?: unknown) => sidecar.call<T>(method, params);
 
 export function registerPythonHandlers() {
   ipcMain.handle('python:info', () => sidecar.call<PythonInfo>('info'));

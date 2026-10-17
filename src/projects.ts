@@ -315,6 +315,15 @@ export async function closeProject(win: BrowserWindow): Promise<boolean> {
 
 export const hasOpenProject = () => session !== null;
 
+/** The open project's ID and working folder, for other modules that read or write its files. */
+export function openProject(): { id: string; filesDir: string } {
+  const s = requireSession();
+  return { id: s.manifest.id, filesDir: s.filesDir };
+}
+
+/** Records that the open project has changed since it was last saved. */
+export const markProjectChanged = () => markDirty();
+
 // ---------------------------------------------------------------------------------------------
 // Chat (chat/session.json and chat/messages.jsonl)
 

@@ -24,7 +24,7 @@ export function replyTo(stage: WorkflowStage): { text: string; stage: WorkflowSt
     case 'data':
       return {
         stage: 'model',
-        text: `Thanks. Connecting to data sources isn't wired up yet, so let's move on to the next step for now.
+        text: `Thanks. Use the Data tab on the right to connect to it: pick a connector, fill in its settings, then choose the tables to load. (I can't set up connections for you yet.)
 
 Step 2: Model the data. Once your data is loaded, I'll look at how the tables relate and flag anything unclear, such as which column links orders to customers or whether "date" means order date or ship date.
 

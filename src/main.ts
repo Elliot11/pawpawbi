@@ -1,6 +1,7 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
+import { registerDataHandlers } from './data';
 import { closeProject, hasOpenProject, registerProjectHandlers } from './projects';
 import { registerPythonHandlers } from './python';
 
@@ -37,6 +38,12 @@ const createWindow = () => {
     );
   }
 
+  // Links such as connector docs open in the user's browser, never in a new app window.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
   // Close the open project first, so the user can save unsaved changes or cancel closing.
   let projectClosed = false;
   mainWindow.on('close', (event) => {
@@ -64,6 +71,7 @@ app.whenReady().then(() => {
   ipcMain.handle('app:get-version', () => app.getVersion());
   registerProjectHandlers();
   registerPythonHandlers();
+  registerDataHandlers();
 
   createWindow();
 
