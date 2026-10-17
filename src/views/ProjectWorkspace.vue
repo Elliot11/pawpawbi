@@ -92,7 +92,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
              half-finished data source setup. -->
         <KeepAlive>
           <GetData v-if="stage === 'data'" />
-          <ModelData v-else-if="stage === 'model'" />
+          <ModelData v-else-if="stage === 'model'" @add-data="goToStage('data')" />
           <ReportCanvas v-else />
         </KeepAlive>
       </section>

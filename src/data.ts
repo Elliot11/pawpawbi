@@ -21,6 +21,7 @@ import type {
   LoadedTable,
   SaveSourceInput,
   TablePreview,
+  TableSchema,
 } from './shared/types';
 
 const SAFE_ID = /^[a-z0-9]{1,32}$/;
@@ -351,6 +352,9 @@ export function registerDataHandlers() {
   ipcMain.handle('data:load', (_event, id: string, resources: string[]) => load(id, resources));
   ipcMain.handle('data:list-tables', () =>
     callPython<string[]>('list_tables', { data_dir: path.join(openProject().filesDir, 'data') }),
+  );
+  ipcMain.handle('data:describe-tables', () =>
+    callPython<TableSchema[]>('describe_tables', { data_dir: path.join(openProject().filesDir, 'data') }),
   );
   ipcMain.handle('data:preview-table', (_event, table: string, limit = 100) =>
     callPython<TablePreview>('preview_table', {

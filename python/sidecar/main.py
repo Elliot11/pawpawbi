@@ -30,6 +30,7 @@ METHODS = {
     "catalog": connectors.catalog,
     "load_file": datasets.load_file,
     "list_tables": datasets.list_tables,
+    "describe_tables": datasets.describe_tables,
     "preview_table": datasets.preview_table,
 }
 

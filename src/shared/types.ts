@@ -126,6 +126,15 @@ export interface LoadedTable {
   rows: number;
 }
 
+export type ColumnKind = 'integer' | 'decimal' | 'text' | 'boolean' | 'date' | 'datetime' | 'time' | 'nested' | 'other';
+
+export interface TableSchema {
+  name: string;
+  rows: number;
+  /** dlt's own _dlt_* columns are left out. */
+  columns: { name: string; type: string; kind: ColumnKind }[];
+}
+
 export interface TablePreview {
   columns: { name: string; dtype: string }[];
   rows: unknown[][];
@@ -148,6 +157,8 @@ export interface DataApi {
   /** Loads the chosen resources (a full refresh) into the project. */
   load: (id: string, resources: string[]) => Promise<LoadedTable[]>;
   listTables: () => Promise<string[]>;
+  /** Columns and row counts of every loaded table (read from metadata, so it's quick). */
+  describeTables: () => Promise<TableSchema[]>;
   previewTable: (table: string, limit?: number) => Promise<TablePreview>;
   /** Shows a file or folder picker. Resolves to the chosen paths, or [] if cancelled. */
   pickPaths: (kind: 'file' | 'files' | 'folder', filters?: ConnectorField['fileFilters']) => Promise<string[]>;

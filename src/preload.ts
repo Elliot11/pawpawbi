@@ -28,6 +28,7 @@ const data: DataApi = {
   discover: (id) => ipcRenderer.invoke('data:discover', id),
   load: (id, resources) => ipcRenderer.invoke('data:load', id, resources),
   listTables: () => ipcRenderer.invoke('data:list-tables'),
+  describeTables: () => ipcRenderer.invoke('data:describe-tables'),
   previewTable: (table, limit) => ipcRenderer.invoke('data:preview-table', table, limit),
   pickPaths: (kind, filters) => ipcRenderer.invoke('data:pick-paths', kind, filters),
   onProgress: (callback) => {

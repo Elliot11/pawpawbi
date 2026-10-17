@@ -68,6 +68,46 @@ def list_tables(params):
     return _table_names(Path(params["data_dir"]))
 
 
+def _column_kind(data_type) -> str:
+    """A broad kind for a column's Arrow type, for display."""
+    import pyarrow.types as pt
+
+    if pt.is_boolean(data_type):
+        return "boolean"
+    if pt.is_integer(data_type):
+        return "integer"
+    if pt.is_floating(data_type) or pt.is_decimal(data_type):
+        return "decimal"
+    if pt.is_timestamp(data_type):
+        return "datetime"
+    if pt.is_date(data_type):
+        return "date"
+    if pt.is_time(data_type):
+        return "time"
+    if pt.is_string(data_type) or pt.is_large_string(data_type) or pt.is_string_view(data_type):
+        return "text"
+    if pt.is_nested(data_type):
+        return "nested"
+    return "other"
+
+
+def describe_tables(params):
+    """Every loaded table's columns and row count, read from Parquet metadata (not the data)."""
+    import pyarrow.dataset as ds
+
+    data_dir = Path(params["data_dir"])
+    tables = []
+    for name in _table_names(data_dir):
+        dataset = ds.dataset(data_dir / RAW_DATASET / name, format="parquet")
+        columns = [
+            {"name": field.name, "type": str(field.type), "kind": _column_kind(field.type)}
+            for field in dataset.schema
+            if not field.name.startswith("_dlt")  # dlt's own bookkeeping columns
+        ]
+        tables.append({"name": name, "rows": dataset.count_rows(), "columns": columns})
+    return tables
+
+
 def preview_table(params):
     """Column types, the first rows and the total row count of a loaded table."""
     df = read_table(Path(params["data_dir"]), params["table"])
