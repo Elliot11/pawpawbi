@@ -20,6 +20,8 @@ export interface Project {
   modifiedAt: string;
   /** True when there are changes not yet saved to the .pawpaw file. */
   dirty: boolean;
+  /** True while background work (loads, rebuilds) is running. Saving waits for it. */
+  busy: boolean;
 }
 
 /** Result of creating or opening a project: null if the user cancelled. */

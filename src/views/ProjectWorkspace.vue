@@ -80,7 +80,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           saveError
         }}</span>
         <span v-else class="save-status">{{
-          project.dirty ? 'Unsaved changes' : 'Saved'
+          project.busy
+            ? 'Working…'
+            : project.dirty
+              ? 'Unsaved changes'
+              : 'Saved'
         }}</span>
         <button
           class="save"
@@ -88,7 +92,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           title="Save (Ctrl+S)"
           @click="save"
         >
-          {{ saving ? 'Saving…' : 'Save' }}
+          {{
+            saving
+              ? project.busy
+                ? 'Saving after it finishes…'
+                : 'Saving…'
+              : 'Save'
+          }}
         </button>
       </div>
     </header>

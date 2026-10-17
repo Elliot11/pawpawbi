@@ -17,6 +17,8 @@ import {
   packArchive,
   readArchiveEntry,
 } from './pawpaw-archive';
+import { work } from './background';
+import { stopPython } from './python';
 import { newId } from './shared/ids';
 import type {
   ChatMessage,
@@ -150,8 +152,12 @@ function toProject(s: Session): Project {
     createdAt: s.manifest.createdAt,
     modifiedAt: s.manifest.modifiedAt,
     dirty: s.dirty,
+    busy: work.running(s.manifest.id).length > 0,
   };
 }
+
+// The renderer shows when background work is running (and Save waits for it).
+work.onChange(() => notifyChanged());
 
 /** Updates window titles and tells the renderer the project changed. */
 function notifyChanged() {
@@ -337,6 +343,8 @@ async function createProject(win: BrowserWindow): Promise<Project | null> {
 
 async function saveProject(): Promise<Project> {
   const s = requireSession();
+  // Never zip a working folder that a load or rebuild is still writing to.
+  await work.idle(s.manifest.id);
   s.manifest = { ...s.manifest, modifiedAt: now(), modifiedWith: appLabel() };
   await writeJson(path.join(s.filesDir, 'manifest.json'), s.manifest);
   await packArchive(s.filesDir, s.filePath);
@@ -346,8 +354,46 @@ async function saveProject(): Promise<Project> {
   return toProject(s);
 }
 
+/**
+ * Waits for, or stops, the open project's background work before it's closed: closing deletes
+ * the working folder that work writes to. False if the user chooses to keep working.
+ */
+async function finishBackgroundWork(win: BrowserWindow, projectId: string) {
+  const running = [...new Set(work.running(projectId))];
+  if (running.length === 0) return true;
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'warning',
+    buttons: ['Wait', 'Stop and close', 'Keep working'],
+    defaultId: 0,
+    cancelId: 2,
+    title: 'Still working',
+    message:
+      running.length === 1
+        ? `${running[0]} is still in progress.`
+        : `${running.join(', ')} are still in progress.`,
+    detail:
+      'Wait closes the project as soon as it finishes. Stop and close ends it now; tables it was loading or building may be incomplete, so refresh them next time.',
+  });
+  if (response === 2) return false;
+  // Nothing new can start for this project from here on.
+  work.block(projectId);
+  try {
+    if (response === 1) {
+      work.cancel(projectId);
+      // Also interrupts anything the Python sidecar is doing; it restarts on next use.
+      stopPython();
+    }
+    await work.idle(projectId);
+  } finally {
+    work.unblock(projectId);
+  }
+  return true;
+}
+
 /** Closes the open project, asking to save unsaved changes first. False if the user cancels. */
 export async function closeProject(win: BrowserWindow): Promise<boolean> {
+  if (!session) return true;
+  if (!(await finishBackgroundWork(win, session.manifest.id))) return false;
   if (!session) return true;
   if (session.dirty) {
     const { response } = await dialog.showMessageBox(win, {

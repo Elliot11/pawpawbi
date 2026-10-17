@@ -48,6 +48,7 @@ flowchart LR
 | `projects.ts`       | Creating, opening, saving and closing projects; working folders and crash recovery; the recent list; chat history and the current workflow step.                                                                                                                                                                          |
 | `pawpaw-archive.ts` | Reading and writing `.pawpaw` ZIP files, including the safety checks on paths. No Electron imports, so it's testable with plain Node.                                                                                                                                                                                     |
 | `data.ts`           | Data sources (`sources/*.json`), connector environments, running connector jobs, table schemas and previews, the model diagram, in-place transforms and transformed tables, rebuilding them in dependency order after loads (`rebuildDerived`, `refreshAll`), and deleting tables (refused while other tables read them). |
+| `background.ts`     | Tracks each project's background work, so saving can wait for it and closing can wait for it or stop it. No Electron imports, so it's tested with plain Node.                                                                                                                                                             |
 | `credentials.ts`    | Encrypting and storing secrets with Electron's `safeStorage`.                                                                                                                                                                                                                                                             |
 | `python.ts`         | Paths to the bundled Python, the shared flags and environment for Python processes, and the sidecar client (`callPython`).                                                                                                                                                                                                |
 
@@ -87,6 +88,22 @@ edits it in place:
    in one step.
 4. **Close:** delete the working folder. If the app crashes instead, the folder survives and the
    next open offers to recover it.
+
+**Background work** (data loads, rebuilds, connector downloads) writes into the working folder
+too, so it's tracked per project (`src/background.ts`). Every data operation that changes the
+project runs through `tracked()` in `data.ts`, and the processes it starts register a way to stop
+them.
+
+- **Saving** waits until the project's work has finished, so it never zips half-written tables.
+- **Closing** (or quitting) with work running asks first:
+  - **Wait** closes once the work finishes.
+  - **Stop and close** kills the connector processes, restarts the Python sidecar and stops
+    multi-step work between steps.
+  - **Keep working** cancels the close.
+
+  While closing, no new work can start.
+
+- **Quitting** the app stops any processes still running.
 
 Data kept outside the project file, on this computer only:
 

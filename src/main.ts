@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
+import { work } from './background';
 import { registerDataHandlers } from './data';
 import {
   closeProject,
@@ -93,6 +94,10 @@ app.whenReady().then(() => {
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
+// Stop any connector processes still running (e.g. the app quit some other way), so none are
+// left behind writing into a deleted folder.
+app.on('will-quit', () => work.cancel());
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();

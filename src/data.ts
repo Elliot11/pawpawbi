@@ -8,11 +8,12 @@ import {
   ipcMain,
   type IpcMainInvokeEvent,
 } from 'electron';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import readline from 'node:readline';
+import { CancelledError, work } from './background';
 import { deleteSecrets, readSecrets, writeSecrets } from './credentials';
 import { markProjectChanged, openProject } from './projects';
 import {
@@ -294,6 +295,31 @@ async function prepareEnvironment(
   return envPython;
 }
 
+/** Stops a process and anything it started (pip's own subprocesses, for example). */
+function killTree(proc: ChildProcess) {
+  if (proc.exitCode !== null || proc.pid === undefined) return;
+  if (process.platform === 'win32') {
+    spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], {
+      windowsHide: true,
+    });
+  } else {
+    proc.kill('SIGKILL');
+  }
+}
+
+/**
+ * Lets the current background task stop `proc` (see background.ts). Returns whether it was
+ * stopped that way, and a function to call once it has exited.
+ */
+function stoppable(proc: ChildProcess) {
+  const state = { stopped: false };
+  const release = work.onCancel(() => {
+    state.stopped = true;
+    killTree(proc);
+  });
+  return { state, release };
+}
+
 /** Runs a command to completion; rejects with the end of its output if it fails. */
 function runProcess(
   command: string,
@@ -302,6 +328,7 @@ function runProcess(
 ) {
   return new Promise<void>((resolve, reject) => {
     const proc = spawn(command, args, { windowsHide: true, env: pythonEnv() });
+    const { state, release } = stoppable(proc);
     const tail: string[] = [];
     const collect = (line: string) => {
       tail.push(line);
@@ -312,7 +339,9 @@ function runProcess(
     readline.createInterface({ input: proc.stderr }).on('line', collect);
     proc.on('error', reject);
     proc.on('close', (code) => {
-      if (code === 0) resolve();
+      release();
+      if (state.stopped) reject(new CancelledError());
+      else if (code === 0) resolve();
       else
         reject(
           new Error(
@@ -349,6 +378,7 @@ function runJob<T>(
         env: pythonEnv(path.join(app.getPath('userData'), 'dlt', project.id)),
       },
     );
+    const { state, release } = stoppable(proc);
     let outcome: { ok: true; value: T } | { ok: false; error: Error } | null =
       null;
     const stderr: string[] = [];
@@ -374,7 +404,9 @@ function runJob<T>(
     });
     proc.on('error', reject);
     proc.on('close', (code) => {
-      if (outcome?.ok) resolve(outcome.value);
+      release();
+      if (state.stopped) reject(new CancelledError());
+      else if (outcome?.ok) resolve(outcome.value);
       else if (outcome) reject(outcome.error);
       else
         reject(
@@ -468,6 +500,7 @@ async function refreshAll(): Promise<RefreshAllResult> {
   const progress = (message: string) =>
     sendProgress({ sourceId: ALL_SOURCES, message });
   for (const [i, source] of sources.entries()) {
+    work.checkCancelled();
     const prefix = `${source.name} (${i + 1} of ${sources.length})`;
     progress(`${prefix}: starting…`);
     try {
@@ -475,6 +508,7 @@ async function refreshAll(): Promise<RefreshAllResult> {
         progress(`${prefix}: ${message}`),
       );
     } catch (error) {
+      work.checkCancelled(); // Stopped, rather than failed: don't carry on.
       failedSources.push({
         name: source.name,
         error: (error as Error).message,
@@ -615,6 +649,7 @@ async function reapplyTransforms(): Promise<Record<string, string>> {
   );
   const errors: Record<string, string> = {};
   for (const [table, transform] of Object.entries(transforms)) {
+    work.checkCancelled();
     if (!loaded.has(table)) continue;
     try {
       await callPython('apply_transform', {
@@ -623,6 +658,7 @@ async function reapplyTransforms(): Promise<Record<string, string>> {
         sql: transform.sql,
       });
     } catch (error) {
+      work.checkCancelled();
       errors[table] = (error as Error).message;
       // Don't leave the previous result over the new data: show the original until it's fixed.
       // The query itself stays saved so it can be edited.
@@ -703,6 +739,7 @@ async function rebuildTransformed(
   const file = await readTransformed();
   const errors: Record<string, string> = {};
   for (const [i, name] of names.entries()) {
+    work.checkCancelled();
     const def = file.tables[name];
     if (!def) continue;
     onProgress?.(`Building ${name} (${i + 1} of ${names.length})…`);
@@ -717,6 +754,7 @@ async function rebuildTransformed(
       });
       def.error = null;
     } catch (error) {
+      work.checkCancelled();
       errors[name] = def.error = (error as Error).message;
       await callPython('clear_table', {
         data_dir: dataDir(),
@@ -898,22 +936,31 @@ async function pickPaths(
   return canceled ? [] : filePaths;
 }
 
+/**
+ * Runs an operation that changes the open project as tracked background work, so saving waits
+ * for it and closing waits for it or stops it (see background.ts).
+ */
+const tracked = <R>(label: string, operation: () => Promise<R>) =>
+  work.run(openProject().id, label, operation);
+
 export function registerDataHandlers() {
   ipcMain.handle('data:catalog', () => catalog());
   ipcMain.handle('data:list-sources', async () =>
     Promise.all((await readAllSources()).map(toDataSource)),
   );
   ipcMain.handle('data:save-source', (_event, input: SaveSourceInput) =>
-    saveSource(input),
+    tracked('Saving a data source', () => saveSource(input)),
   );
   ipcMain.handle('data:remove-source', (_event, id: string) =>
-    removeSource(id),
+    tracked('Removing a data source', () => removeSource(id)),
   );
   ipcMain.handle('data:discover', (_event, id: string) =>
-    runSourceJob<DiscoveredResource[]>(id, { action: 'discover' }),
+    tracked('Connecting to a data source', () =>
+      runSourceJob<DiscoveredResource[]>(id, { action: 'discover' }),
+    ),
   );
   ipcMain.handle('data:load', (_event, id: string, resources: string[]) =>
-    load(id, resources),
+    tracked('Loading data', () => load(id, resources)),
   );
   ipcMain.handle('data:list-tables', () =>
     callPython<string[]>('list_tables', {
@@ -943,21 +990,24 @@ export function registerDataHandlers() {
   ipcMain.handle('data:list-transformed', () => listTransformed());
   ipcMain.handle(
     'data:save-transformed',
-    (_event, input: SaveTransformedInput) => saveTransformed(input),
+    (_event, input: SaveTransformedInput) =>
+      tracked('Building a transformed table', () => saveTransformed(input)),
   );
-  ipcMain.handle('data:refresh-all', () => refreshAll());
+  ipcMain.handle('data:refresh-all', () =>
+    tracked('Refreshing all data', () => refreshAll()),
+  );
   ipcMain.handle('data:apply-transform', (_event, table: string, sql: string) =>
-    applyTransform(table, sql),
+    tracked('Applying a transform', () => applyTransform(table, sql)),
   );
   ipcMain.handle('data:remove-transform', (_event, table: string) =>
-    removeTransform(table),
+    tracked('Removing a transform', () => removeTransform(table)),
   );
   ipcMain.handle('data:delete-table', (_event, table: string) =>
-    deleteTable(table),
+    tracked('Deleting a table', () => deleteTable(table)),
   );
   ipcMain.handle('data:load-diagram', () => loadDiagram());
   ipcMain.handle('data:save-diagram', (_event, diagram: ModelDiagram) =>
-    saveDiagram(diagram),
+    tracked('Saving the layout', () => saveDiagram(diagram)),
   );
   ipcMain.handle('data:preview-table', (_event, table: string, limit = 100) =>
     callPython<TablePreview>('preview_table', {

@@ -109,6 +109,9 @@ class PythonSidecar {
 
 const sidecar = new PythonSidecar();
 
+/** Stops the sidecar, interrupting whatever it's doing. It restarts on the next call. */
+export const stopPython = () => sidecar.stop();
+
 /** Calls a method in python/sidecar/main.py. */
 export const callPython = <T>(method: string, params?: unknown) =>
   sidecar.call<T>(method, params);

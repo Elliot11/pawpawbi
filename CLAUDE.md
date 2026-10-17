@@ -62,6 +62,11 @@ obvious from the code. Keep this file current when a convention changes.
 - The user has said **don't load data into DuckDB**. DuckDB is only a query engine over Parquet
   files; data lives as Parquet in `data/raw` and `data/model`.
 - Data loads are full refreshes (`write_disposition="replace"`, `refresh="drop_resources"`).
+- **Background work must be tracked.** A new IPC handler that changes the open project goes
+  through `tracked(label, …)` in `src/data.ts`. A process it starts registers with
+  `work.onCancel` (see `stoppable` in `data.ts`). Multi-step work calls `work.checkCancelled()`
+  between steps and rethrows when stopped instead of recording an error. Otherwise saving can
+  zip half-written data, and closing can delete the folder the work is writing to.
 - **Two kinds of table**: loaded (with optional in-place transforms, which read original data
   only) and transformed (built by SQL from any tables). Names are unique across both. Anything
   that changes a table must trigger rebuilds of what depends on it, in order
