@@ -7,6 +7,7 @@ import type {
   Project,
   ProjectsApi,
   PythonApi,
+  ReportApi,
 } from './shared/types';
 
 const projects: ProjectsApi = {
@@ -67,10 +68,35 @@ const python: PythonApi = {
   info: () => ipcRenderer.invoke('python:info'),
 };
 
+const report: ReportApi = {
+  get: () => ipcRenderer.invoke('report:get'),
+  createSite: () => ipcRenderer.invoke('report:create-site'),
+  createPage: (title) => ipcRenderer.invoke('report:create-page', title),
+  renamePage: (id, title) =>
+    ipcRenderer.invoke('report:rename-page', id, title),
+  deletePage: (id) => ipcRenderer.invoke('report:delete-page', id),
+  readFile: (path) => ipcRenderer.invoke('report:read-file', path),
+  writeFile: (path, content) =>
+    ipcRenderer.invoke('report:write-file', path, content),
+  listDatasets: () => ipcRenderer.invoke('report:list-datasets'),
+  saveDataset: (name, sql) =>
+    ipcRenderer.invoke('report:save-dataset', name, sql),
+  deleteDataset: (name) => ipcRenderer.invoke('report:delete-dataset', name),
+  refreshDatasets: () => ipcRenderer.invoke('report:refresh-datasets'),
+  exportSite: () => ipcRenderer.invoke('report:export'),
+  onNavigated: (callback) => {
+    const listener = (_event: IpcRendererEvent, pageId: string) =>
+      callback(pageId);
+    ipcRenderer.on('report:navigated', listener);
+    return () => ipcRenderer.removeListener('report:navigated', listener);
+  },
+};
+
 // Expose a small, explicit API to the renderer (available as window.api).
 contextBridge.exposeInMainWorld('api', {
   getAppVersion: (): Promise<string> => ipcRenderer.invoke('app:get-version'),
   projects,
   data,
   python,
+  report,
 });

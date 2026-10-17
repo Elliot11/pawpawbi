@@ -1,6 +1,11 @@
 /// <reference types="@electron-forge/plugin-vite/forge-vite-env" />
 declare module '*.css';
 
+declare module '*?raw' {
+  const text: string;
+  export default text;
+}
+
 declare module '*.vue' {
   import type { DefineComponent } from 'vue';
   const component: DefineComponent<object, object, unknown>;
@@ -13,5 +18,6 @@ interface Window {
     projects: import('./shared/types').ProjectsApi;
     data: import('./shared/types').DataApi;
     python: import('./shared/types').PythonApi;
+    report: import('./shared/types').ReportApi;
   };
 }

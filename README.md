@@ -13,10 +13,12 @@ ordinary files and folders, defined in [docs/pawpaw-file-format.md](docs/pawpaw-
 Early development. Working: projects (create, open, save, crash recovery), 47 data connectors
 (the file connectors and SQLite are tested, the rest aren't yet: see
 [docs/connectors.md](docs/connectors.md)), the Model data canvas with dependency lines, SQL
-transforms of loaded tables, transformed tables built from other tables, and refreshing
-everything in dependency order. Not built
-yet: relationships between tables, visuals, and connecting the assistant to an AI model (its
-replies are placeholders). Known issues and the backlog are in [TODO.md](TODO.md).
+transforms of loaded tables, transformed tables built from other tables, refreshing
+everything in dependency order, and the report: a static website of charts (bars, lines, headline
+numbers, tables) that every new project starts with, fed by datasets and exportable for hosting
+anywhere, e.g. S3 ([docs/report-pages.md](docs/report-pages.md)). Not built yet: relationships
+between tables, and connecting the assistant to an AI model (its replies are placeholders, so it
+can't build the report yet). Known issues and the backlog are in [TODO.md](TODO.md).
 
 ## Getting started
 

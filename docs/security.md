@@ -13,7 +13,11 @@ anything listed under "Rules" in a section below, re-read that section and run `
    project files, logs, command lines or the UI after they're saved.
 3. **A compromised page.** If something injected script into the renderer (say, via a bug that
    rendered untrusted HTML), it should get as little power as possible.
-4. **Tampered downloads.** The app downloads Python, Python packages and connectors; these must
+4. **A hostile report.** The report (`report/`) is HTML and JavaScript stored in the project, so a
+   shared project can contain pages written to attack whoever opens it. They must not be able to
+   reach the app, the user's files, credentials or the network, or send the project's data
+   anywhere.
+5. **Tampered downloads.** The app downloads Python, Python packages and connectors; these must
    be the expected files.
 
 Out of scope: someone who already controls the user's Windows account, and the security of the
@@ -39,8 +43,8 @@ data sources themselves.
   can't corrupt the project.
 
 **Rules:** never build a path from a value read out of a project without validating it first.
-Never add a feature that executes code stored in a project; if it's ever needed, it must ask
-the user first.
+Never add a feature that executes code stored in a project, other than the report in its
+sandbox (below); anything else must ask the user first.
 
 ## SQL transforms and the query engine
 
@@ -73,6 +77,46 @@ the sandbox tests: setting names and behaviour can change between versions.
 (The file connectors also use DuckDB, to read CSV files the user chose. That's a separate, normal
 connection inside a connector job; it never sees SQL from a project.)
 
+## The report
+
+The report (`report/`) is the one kind of stored code that runs: its pages' JavaScript runs
+whenever Build visuals shows them, without asking, because they can only show the report's own
+files. Each layer below stops something on its own:
+
+- **Sandboxed frame.** Pages are shown in an `<iframe sandbox="allow-scripts">`
+  (`ReportCanvas.vue`). Without `allow-same-origin` they have an opaque origin, so they can't
+  touch the app's page, `window.api`, storage or cookies. Without the other sandbox flags they
+  can't open windows, submit forms, show dialogs or navigate the app.
+- **Own scheme, own files only.** The site is served from `pawpaw-report://site/<path>` by
+  `src/report.ts`. `sitePath` (`report-site.ts`) refuses `..`, backslashes, hidden files and
+  unknown file types, and resolves only inside the open project's `report/` folder.
+- **Content Security Policy** (`SITE_CSP` in `report.ts`): scripts, styles, images, fonts and
+  fetches from `pawpaw-report://site` only (plus inline scripts and styles, and `data:` images and
+  fonts). No frames, workers, plugins or forms. DNS prefetching is off, so links can't leak data
+  through look-ups.
+- **No web requests at all.** The app's UI needs none (it's bundled files, plus the dev server
+  during development; connectors use the network from Python). `lockDownNetwork()` cancels every
+  `http(s)` and `ws(s)` request from the app's windows and points them at an unreachable proxy.
+  The window's WebRTC policy allows only proxied connections, so WebRTC, which bypasses both the
+  policy and request blocking, can't connect either.
+- **No navigating away.** `guardFrames()` lets the frame move only between the site's own pages,
+  so a page can't send data out in a URL.
+- **No queries from pages.** Pages read only the dataset files. Dataset queries are stored in
+  `model/datasets.json`, outside the site, and run through `engine.select()` in the locked-down
+  engine like every other query, capped at 50,000 rows, 10 MB and 60 seconds.
+- **Escaping.** `charts.js` inserts every name and value with `textContent`.
+
+A hostile page can still show misleading content inside its frame.
+
+**Rules:** never add `allow-same-origin`, `allow-popups`, `allow-top-navigation` or
+`allow-forms` to the frame; never loosen `SITE_CSP` or `sitePath`; don't add web requests to the
+renderer (they'd have to be let through `lockDownNetwork`); never give pages a way to run
+queries. Covered by `tests/node/report-site.test.ts` and `python/tests/test_report_data.py`; the
+frame, policy and network lockdown were checked by hand with a hostile page.
+
+Once exported and hosted, the report is an ordinary website: its data files are readable by
+anyone who can reach it, so private reports need access control on the host.
+
 ## Credentials
 
 - Connector fields marked `secret=True` are split off when a source is saved (`saveSource` in
@@ -97,6 +141,7 @@ must be a `secret=True` field, not a regular one.
   "run any command". File paths only enter through the native file picker or a connector's
   settings, and reopening from the recent list accepts only paths already in that list.
 - Links that try to open a new window are sent to the user's browser instead (`main.ts`).
+- The renderer makes no web requests; they're blocked (see The report).
 - Vue templates use text interpolation, which escapes HTML. Don't use `v-html` with data from
   projects, sources or the network.
 - Electron fuses (`forge.config.mts`) disable running the app as plain Node, Node options and

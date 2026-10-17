@@ -157,14 +157,6 @@ def test_table_named_like_a_sql_keyword(data_dir):
 # Sandbox: a transform can only read the project's data folder -------------------------------------
 
 
-@pytest.fixture
-def outside(tmp_path) -> Path:
-    """A file next to the project, outside its data folder."""
-    path = tmp_path / "secret.txt"
-    path.write_text("secret\nhunter2\n", encoding="utf-8")
-    return path
-
-
 SYSTEM_FILE = "C:/Windows/win.ini" if sys.platform == "win32" else "/etc/hosts"
 
 # (test id, SQL, where {outside} is the secret file and {data} the data folder)

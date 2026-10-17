@@ -1,0 +1,73 @@
+"""Report datasets: the data a report publishes (see docs/report-pages.md).
+
+A dataset is a named SELECT query over every table as the app shows it. Its result is written
+as JSON into the report folder (report/data/<name>.json), so the report is a static site that
+works without PawpawBI, e.g. hosted on S3. Only what the query returns is published, so
+datasets should aggregate.
+
+The query runs in the locked-down DuckDB from engine.py like every other query. Results are
+capped in rows and size, and a query that runs too long is stopped.
+"""
+
+import datetime as dt
+import json
+import os
+import threading
+from pathlib import Path
+
+import engine
+
+MAX_ROWS = 50_000
+MAX_BYTES = 10 * 1024 * 1024
+TIME_LIMIT_SECONDS = 60
+
+
+def _run(con, sql: str, limit: int, time_limit: float):
+    query = engine.select(con, sql)
+    timer = threading.Timer(time_limit, con.interrupt)
+    timer.start()
+    try:
+        relation = con.sql(query)
+        rows = relation.fetchmany(limit + 1)
+    except Exception:
+        if not timer.is_alive():
+            raise TimeoutError(f"The query took longer than {time_limit:g} seconds, so it was stopped.") from None
+        raise
+    finally:
+        timer.cancel()
+    columns = [{"name": n, "type": str(t)} for n, t in zip(relation.columns, relation.types)]
+    return columns, rows
+
+
+def write_dataset(params):
+    """Run a dataset's query and write its result to `path` (chosen and checked by the main
+    process). The file is replaced only once the new one is complete."""
+    name = params["name"]
+    path = Path(params["path"])
+    limit = min(int(params.get("max_rows", MAX_ROWS)), MAX_ROWS)
+    con = engine.connect(Path(params["data_dir"]))
+    try:
+        columns, rows = _run(con, params["sql"], limit, float(params.get("time_limit", TIME_LIMIT_SECONDS)))
+    finally:
+        con.close()
+
+    truncated = len(rows) > limit
+    document = {
+        "name": name,
+        "generatedAt": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "columns": columns,
+        "rows": [[engine.json_value(v) for v in row] for row in rows[:limit]],
+        "truncated": truncated,
+    }
+    text = json.dumps(document, ensure_ascii=False, separators=(",", ":"))
+    size = len(text.encode("utf-8"))
+    if size > MAX_BYTES:
+        raise ValueError(
+            f"The result is {size / 1024 / 1024:.1f} MB, over the {MAX_BYTES // 1024 // 1024} MB limit for a dataset. "
+            "Group or filter the data in the query so it returns less."
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    staging = path.with_name(f".{path.name}.tmp")
+    staging.write_text(text, encoding="utf-8")
+    os.replace(staging, path)
+    return {"rows": len(document["rows"]), "truncated": truncated, "bytes": size}

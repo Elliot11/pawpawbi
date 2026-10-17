@@ -98,6 +98,23 @@ test('a new project is created clean, with a file and a working folder', async (
   assert.equal(JSON.parse(await read(ws, 'manifest.json')).id, ws.manifest.id);
 });
 
+test('a new project includes its starting files in the saved file', async () => {
+  const file = path.join(tmp, 'Started.pawpaw');
+  const ws = await createWorkspace(file, {
+    root,
+    appLabel: APP,
+    populate: async (filesDir, name) => {
+      await fs.mkdir(path.join(filesDir, 'report'));
+      await fs.writeFile(path.join(filesDir, 'report', 'index.html'), name);
+    },
+  });
+  assert.equal(ws.dirty, false, 'nothing to save yet');
+  await removeWorkspace(ws);
+
+  const { ws: reopened } = await open(file);
+  assert.equal(await read(reopened, 'report/index.html'), 'Started');
+});
+
 test('after a crash, Recover keeps the unsaved changes and they stay unsaved', async () => {
   const { file, ws: before } = await crashedProject();
 

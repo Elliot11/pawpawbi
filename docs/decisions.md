@@ -225,35 +225,81 @@ commit) is pinned to an exact version that has been public for at least two week
 **Why:** Reproducible builds, and a buffer against compromised or broken releases, which are
 usually caught and pulled within days.
 
-## 14. Report pages are HTML, run in a sandbox
+## 14. The report is a static website
 
-**Decision:** Each report page is an HTML file in the project, `report/pages/<id>.html`, where
-`<id>` is the page's GUID: a lowercase version 4 UUID such as
+**Decision:** A project's report (`report/`) is a self-contained static website of plain HTML, CSS
+and JavaScript: a landing page, one HTML file per page, a stylesheet, our own chart library
+(`assets/charts.js`, plain JavaScript drawing SVG) and the data it shows as JSON files
+(decision 15). It doesn't depend on PawpawBI or anything outside the folder, so it can be hosted
+as-is, for example on S3 behind a CDN. No Vue or other framework is used in it. Each page is
+`report/pages/<id>.html`, where `<id>` is the page's GUID: a lowercase version 4 UUID such as
 `3f2b8c1e-9a4d-4e7b-b6c2-5d1e8f0a7c94`, generated when the page is created and never changed.
-Renaming a page changes only its name. The app shows each page in a sandboxed frame and adds a
-small library of our own (plain JavaScript and SVG) for querying tables and drawing charts.
+Renaming a page changes only its title. Every new project starts with a default report to
+build on. The app shows the site in a sandboxed frame and exports it as a folder. Details:
+[pawpaw-file-format.md](pawpaw-file-format.md), [report-pages.md](report-pages.md).
 
-**Why:** HTML is what an AI model writes best, so the assistant can build any layout or chart
-without the app first having to support it in a settings format. A page is also ordinary,
-readable and editable by hand. Our own chart code (bars, lines, headline numbers, tables) keeps
-the app free of a charting dependency and lets every chart follow the same rules: a colour-blind
-safe palette in a fixed order, at most eight series, a table view, hover and keyboard tooltips.
+**Why:** Reports have to be publishable as ordinary web files. HTML is also what an AI model
+writes best, so the assistant can build any layout or chart without the app first having to
+support it in a settings format, and a page stays readable and editable by hand. Our own chart
+code (bars, lines, headline numbers, tables) avoids a dependency inside every report and lets
+every chart follow the same rules: a colour-blind safe palette in a fixed order, at most eight
+series, a table view, hover and keyboard tooltips. GUIDs keep page IDs unique when pages are
+copied between reports, and stable when pages are renamed.
 
 **Alternatives considered:**
 
 - Pages described in JSON (chart type, columns, position) and drawn by the app: safer by
-  construction, but every new kind of chart or layout needs app changes, and an AI is limited to
-  what the format can say.
+  construction, but not hostable without a viewer, every new chart or layout needs app changes,
+  and an AI is limited to what the format can say.
 - A charting library (ECharts, Vega-Lite, Chart.js): more chart types sooner, but a large
-  dependency inside every page, and its own look and accessibility to work around.
+  dependency inside every report, and its own look and accessibility to work around.
+- Pages that query the data live: impossible on a static host.
 
 **Consequences:**
 
-- Projects now contain code that runs when opened. It's contained by the sandboxed frame, a
-  strict Content Security Policy, a block on all web requests from the app's windows and
-  read-only queries; together they stop a page reaching anything but the project's data on
-  screen. Any loosening of these needs a security review.
-- Pages refer to tables and columns by name inside SQL, so renaming or deleting them breaks
-  charts without warning.
-- New chart types are added to the library, and its documentation is the contract with page
-  authors (people and the assistant).
+- Projects contain code (the pages' JavaScript) that runs when the report is shown. In the app
+  it's contained by a sandboxed frame, a strict Content Security Policy and a block on all web
+  requests, so a page can only show the report's own files ([security.md](security.md)).
+- Each project carries its own copy of `charts.js`, so updating the library in the app doesn't
+  change existing reports. A way to update a report's copy is still to come.
+- New chart types are added to the library, and [report-pages.md](report-pages.md) is its
+  contract with page authors (people and the assistant).
+
+## 15. Report data is published as precomputed JSON datasets
+
+**Decision:** The report reads its data from datasets: named SELECT queries over the project's
+tables (`model/datasets.json`). The app runs each query in the locked-down DuckDB engine and
+writes the result to `report/data/<name>.json`, after every data load or rebuild, from the
+Refresh button and before exporting. Pages load datasets by name.
+
+**Why:** A static site can't run queries, so the data has to travel with it. Writing only query
+results means a report publishes what its charts need (usually small, grouped data), never the
+raw tables. Keeping the queries outside `report/` keeps them out of the published site.
+
+**Alternatives considered:** publishing the tables as Parquet and querying them in the browser
+with DuckDB-WASM: flexible (filters, drill-down), but several megabytes of engine in every report
+and the full raw data published.
+
+**Consequences:**
+
+- Charts can only show what a dataset contains. Interactive filtering happens in the page, over a
+  dataset's rows.
+- A hosted report is a snapshot from when it was exported.
+- Datasets are capped (50,000 rows, 10 MB), which pushes grouping into SQL.
+- Datasets refer to tables and columns by name, so renaming or deleting them makes the dataset's
+  next refresh fail; its previous data is kept and the error shown.
+
+## 16. The assistant works with the user's own OpenAI or Anthropic key
+
+**Decision:** The assistant runs on ChatGPT (OpenAI) or Claude (Anthropic), with an API key the
+user provides and chooses between. Keys are stored with OS encryption and never put in a project
+or in the model's context. The conversation, tools and guides are written once, provider-neutral;
+a small adapter per provider translates tool calls and streaming.
+
+**Why:** Users already have accounts with one or the other, and it avoids running a PawpawBI
+service. Keeping the prompts and tools neutral means both providers get the same abilities, and
+the same evaluation tasks can check both.
+
+**Consequences:** Each provider's tool-calling format has to be kept working; adapter tests use
+recorded responses. Without a key, the assistant explains how to add one and the rest of the app
+works by hand.

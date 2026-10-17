@@ -42,27 +42,29 @@ flowchart LR
 
 ### Main-process modules
 
-| Module              | Does                                                                                                                                                                                                                                                                                                                      |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `main.ts`           | Creates the window, registers IPC handlers, asks to save on close, opens external links in the browser.                                                                                                                                                                                                                   |
-| `projects.ts`       | The open project: the dialogs for creating, opening, saving and closing, the recent list, chat history and the current workflow step.                                                                                                                                                                                     |
-| `workspace.ts`      | Working folders and crash recovery: opening a `.pawpaw` file into its working folder (offering back unsaved changes left by a crash), saving, and removing it. No Electron imports, so it's tested with plain Node.                                                                                                       |
-| `pawpaw-archive.ts` | Reading and writing `.pawpaw` ZIP files, including the safety checks on paths. No Electron imports, so it's testable with plain Node.                                                                                                                                                                                     |
-| `data.ts`           | Data sources (`sources/*.json`), connector environments, running connector jobs, table schemas and previews, the model diagram, in-place transforms and transformed tables, rebuilding them in dependency order after loads (`rebuildDerived`, `refreshAll`), and deleting tables (refused while other tables read them). |
-| `background.ts`     | Tracks each project's background work, so saving can wait for it and closing can wait for it or stop it. No Electron imports, so it's tested with plain Node.                                                                                                                                                             |
-| `credentials.ts`    | Encrypting and storing secrets with Electron's `safeStorage`.                                                                                                                                                                                                                                                             |
-| `python.ts`         | Paths to the bundled Python, the shared flags and environment for Python processes, and the sidecar client (`callPython`).                                                                                                                                                                                                |
+| Module              | Does                                                                                                                                                                                                                                                                                                                                            |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `main.ts`           | Creates the window, registers IPC handlers, asks to save on close, opens external links in the browser.                                                                                                                                                                                                                                         |
+| `projects.ts`       | The open project: the dialogs for creating, opening, saving and closing, the recent list, chat history and the current workflow step.                                                                                                                                                                                                           |
+| `workspace.ts`      | Working folders and crash recovery: opening a `.pawpaw` file into its working folder (offering back unsaved changes left by a crash), saving, and removing it. No Electron imports, so it's tested with plain Node.                                                                                                                             |
+| `pawpaw-archive.ts` | Reading and writing `.pawpaw` ZIP files, including the safety checks on paths. No Electron imports, so it's testable with plain Node.                                                                                                                                                                                                           |
+| `data.ts`           | Data sources (`sources/*.json`), connector environments, running connector jobs, table schemas and previews, the model diagram, in-place transforms and transformed tables, rebuilding them in dependency order after loads (`rebuildDerived`, `refreshAll`), and deleting tables (refused while other tables read them).                       |
+| `background.ts`     | Tracks each project's background work, so saving can wait for it and closing can wait for it or stop it. No Electron imports, so it's tested with plain Node.                                                                                                                                                                                   |
+| `credentials.ts`    | Encrypting and storing secrets with Electron's `safeStorage`.                                                                                                                                                                                                                                                                                   |
+| `report.ts`         | The report site: serving it to the app on the `pawpaw-report:` scheme, datasets (refreshed after loads and rebuilds), export, and the network and navigation lockdown that keeps the report frame sandboxed. File handling is in `report-site.ts` (no Electron imports, tested with plain Node); a new site's files are `src/report-template/`. |
+| `python.ts`         | Paths to the bundled Python, the shared flags and environment for Python processes, and the sidecar client (`callPython`).                                                                                                                                                                                                                      |
 
 ## Talking between processes
 
 **Renderer → main.** Every call is `window.api.<area>.<method>()` → `ipcRenderer.invoke('<area>:<method>')`
-→ an `ipcMain.handle` in the main process. Areas: `projects`, `data`, `python`. Values must be
+→ an `ipcMain.handle` in the main process. Areas: `projects`, `data`, `report`, `python`. Values must be
 plain data (wrap Vue state in `plain()`). Errors arrive as rejected promises; show them with
 `errorMessage()`.
 
 **Main → renderer.** Two event streams: `project:changed` (name, path, unsaved-changes flag) and
 `data:progress` (status messages while connecting, loading or rebuilding, tagged with the source's
-ID, or `ALL_SOURCES` during Refresh all data).
+ID, or `ALL_SOURCES` during Refresh all data), and `report:navigated` (the report frame followed a
+link to another page).
 
 **Main → sidecar.** One JSON object per line on the sidecar's stdin:
 `{"id": 1, "method": "describe_tables", "params": {...}}`, answered by one line on its stdout:
@@ -126,7 +128,9 @@ flowchart LR
   MOD --> CUR
   CUR -->|"transformed table<br/>(DuckDB, in dependency order)"| TR["data/transformed/&lt;table&gt;/data.parquet"]
   TR --> CUR
-  CUR --> USE["Model view, previews,<br/>visuals (future)"]
+  CUR --> USE["Model view, previews"]
+  CUR -->|"datasets<br/>(DuckDB)"| SITE["report/data/&lt;dataset&gt;.json"]
+  SITE --> WEB["The report site:<br/>in the app, or hosted"]
 ```
 
 1. **Connect.** The user picks a connector in the Add data screen. Its form comes from the
@@ -147,8 +151,10 @@ flowchart LR
    dependency order (each after the transformed tables it reads). The order and cycle checks are
    in `src/shared/dependencies.ts`, and the orchestration is in `data.ts` (`rebuildDerived`).
 
-5. **Use.** The Model view and previews read schemas and rows through the sidecar. Visuals and
-   relationships will read the same way.
+5. **Use.** The Model view and previews read schemas and rows through the sidecar.
+6. **Publish.** Datasets (named queries) are run after each load or rebuild and their results
+   written as JSON into the report site (`report/data/`), which the report's pages read. The site
+   is shown in the app and can be exported as a folder to host anywhere.
 
 ## The query engine
 
@@ -191,7 +197,10 @@ Python.
   draggable table canvas: cards for loaded tables (orange) and transformed tables (purple),
   dependency arrows on its SVG layer, a legend, and Refresh all data. It opens
   `TransformEditor.vue` for SQL: a loaded table's in-place transform, or a new or existing
-  transformed table. **Build visuals** is `ReportCanvas.vue`, an empty placeholder.
+  transformed table. **Build visuals** is `ReportCanvas.vue`: a tab per report page, the page shown in a
+  sandboxed frame from `pawpaw-report://site/<path>`, and a side panel to edit the site's files
+  or its datasets (`report/DatasetsPanel.vue`). Export copies the site to a folder. The report
+  itself is plain HTML, CSS and JavaScript ([report-pages.md](report-pages.md)); no Vue.
 
 The current workflow step is saved with the project (`chat/session.json`).
 

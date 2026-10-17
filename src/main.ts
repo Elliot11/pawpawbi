@@ -9,11 +9,20 @@ import {
   registerProjectHandlers,
 } from './projects';
 import { registerPythonHandlers } from './python';
+import {
+  guardFrames,
+  lockDownNetwork,
+  registerReportHandlers,
+  registerReportScheme,
+} from './report';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
 }
+
+// The report is shown from its own scheme, which has to be registered before start-up.
+registerReportScheme();
 
 const iconPath = app.isPackaged
   ? path.join(process.resourcesPath, 'icon.png')
@@ -42,6 +51,9 @@ const createWindow = () => {
       path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
     );
   }
+
+  // The report frame can't leave the report site or use WebRTC.
+  guardFrames(mainWindow.webContents);
 
   // Links such as connector docs open in the user's browser, never in a new app window.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -74,11 +86,13 @@ const createWindow = () => {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await lockDownNetwork();
   ipcMain.handle('app:get-version', () => app.getVersion());
   registerProjectHandlers();
   registerPythonHandlers();
   registerDataHandlers();
+  registerReportHandlers();
 
   createWindow();
 

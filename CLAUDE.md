@@ -44,14 +44,26 @@ obvious from the code. Keep this file current when a convention changes.
 - **Secrets never go in the project.** Connector fields marked `secret=True` are stored with
   `src/credentials.ts` (OS encryption), never in `sources/*.json` or anywhere in the `.pawpaw` file.
 - **All reading of loaded data goes through `python/sidecar/engine.py`**: one locked-down,
-  in-memory DuckDB over the Parquet files (table info, previews, transforms; later relationships
-  and visuals). Don't read tables any other way, and don't loosen `engine.connect()` or
+  in-memory DuckDB over the Parquet files (table info, previews, transforms, report datasets;
+  later relationships). Don't read tables any other way, and don't loosen `engine.connect()` or
   `engine.select()` (SQL transforms must be one read-only SELECT); see
   [docs/security.md](docs/security.md). The sandbox tests in `python/tests/` must keep passing.
 - **pandas isn't bundled**, deliberately (decision 4 in [docs/decisions.md](docs/decisions.md)). Use DuckDB, pyarrow or plain Python instead of adding
   it back.
 - **Anything read from a `.pawpaw` file is untrusted** (projects are shared). Validate IDs and
-  table names before using them in paths (`SAFE_ID`, `SAFE_TABLE`); never execute stored code.
+  table names before using them in paths (`SAFE_ID`, `SAFE_TABLE`); never execute stored code,
+  except the report in its sandbox.
+- **The report (`report/`) is a static website** that must work hosted on its own (e.g. S3 + CDN):
+  plain HTML, CSS and JavaScript, no Vue or framework, nothing loaded from outside the folder, no
+  dependency on PawpawBI. Pages read data only from `data/<dataset>.json`, written by the app from
+  the datasets' queries. Page IDs are GUIDs. New projects get `src/report-template/`. The chart
+  library is `src/report-template/assets/charts.js`; its API is
+  [docs/report-pages.md](docs/report-pages.md) (update both together) and keeps the series colour
+  order and mark rules described there. Spec: [docs/pawpaw-file-format.md](docs/pawpaw-file-format.md).
+- **The report is untrusted HTML in the app.** It's shown only in the `sandbox="allow-scripts"`
+  frame in `ReportCanvas.vue`, served by `src/report.ts` with `SITE_CSP`, with all web requests
+  blocked (`lockDownNetwork`). Don't loosen any of these, and don't add web requests to the
+  renderer. See [docs/security.md](docs/security.md).
 - **The `.pawpaw` format is specified in [docs/pawpaw-file-format.md](docs/pawpaw-file-format.md).**
   Update the spec in the same change as the code.
 - **Python stdout is a message channel.** In `main.py` and `runner.py`, log to stderr, never

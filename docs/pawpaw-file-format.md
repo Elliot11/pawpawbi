@@ -34,21 +34,26 @@ Sales report.pawpaw            (ZIP archive)
 │   ├── relationships.json     How tables join to each other
 │   ├── diagram.json           Where each table sits on the Model data canvas
 │   ├── transforms.json        In-place SQL transforms of loaded tables
-│   └── transformed.json       Transformed tables' SQL queries and dependencies
+│   ├── transformed.json       Transformed tables' SQL queries and dependencies
+│   └── datasets.json          The report's datasets: named queries
 │
-├── report/                    What the user sees                         (provisional)
-│   ├── report.json            Page order and report-wide settings
-│   └── pages/
-│       └── <page-id>.json     Layout and visuals for one page
-│
-├── assets/                    Images and other files used by the report  (optional)
+├── report/                    The report: a static website, hostable as-is
+│   ├── index.html             Landing page, listing the pages
+│   ├── report.json            Report title and pages, in order
+│   ├── pages/
+│   │   └── <page-guid>.html   One page
+│   ├── assets/
+│   │   ├── report.css         The site's styles
+│   │   └── charts.js          The chart library
+│   └── data/
+│       └── <dataset>.json     Each dataset's result, written by the app
 │
 └── chat/                      The assistant conversation
     ├── session.json           Current workflow stage
     └── messages.jsonl         Message history, one message per line
 ```
 
-Only `mimetype` and `manifest.json` are required. A brand-new, empty project contains just those two files. Every folder is optional until something is put in it.
+Only `mimetype` and `manifest.json` are required. A brand-new project contains those and the default `report/`; every other folder is optional until something is put in it. A project without `report/` (made before reports existed) is valid, and the app offers to add one.
 
 ## Archive rules
 
@@ -270,14 +275,91 @@ A failing query has its table's old result removed and its error recorded. Table
 
 - A query must be a **single read-only `SELECT`** (DuckDB SQL).
 - Queries run in an in-memory DuckDB that can read only the project's `data/` folder: no other files, no network, no extensions, and no changing those settings. Projects can come from other people, so a query must never be able to reach anything else on the computer.
-- Arbitrary code (Python and the like) is never stored here. If it's ever supported, it must require the user's explicit approval before running.
+- Arbitrary code (Python and the like) is never stored here. The only code a project holds is the JavaScript in the report (`report/`), which runs only in the sandbox described in [security.md](security.md).
 
-## report/ (provisional)
+### model/datasets.json
 
-The report the user builds. Outline only; to be specified alongside the report builder.
+The report's datasets: named queries whose results the report shows. Each result is written to `report/data/<name>.json` (see below).
 
-- **`report/report.json`**: page order (a list of page IDs), report title, and shared settings such as theme and default currency.
-- **`report/pages/<page-id>.json`**: the page title and its visuals. Each visual has an `id`, a `type` (`bar`, `line`, `table`, `stat`…), its position and size on the canvas, and its data binding: which table it reads, which columns go on which axis, filters, and how values are aggregated (sum, average, count…). Visuals refer to tables and columns by name, never to file paths.
+```json
+{
+  "datasets": {
+    "revenue_by_month": {
+      "sql": "SELECT CAST(date_trunc('month', order_date) AS DATE) AS month, sum(revenue) AS revenue FROM monthly_sales GROUP BY 1 ORDER BY 1",
+      "updatedAt": "2026-10-17T11:40:00Z",
+      "rows": 18,
+      "refreshedAt": "2026-10-17T11:40:01Z"
+    }
+  }
+}
+```
+
+| Field         | Meaning                                                          |
+| ------------- | ---------------------------------------------------------------- |
+| `sql`         | The query, which can read any table by name, as the app shows it |
+| `updatedAt`   | When the query was last changed                                  |
+| `rows`        | Rows written at the last refresh                                 |
+| `refreshedAt` | When the data was last written                                   |
+| `error`       | Why the last refresh failed (absent if it succeeded)             |
+
+- Names are lowercase letters, digits and underscores, starting with a letter, at most 63 characters.
+- Datasets are refreshed after every data load or rebuild, and before the report is exported. A failing query keeps its previous data and records the error.
+- A result is limited to 50,000 rows and 10 MB.
+
+## report/
+
+The report is a static website of plain HTML, CSS and JavaScript. It depends on nothing outside the folder, so the folder can be hosted as-is (for example on S3 behind a CDN) once its datasets are refreshed. A new project starts with a default report. How to write pages: [report-pages.md](report-pages.md).
+
+| File                     | What it is                                                                                     |
+| ------------------------ | ---------------------------------------------------------------------------------------------- |
+| `index.html`             | The landing page: the report's title and a link to each page                                   |
+| `report.json`            | The report's title and its pages, in order                                                     |
+| `pages/<page-guid>.html` | One page. Any HTML; it links the shared stylesheet and chart library with relative paths       |
+| `assets/report.css`      | The site's styles                                                                              |
+| `assets/charts.js`       | The chart library (`window.pawpaw`). Each report has its own copy                              |
+| `assets/…`               | Other files pages use: images (PNG, JPEG, GIF, WebP, SVG, ICO), fonts (WOFF2), scripts, styles |
+| `data/<dataset>.json`    | Datasets' results, written by the app. Not edited by hand                                      |
+
+**`report/report.json`**:
+
+```json
+{
+  "title": "Sales report",
+  "pages": [
+    { "id": "3f2b8c1e-9a4d-4e7b-b6c2-5d1e8f0a7c94", "title": "Overview" },
+    { "id": "8c0d5a7e-1b2f-4c3d-9e8f-7a6b5c4d3e2f", "title": "Regions" }
+  ]
+}
+```
+
+- `id`: the page's GUID, a lowercase version 4 UUID, generated when the page is created and never changed. The page's file is `pages/<id>.html`.
+- `title`: shown in the navigation, at most 80 characters.
+- Pages without a valid GUID are ignored, as is an HTML file in `pages/` that isn't listed.
+
+**`report/data/<dataset>.json`**:
+
+```json
+{
+  "name": "revenue_by_month",
+  "generatedAt": "2026-10-17T11:40:01Z",
+  "columns": [
+    { "name": "month", "type": "DATE" },
+    { "name": "revenue", "type": "DOUBLE" }
+  ],
+  "rows": [
+    ["2024-01-01", 60000.0],
+    ["2024-02-01", 63200.0]
+  ],
+  "truncated": false
+}
+```
+
+Values are JSON numbers, strings, booleans or `null`; dates and timestamps are ISO 8601 text without a time zone (`2024-01-01`, `2024-01-01T06:30:00`). `truncated` is `true` if rows were left out to stay within the limits.
+
+**Rules:**
+
+- Pages may load only files inside the report folder, by relative path. Nothing from the internet: no external scripts, stylesheets, fonts or images (the app blocks them, and the report must work offline).
+- Only files of the types listed above are part of the site. Hidden files (names starting with `.`) aren't.
 
 ## chat/
 

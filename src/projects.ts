@@ -12,6 +12,8 @@ import path from 'node:path';
 import { InvalidProjectFileError } from './pawpaw-archive';
 import { work } from './background';
 import { stopPython } from './python';
+import { createSite } from './report-site';
+import { SITE_TEMPLATES } from './report-templates';
 import type {
   ChatMessage,
   ChatState,
@@ -167,7 +169,11 @@ async function createProject(win: BrowserWindow): Promise<Project | null> {
   });
   if (canceled || !filePath) return null;
 
-  session = await createWorkspace(filePath, workspaceOptions());
+  // New projects start with the default report, ready to build on.
+  session = await createWorkspace(filePath, {
+    ...workspaceOptions(),
+    populate: (filesDir, name) => createSite(filesDir, name, SITE_TEMPLATES),
+  });
   await addRecent(session.manifest.name, filePath);
   notifyChanged();
   return toProject(session);
@@ -245,10 +251,10 @@ export async function closeProject(win: BrowserWindow): Promise<boolean> {
 
 export const hasOpenProject = () => session !== null;
 
-/** The open project's ID and working folder, for other modules that read or write its files. */
-export function openProject(): { id: string; filesDir: string } {
+/** The open project's ID, name and working folder, for other modules that use its files. */
+export function openProject(): { id: string; name: string; filesDir: string } {
   const s = requireSession();
-  return { id: s.manifest.id, filesDir: s.filesDir };
+  return { id: s.manifest.id, name: s.manifest.name, filesDir: s.filesDir };
 }
 
 /** Records that the open project has changed since it was last saved. */

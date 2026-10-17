@@ -48,6 +48,11 @@ export interface WorkspaceOptions {
   appLabel: string;
 }
 
+export interface CreateOptions extends WorkspaceOptions {
+  /** Writes a new project's starting files (e.g. the default report) before it's first saved. */
+  populate?: (filesDir: string, name: string) => Promise<unknown>;
+}
+
 export interface OpenOptions extends WorkspaceOptions {
   /** Asked when the file has unsaved changes left from a crash. True to recover them. */
   askToRecover: (name: string, state: WorkspaceState) => Promise<boolean>;
@@ -219,7 +224,7 @@ export async function openWorkspace(
 /** Creates a new, empty project file and its working folder. */
 export async function createWorkspace(
   filePath: string,
-  options: WorkspaceOptions,
+  options: CreateOptions,
 ): Promise<Workspace> {
   const manifest: ProjectManifest = {
     formatVersion: FORMAT_VERSION,
@@ -233,6 +238,7 @@ export async function createWorkspace(
   const paths = workspacePaths(options.root, manifest.id, filePath);
   await removeFolder(paths.workspaceDir);
   await writeJson(path.join(paths.filesDir, 'manifest.json'), manifest);
+  await options.populate?.(paths.filesDir, manifest.name);
   await packArchive(paths.filesDir, filePath);
 
   const ws: Workspace = { manifest, filePath, ...paths, dirty: false };

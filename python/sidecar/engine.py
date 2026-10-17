@@ -125,7 +125,7 @@ def select(con: duckdb.DuckDBPyConnection, sql: str) -> str:
     if len(statements) != 1:
         raise ValueError("Enter one SELECT query." if not statements else "Enter just one query.")
     if statements[0].type != duckdb.StatementType.SELECT:
-        raise ValueError("Only SELECT queries are allowed: a transform reads data, it can't change it.")
+        raise ValueError("Only SELECT queries are allowed: a query reads data, it can't change it.")
     return statements[0].query.strip().rstrip(";")
 
 

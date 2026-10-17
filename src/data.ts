@@ -16,6 +16,7 @@ import readline from 'node:readline';
 import { CancelledError, work } from './background';
 import { deleteSecrets, readSecrets, writeSecrets } from './credentials';
 import { markProjectChanged, openProject } from './projects';
+import { refreshDatasets } from './report';
 import {
   PYTHON_FLAGS,
   callPython,
@@ -786,13 +787,18 @@ async function rebuildDerived(onProgress?: (message: string) => void) {
     }
     await writeTransformed(latest);
   }
+  await refreshDatasets(onProgress);
   return { inPlaceErrors, transformedErrors };
 }
 
-/** Rebuilds the transformed tables that read any of `changed`, in order. */
+/** Rebuilds the transformed tables that read any of `changed`, in order, then the report's data. */
 async function rebuildDownstream(changed: string[]) {
   const file = await readTransformed();
-  return rebuildTransformed(downstreamOf(dependencyMap(file), changed));
+  const errors = await rebuildTransformed(
+    downstreamOf(dependencyMap(file), changed),
+  );
+  await refreshDatasets();
+  return errors;
 }
 
 async function saveTransformed(

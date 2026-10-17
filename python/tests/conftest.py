@@ -219,3 +219,11 @@ def error_of(events: list[dict]) -> str:
     last = events[-1]
     assert last["event"] == "error", f"expected an error, got {last}"
     return last["message"]
+
+
+@pytest.fixture
+def outside(tmp_path) -> Path:
+    """A file next to the project, outside its data folder."""
+    path = tmp_path / "secret.txt"
+    path.write_text("secret\nhunter2\n", encoding="utf-8")
+    return path

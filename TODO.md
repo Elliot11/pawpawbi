@@ -24,8 +24,13 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
   `model/relationships.json`. The canvas has an SVG layer and column anchors ready for this.
 - **Column types and descriptions** in the model (`model/tables/<table>.json`), e.g. marking a
   text column as a date.
-- **Visuals** on the Build visuals canvas (currently an empty placeholder), and `report/` in
-  the project file.
+- **The assistant (phases 2 to 4 of the plan).** Settings for an OpenAI or Anthropic key,
+  provider adapters, the tool loop, tools to edit data sources, transforms, datasets and report
+  files with Undo, and the prompts, guides and evaluation tasks (decision 16).
+- **Publish to S3 and CloudFront** from the app. For now, Export writes the site to a folder.
+- **More for the report:** stacked bars, area and scatter charts, filters within a page, dark
+  mode, printing a page, an editor with syntax highlighting, reordering pages, renaming the
+  report, and updating a report's copy of `charts.js` when the app's version improves.
 - **Connect the assistant to an AI model.** Replies are placeholders (`src/workflow.ts`).
 - **Project thumbnails** (`thumbnail.png`) for the start screen.
 - **Incremental loading**: refresh only new or changed rows instead of reloading everything.
@@ -51,14 +56,23 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
   locked-down networks. Consider an offline bundle option.
 - **`npm audit`** reports two critical issues, both in build tools from the Forge template. What the
   app ships has none (`npm audit --omit=dev`). Not yet investigated.
-- **Tables can't be renamed**, and deleting a table can't be undone.
+- **Tables can't be renamed**, and deleting a table can't be undone. Neither can deleting a report
+  page or dataset.
+- **Datasets that use a renamed or deleted table or column** fail at their next refresh (keeping
+  their old data); nothing warns before the change.
+- **Unsaved edits in the report's file editor are lost** if the project is closed first.
+- **An exported report doesn't work opened straight from disk** (browsers block reading its data
+  files from `file://`); it needs a web server or host.
+- **The report sandbox has no automated test.** The frame, policy and network lockdown were
+  checked by hand with a hostile page; an Electron-driven test would catch regressions.
 - **The in-place transform editor lists columns as currently shown**, so for a table that already
   has a transform it shows the transformed columns, though the query reads the original ones.
 - **Files outside projects are never cleaned up**: saved credentials, dlt state and working folders
   of deleted projects, and connector environments no longer used.
 - **Some of the main process's logic has no automated tests**: rebuild orchestration, refusing
   deletes, data sources and the recent list. Tested: the archive format, working folders and crash
-  recovery, dependency ordering, background-work tracking, and the Python side.
+  recovery, dependency ordering, background-work tracking, the report site's files, the chart
+  library's helpers, and the Python side.
 - **Python code isn't linted or formatted.** Add Ruff (development only) and run it from
   `npm run lint`.
 - **After choosing Wait when closing during a load**, only the top bar's "Working…" shows that a

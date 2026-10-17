@@ -14,6 +14,7 @@ from importlib.metadata import version
 
 import connectors
 import datasets
+import report_data
 import transforms
 
 
@@ -39,6 +40,7 @@ METHODS = {
     "remove_transform": transforms.remove_transform,
     "delete_table": transforms.delete_table,
     "preview_table": datasets.preview_table,
+    "write_dataset": report_data.write_dataset,
 }
 
 

@@ -270,3 +270,54 @@ export interface ProjectsApi {
   /** Called whenever the open project changes, e.g. it gains unsaved changes. Returns an unsubscribe function. */
   onChanged: (callback: (project: Project) => void) => () => void;
 }
+
+/** A page of the report site, as listed in report/report.json. */
+export interface ReportPage {
+  /** A GUID (lowercase version 4 UUID). The page is report/pages/<id>.html. */
+  id: string;
+  title: string;
+}
+
+/** report/report.json */
+export interface ReportFile {
+  title: string;
+  pages: ReportPage[];
+}
+
+/** A dataset: a named query whose result the report publishes as report/data/<name>.json. */
+export interface Dataset {
+  name: string;
+  sql: string;
+  /** Rows written at the last refresh. */
+  rows?: number;
+  refreshedAt?: string;
+  /** Why the last refresh failed. */
+  error?: string;
+}
+
+/** The scheme the app shows the report site from: pawpaw-report://site/<path>. */
+export const REPORT_SCHEME = 'pawpaw-report';
+export const REPORT_ORIGIN = `${REPORT_SCHEME}://site`;
+
+export interface ReportApi {
+  /** The report, or null if the project has none yet (projects made before reports existed). */
+  get: () => Promise<ReportFile | null>;
+  /** Adds the default report to a project that has none. */
+  createSite: () => Promise<ReportFile>;
+  createPage: (title: string) => Promise<ReportPage>;
+  renamePage: (id: string, title: string) => Promise<void>;
+  deletePage: (id: string) => Promise<void>;
+  /** A page, stylesheet or script by its path in the site, e.g. "pages/<id>.html". */
+  readFile: (path: string) => Promise<string>;
+  writeFile: (path: string, content: string) => Promise<void>;
+  listDatasets: () => Promise<Dataset[]>;
+  /** Saves a dataset's query and writes its data. Rejects if the query fails. */
+  saveDataset: (name: string, sql: string) => Promise<Dataset>;
+  deleteDataset: (name: string) => Promise<void>;
+  /** Rewrites every dataset's data from the current tables. */
+  refreshDatasets: () => Promise<Dataset[]>;
+  /** Asks for an empty folder and copies the site there, ready to host. Null if cancelled. */
+  exportSite: () => Promise<string | null>;
+  /** Called with the page shown when the preview moves to another page (e.g. a link). */
+  onNavigated: (callback: (pageId: string) => void) => () => void;
+}
