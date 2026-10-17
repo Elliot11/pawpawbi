@@ -1,8 +1,8 @@
 # Design decisions
 
-The major choices behind PawpawBI, why they were made, and what was rejected. Before reversing
-one, read its reasoning; if circumstances have changed, add a new entry that supersedes it rather
-than editing history. Newest last.
+The major choices behind PawpawBI, why they were made, and what was rejected. Read an entry's
+reasoning before changing what it covers. This describes the current design only: when a
+decision changes, edit its entry in place rather than adding history.
 
 Each entry: **Decision**, **Why**, **Alternatives considered**, and **Consequences** where useful.
 
@@ -26,7 +26,7 @@ React or Svelte for the UI.
 pinned by release and SHA-256. Use the "stripped" builds. The main process talks to it over
 stdin/stdout.
 
-**Why:** The data tooling we wanted (dlt, and at the time pandas) is Python. Relying on the user's own Python is
+**Why:** The data tooling (dlt and its connectors) is Python. Relying on the user's own Python is
 fragile (missing, wrong version, missing packages). The standalone builds are what `uv` uses and
 include pip.
 
@@ -35,8 +35,7 @@ flagged by antivirus); `uv` downloading Python on first run (needs internet); Py
 (can't open network connections, so no database drivers).
 
 **Consequences:** about 275 MB of Python in the packaged app, mostly pyarrow, DuckDB and
-SQLAlchemy plus precompiled bytecode (it was about 400 MB before pandas and numpy were removed
-in decision 14). The Python files must be code-signed for release.
+SQLAlchemy plus precompiled bytecode. The Python files must be code-signed for release.
 
 ## 3. dlt for connecting to data
 
@@ -47,23 +46,53 @@ into `python/sidecar/verified_sources/`.
 **Why:** It covers the widest range of sources (files, 30+ databases, cloud storage, many SaaS
 APIs) behind one programming model, and handles pagination, nested data and schemas.
 
-**Alternatives:** DuckDB's own extensions for reading sources (considered first, then rejected in
-favour of dlt plus Python); Knex or individual Node.js drivers (databases only); Airbyte, Singer or
-Meltano (separate services, too heavy for a desktop app).
+**Alternatives:**
+- **DuckDB's own extensions** for files and databases. They're faster for bulk copies, but we'd
+  still need dlt for business apps, so we'd maintain two connector systems. They'd also download
+  extensions at runtime, which the query sandbox blocks on purpose. Worth considering for specific
+  slow cases, such as large Postgres tables.
+- **Knex or individual Node.js drivers:** databases only.
+- **Airbyte, Singer or Meltano:** separate services, too heavy for a desktop app.
 
 **Consequences:** verified sources aren't pip packages, so they're vendored from a pinned commit
 and must be refreshed by hand ([maintenance.md](maintenance.md)).
 
-## 4. Data stored as Parquet files, not loaded into a database
+## 4. Parquet files for storage, DuckDB as the query engine
 
-**Decision:** dlt writes to its `filesystem` destination as Parquet (`data/raw/<table>/`).
-**No data is loaded into DuckDB** (an explicit user requirement). Originally pandas and pyarrow
-read the files; since decision 14, DuckDB queries them.
+**Decision:** dlt writes loaded data to its `filesystem` destination as Parquet
+(`data/raw/<table>/`). **No data is loaded into DuckDB** (an explicit user requirement).
+Everything that reads loaded data goes through one locked-down, in-memory DuckDB over those files
+(`python/sidecar/engine.py`): table info and previews, SQL transforms, and later relationships and
+visuals. The file connectors read CSV with DuckDB and Excel with openpyxl. pandas isn't used.
 
-**Why:** Plain files that travel inside the project, readable by many tools, compact and typed.
+**Why:**
+- **Parquet storage:** plain files that travel inside the project, readable by many tools, compact
+  and typed.
+- **DuckDB querying:** joins, aggregations for charts and filtering are SQL-shaped work, and DuckDB
+  does them fast, streaming rather than loading whole tables into memory. A preview reads only the
+  rows it shows.
+- **One engine, one sandbox:** a single place to lock down, which matters because projects are
+  shared ([security.md](security.md)).
+- **Better CSV reading:** DuckDB detects CSV types, so dates and numbers don't arrive as text.
+- **Smaller app:** without pandas and numpy, the bundle is about 120 MB smaller.
 
-**Alternatives:** loading into a DuckDB database file (rejected by the user, and revisited in
-decision 14); SQLite.
+**Alternatives:**
+- **Store the data in a DuckDB database file** inside the project.
+  - Only one process can write to a DuckDB file at a time, but loads run in their own processes
+    while the sidecar reads.
+  - A file written by a newer DuckDB may not open in an older one, which matters for shared
+    projects.
+  - Data would no longer be readable by other tools.
+  - Opening shared projects would mean handing DuckDB a whole database file, including any stored
+    views or macros.
+
+  Worth reconsidering if projects get large enough to need indexes or incremental updates.
+- **pandas for reading and processing:** slower, loads whole tables into memory, and adds about
+  120 MB.
+- **SQLite:** an older SQL dialect and slow on analytical queries.
+
+**Consequences:** connector packages that need pandas, such as Databricks, install it into their
+own environment on first use.
 
 ## 5. `.pawpaw` project files are ZIPs of ordinary files
 
@@ -75,8 +104,8 @@ folder and saved by re-zipping atomically.
 together; the same approach as EPUB and OpenDocument (uncompressed `mimetype` first). Working on an
 extracted folder makes dlt and DuckDB easy to use, and allows crash recovery.
 
-**Alternatives:** a single JSON file (the first version; can't hold data); a SQLite project file;
-a folder instead of a file.
+**Alternatives:** a single JSON file (can't hold data); a SQLite project file; a folder instead of
+a file.
 
 **Consequences:** opening and saving large projects copies all the data. Unknown files are kept
 on save so newer versions can add files without breaking older ones.
@@ -132,22 +161,23 @@ are no separate tabs. The current step is saved with the project.
 
 **Why:** The app is organised around that guided workflow; tabs duplicated it.
 
-## 11. SQL transforms run by DuckDB, used only as a query engine
+## 11. SQL transforms
 
 **Decision:** A table's transform is one SQL `SELECT` (DuckDB dialect) stored in
-`model/transforms.json`. DuckDB runs it in memory over the raw Parquet files, and the result is
-written to `data/model/<table>/` and used in place of the original. Queries can reference any
-table, always see the original data, and are locked down (see [security.md](security.md)).
+`model/transforms.json`. It runs in the query engine (decision 4) over the original Parquet
+files, and the result is written to `data/model/<table>/` and used in place of the original.
+Queries can reference any table, always see the original data, and are locked down (see
+[security.md](security.md)).
 
-**Why:** SQL is widely known and expressive (joins, window functions, dates). DuckDB is fast on
-Parquet and can be confined to the project's data folder, which matters because projects are
-shared. Using it only as a query engine respects decision 4.
+**Why:** SQL is widely known and expressive (joins, window functions, dates), and DuckDB runs it
+fast while staying confined to the project's data folder.
 
-**Alternatives:** SQLite via pandas (no new package, but an older dialect and slow because it copies
-data); Polars SQL (bigger package, less complete SQL); pandas-only step lists (the original plan
-in the spec, less flexible).
+**Alternatives:** SQLite via pandas (an older dialect, and slow because it copies data); Polars SQL
+(bigger package, less complete SQL); a fixed list of step types such as filter, rename and join
+(less flexible).
 
-**Consequences:** adds DuckDB (about 20 MB). Transforms re-run after every load of their table.
+**Consequences:** transforms re-run after every load of their table. Better type detection in a
+reload can change column types, which can affect a transform's SQL.
 
 ## 12. Model view as a free-form canvas
 
@@ -164,40 +194,3 @@ commit) is pinned to an exact version that has been public for at least two week
 
 **Why:** Reproducible builds, and a buffer against compromised or broken releases, which are
 usually caught and pulled within days.
-
-## 14. DuckDB as the engine for reading loaded data; pandas removed
-
-**Decision:** Everything that reads loaded data goes through one locked-down, in-memory DuckDB
-(`python/sidecar/engine.py`) over the project's Parquet files: table info, previews and SQL
-transforms now, and relationships and visuals later. The file connectors read CSV with DuckDB
-and Excel with openpyxl. pandas, and with it numpy, is no longer bundled. dlt stays for
-connecting, and storage stays Parquet. Refines decisions 4 and 11.
-
-**Why:** Joins, aggregations for charts and filtering are SQL-shaped work, and DuckDB does them
-faster than pandas, streaming instead of loading whole tables into memory (previews used to read
-an entire table to show 200 rows). One engine means one sandbox to secure. DuckDB also detects
-CSV types better, so dates and numbers no longer arrive as text. Removing pandas and numpy saved
-about 120 MB.
-
-**Alternatives considered:**
-- **Store the data in a DuckDB database file** inside the project. Rejected for now:
-  - Only one process can write to a DuckDB file at a time, but loads run in their own processes
-    while the sidecar reads.
-  - A file written by a newer DuckDB may not open in an older one, which matters for shared
-    projects.
-  - Data would no longer be readable by other tools.
-  - Opening shared projects would mean handing DuckDB a whole database file, including any
-    stored views or macros.
-
-  Worth revisiting if projects get large enough to need indexes or incremental updates.
-- **Use DuckDB's extensions instead of dlt** for files and databases. They're faster for bulk
-  copies, but we'd still need dlt for business apps, so we'd maintain two connector systems.
-  They'd also download extensions at runtime, which the sandbox blocks on purpose. Possible later
-  for specific slow cases, such as large Postgres tables.
-
-**Consequences:**
-- Processing is done in DuckDB SQL rather than pandas.
-- CSV columns can get different, better types than before, which can affect SQL transforms
-  written against older loads.
-- Connector packages that need pandas, such as Databricks, install it into their own environment
-  on first use.

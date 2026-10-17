@@ -1,30 +1,66 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { errorMessage } from '../../errors';
-import type { TablePreview } from '../../shared/types';
+import { plain } from '../../plain';
+import type { DataSource, TablePreview } from '../../shared/types';
 import DataGrid from './DataGrid.vue';
 
 const props = defineProps<{
   table: string;
-  /** Name of the data source the table came from; shows an Edit button when set. */
-  sourceName?: string;
+  /** The data source the table came from; shows Refresh and Edit source buttons when set. */
+  source?: DataSource;
 }>();
-defineEmits<{ back: []; edit: [] }>();
+const emit = defineEmits<{ back: []; edit: []; refreshed: [] }>();
 
 const PREVIEW_ROWS = 200;
 const preview = ref<TablePreview | null>(null);
 const error = ref('');
+const refreshing = ref(false);
+const progress = ref('');
+const notice = ref('');
 
-onMounted(async () => {
+async function loadPreview() {
   try {
-    preview.value = await window.api.data.previewTable(
-      props.table,
-      PREVIEW_ROWS,
-    );
+    preview.value = await window.api.data.previewTable(props.table, PREVIEW_ROWS);
   } catch (err) {
     error.value = errorMessage(err);
   }
+}
+
+onMounted(loadPreview);
+
+const unsubscribe = window.api.data.onProgress((p) => {
+  if (refreshing.value && p.sourceId === props.source?.id) progress.value = p.message;
 });
+onBeforeUnmount(unsubscribe);
+
+/** Reloads the table's data source (all of its tables), then this preview. */
+async function refresh() {
+  const source = props.source;
+  if (!source || refreshing.value) return;
+  refreshing.value = true;
+  progress.value = 'Starting…';
+  error.value = '';
+  notice.value = '';
+  try {
+    const tables = await window.api.data.load(source.id, plain(source.resources));
+    const loaded = tables.find((t) => t.name === props.table);
+    if (!loaded) {
+      error.value = `${source.name} no longer has a table called ${props.table}.`;
+      preview.value = null;
+    } else {
+      notice.value = loaded.transformError
+        ? 'Refreshed, but this table’s SQL transform failed, so it shows the original data. Fix the transform in Model data.'
+        : `Refreshed from ${source.name}.`;
+      await loadPreview();
+    }
+    emit('refreshed');
+  } catch (err) {
+    error.value = errorMessage(err);
+  } finally {
+    refreshing.value = false;
+  }
+}
 </script>
 
 <template>
@@ -36,22 +72,41 @@ onMounted(async () => {
         {{ preview.row_count.toLocaleString() }} rows ·
         {{ preview.columns.length }} columns
       </span>
-      <button
-        v-if="sourceName"
-        class="edit"
-        :title="`Edit the ${sourceName} data source`"
-        @click="$emit('edit')"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
-        </svg>
-        Edit source
-      </button>
+      <div v-if="source" class="actions">
+        <button
+          class="action"
+          :disabled="refreshing"
+          :title="`Reload all tables from ${source.name}`"
+          @click="refresh"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            :class="{ spinning: refreshing }"
+          >
+            <path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5" />
+          </svg>
+          {{ refreshing ? 'Refreshing…' : 'Refresh' }}
+        </button>
+        <button
+          class="action"
+          :disabled="refreshing"
+          :title="`Edit the ${source.name} data source`"
+          @click="$emit('edit')"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+          </svg>
+          Edit source
+        </button>
+      </div>
     </header>
 
+    <p v-if="refreshing" class="status" aria-live="polite">{{ progress }}</p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
-    <p v-else-if="!preview" class="loading">Loading preview…</p>
-    <DataGrid v-else class="data" :preview="preview" />
+    <p v-else-if="notice" class="notice" role="status">{{ notice }}</p>
+    <p v-if="!preview && !error" class="loading">Loading preview…</p>
+    <DataGrid v-if="preview" class="data" :preview="preview" />
   </div>
 </template>
 
@@ -80,8 +135,15 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+  align-self: center;
+}
+
 .back,
-.edit {
+.action {
   padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -90,20 +152,22 @@ onMounted(async () => {
 }
 
 .back:hover,
-.edit:hover {
+.action:hover:not(:disabled) {
   border-color: var(--ink-faint);
 }
 
-.edit {
+.action {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
-  align-self: center;
   white-space: nowrap;
 }
 
-.edit svg {
+.action:disabled {
+  opacity: 0.6;
+}
+
+.action svg {
   width: 15px;
   height: 15px;
   fill: none;
@@ -113,19 +177,40 @@ onMounted(async () => {
   stroke-linejoin: round;
 }
 
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .data {
   max-height: calc(100vh - 220px);
 }
 
-.error {
+.status,
+.loading {
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+.error,
+.notice {
+  margin: 0;
   padding: 10px 14px;
   border-radius: var(--radius-sm);
+}
+
+.error {
   background: #fbeceb;
   color: var(--danger);
 }
 
-.loading {
-  margin: 0;
-  color: var(--ink-muted);
+.notice {
+  background: #eaf6ee;
+  color: #1d6b3a;
 }
 </style>

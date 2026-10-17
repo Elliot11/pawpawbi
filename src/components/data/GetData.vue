@@ -141,9 +141,10 @@ function timeAgo(iso: string) {
         v-else-if="view.name === 'preview'"
         :key="view.table"
         :table="view.table"
-        :source-name="sourceOf(view.table)?.name"
+        :source="sourceOf(view.table)"
         @back="view = view.returnTo"
         @edit="editTableSource(view.table)"
+        @refreshed="reloadSources"
       />
 
       <!-- Overview -->

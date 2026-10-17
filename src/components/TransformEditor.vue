@@ -48,6 +48,7 @@ async function runPreview() {
   busy.value = 'preview';
   error.value = '';
   notice.value = '';
+  removedSql.value = null;
   try {
     preview.value = await window.api.data.previewTransform(sql.value);
   } catch (err) {
@@ -62,6 +63,7 @@ async function apply() {
   busy.value = 'apply';
   error.value = '';
   notice.value = '';
+  removedSql.value = null;
   try {
     const { rows } = await window.api.data.applyTransform(
       props.table,
@@ -79,22 +81,47 @@ async function apply() {
   }
 }
 
+/** The query just removed, kept so the removal can be undone. */
+const removedSql = ref<string | null>(null);
+
 async function removeTransform() {
-  if (busy.value) return;
+  if (busy.value || savedSql.value === null) return;
   busy.value = 'remove';
   error.value = '';
+  const previous = savedSql.value;
   try {
     await window.api.data.removeTransform(props.table);
     savedSql.value = null;
     sql.value = defaultSql();
-    notice.value = `Transform removed. ${props.table} is back to its original data.`;
     emit('changed');
+    removedSql.value = previous;
+    notice.value = `Transform removed. ${props.table} is back to its original data.`;
+    preview.value = await window.api.data.previewTransform(sql.value);
   } catch (err) {
     error.value = errorMessage(err);
   } finally {
     busy.value = '';
   }
-  runPreview();
+}
+
+async function undoRemove() {
+  const restored = removedSql.value;
+  if (busy.value || restored === null) return;
+  busy.value = 'apply';
+  error.value = '';
+  try {
+    await window.api.data.applyTransform(props.table, restored);
+    savedSql.value = restored;
+    sql.value = restored;
+    removedSql.value = null;
+    emit('changed');
+    notice.value = 'Transform restored.';
+    preview.value = await window.api.data.previewTransform(restored);
+  } catch (err) {
+    error.value = errorMessage(err);
+  } finally {
+    busy.value = '';
+  }
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -233,7 +260,17 @@ const sqlName = (name: string) =>
         </div>
 
         <p v-if="error" class="error" role="alert">{{ error }}</p>
-        <p v-else-if="notice" class="notice" role="status">{{ notice }}</p>
+        <p v-else-if="notice" class="notice" role="status">
+          {{ notice }}
+          <button
+            v-if="removedSql !== null"
+            class="undo"
+            :disabled="!!busy"
+            @click="undoRemove"
+          >
+            Undo
+          </button>
+        </p>
 
         <DataGrid v-if="preview" class="results" :preview="preview" />
       </section>
@@ -457,8 +494,26 @@ const sqlName = (name: string) =>
 }
 
 .notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   background: #eaf6ee;
   color: #1d6b3a;
+  white-space: normal;
+}
+
+.undo {
+  margin-left: auto;
+  padding: 4px 12px;
+  border: 1px solid #1d6b3a;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: #1d6b3a;
+  font-weight: 600;
+}
+
+.undo:hover:not(:disabled) {
+  background: #d7eedf;
 }
 
 .results {

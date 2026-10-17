@@ -48,8 +48,7 @@ obvious from the code. Keep this file current when a convention changes.
   and visuals). Don't read tables any other way, and don't loosen `engine.connect()` or
   `engine.select()` (SQL transforms must be one read-only SELECT); see
   [docs/security.md](docs/security.md). The sandbox tests in `python/tests/` must keep passing.
-- **pandas isn't bundled** (removed deliberately, decision 14 in
-  [docs/decisions.md](docs/decisions.md)). Use DuckDB, pyarrow or plain Python instead of adding
+- **pandas isn't bundled**, deliberately (decision 4 in [docs/decisions.md](docs/decisions.md)). Use DuckDB, pyarrow or plain Python instead of adding
   it back.
 - **Anything read from a `.pawpaw` file is untrusted** (projects are shared). Validate IDs and
   table names before using them in paths (`SAFE_ID`, `SAFE_TABLE`); never execute stored code.
@@ -72,3 +71,5 @@ obvious from the code. Keep this file current when a convention changes.
 - Match the surrounding code's comment density and naming. Format with `npm run lint:fix`.
 - Record significant design decisions in [docs/decisions.md](docs/decisions.md) and known
   limitations in [TODO.md](TODO.md) / [docs/connectors.md](docs/connectors.md).
+- **Docs describe the current state only.** When something changes, edit the existing text in
+  place. No change history, "originally…" or "superseded by…" notes; git has the history.
