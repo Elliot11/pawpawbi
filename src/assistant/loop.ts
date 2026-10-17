@@ -20,11 +20,20 @@ export interface LoopOptions {
   onText?: (text: string) => void;
   onToolStart?: (call: ToolCall, summary: string) => void;
   onToolEnd?: (call: ToolCall, ok: boolean) => void;
+  /**
+   * Asked before a tool that changes the project runs. Resolves true to go ahead. Without it,
+   * changes run without asking.
+   */
+  approve?: (call: ToolCall, summary: string) => Promise<boolean>;
   /** Each new turn (the model's replies and tool results), to save it. */
   onTurn: (turn: Turn) => Promise<void> | void;
 }
 
 export type LoopEnd = 'end' | 'length' | 'refused' | 'steps' | 'stopped';
+
+/** The tool result when the user doesn't allow a change. */
+export const NOT_ALLOWED =
+  "The user didn't allow this change, so it wasn't made. Don't try it again unless they ask; ask what they'd like instead.";
 
 /** A tool's result as text for the model. */
 export function resultText(value: unknown): string {
@@ -97,16 +106,29 @@ export async function runAssistant(options: LoopOptions): Promise<LoopEnd> {
       const tool = tools.get(call.name);
       let summary = call.name;
       try {
-        summary = tool?.describe(call.input) ?? call.name;
+        summary = (await tool?.describe(call.input)) ?? call.name;
       } catch {
         // Keep the tool's name.
+      }
+      if (tool?.change && options.approve) {
+        const allowed = await options.approve(call, summary);
+        if (signal.aborted) return 'stopped';
+        if (!allowed) {
+          await save({
+            role: 'tool',
+            toolCallId: call.id,
+            name: call.name,
+            content: NOT_ALLOWED,
+          });
+          continue;
+        }
       }
       options.onToolStart?.(call, summary);
       let content: string;
       let ok = true;
       try {
         if (!tool) throw new Error(`There's no tool called ${call.name}.`);
-        content = resultText(await tool.run(call.input));
+        content = resultText(await tool.run(call.input, call));
       } catch (error) {
         ok = false;
         content = (error as Error)?.message || String(error);

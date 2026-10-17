@@ -386,6 +386,9 @@ The conversation with the assistant, so it can pick up where it left off.
   | `text`       | What was said; for a tool message, the result given to the model (at most 20,000 characters)    |
   | `toolCalls`  | Assistant messages: the tools it asked to run, each with an `id`, `name` and `input`            |
   | `toolCallId` | Tool messages: the call this answers. Also `toolName`, `summary` (shown in the chat), `isError` |
+  | `changeId`   | Tool messages that changed the project: the change (Undo works while the project is open)       |
+  | `declined`   | Tool messages: `true` if the user didn't allow the change                                       |
+  | `event`      | `true` on a note to the assistant about something the user did, e.g. undoing changes            |
 
   Tool results can contain samples of the project's data. A damaged line is skipped.
 

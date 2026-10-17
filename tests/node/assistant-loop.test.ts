@@ -6,6 +6,7 @@ import { blocks, inline } from '../../src/chat-format.ts';
 import { NO_REPLY, toTurns } from '../../src/assistant/history.ts';
 import {
   MAX_RESULT_CHARS,
+  NOT_ALLOWED,
   resultText,
   runAssistant,
 } from '../../src/assistant/loop.ts';
@@ -311,4 +312,103 @@ test('a message that got no reply (stopped or failed) is marked, so it is not an
   assert.deepEqual(toTurns([msg('user', 'Hi')]), [
     { role: 'user', text: 'Hi' },
   ]);
+});
+
+test('a change asks for approval first; a "no" goes back to the model and nothing runs', async () => {
+  const { provider, requests } = scripted(
+    {
+      toolCalls: [
+        { id: 'a', name: 'look', input: {} },
+        { id: 'b', name: 'edit', input: { page: 'x' } },
+      ],
+      stop: 'tools',
+    },
+    { text: 'OK, I left it.' },
+  );
+  let edited = false;
+  const asked: string[] = [];
+  const { saved } = await run(
+    provider,
+    [
+      tool('look', async () => 'seen'),
+      {
+        ...tool('edit', async () => {
+          edited = true;
+        }),
+        change: true,
+      },
+    ],
+    {
+      approve: async (call, summary) => {
+        asked.push(`${call.name}: ${summary}`);
+        return false;
+      },
+    },
+  );
+  assert.deepEqual(
+    asked,
+    ['edit: Doing edit'],
+    'only the change is asked about',
+  );
+  assert.equal(edited, false);
+  assert.deepEqual(saved[2], {
+    role: 'tool',
+    toolCallId: 'b',
+    name: 'edit',
+    content: NOT_ALLOWED,
+  });
+  assert.equal(requests[1].turns.at(-1)?.role, 'tool');
+});
+
+test('an approved change runs', async () => {
+  const { provider } = scripted(
+    { toolCalls: [{ id: 'b', name: 'edit', input: {} }], stop: 'tools' },
+    { text: 'Done.' },
+  );
+  let edited = false;
+  await run(
+    provider,
+    [
+      {
+        ...tool('edit', async () => {
+          edited = true;
+          return 'ok';
+        }),
+        change: true,
+      },
+    ],
+    {
+      approve: async () => true,
+    },
+  );
+  assert.equal(edited, true);
+});
+
+test('stopping while waiting for approval stops the reply', async () => {
+  const controller = new AbortController();
+  const { provider } = scripted({
+    toolCalls: [{ id: 'b', name: 'edit', input: {} }],
+    stop: 'tools',
+  });
+  let edited = false;
+  const { end } = await run(
+    provider,
+    [
+      {
+        ...tool('edit', async () => {
+          edited = true;
+        }),
+        change: true,
+      },
+    ],
+    {
+      signal: controller.signal,
+      approve: async () => {
+        controller.abort();
+        return false;
+      },
+    },
+  );
+  assert.equal(end, 'stopped');
+  assert.equal(edited, false);
 });

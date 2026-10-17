@@ -310,3 +310,23 @@ update, and the parts used (streamed messages with tool calls) are small and sta
 tests use streams in each API's documented format. Local models are much less capable, so
 prompts and tools must also work acceptably with them. Without a key, the assistant explains how to add one and the rest of the app
 works by hand.
+
+## 17. The assistant's changes are approved by the user and can always be undone
+
+**Decision:** Every change the assistant makes is shown in the chat and recorded first, so it can
+be undone: Undo on a change reverts it and every later one ("undo back to here"). By default the
+user is asked before each change (Allow, Allow all changes, Don't allow); they can switch to
+changes without asking, and back, in Assistant settings. Details: [assistant.md](assistant.md).
+
+**Why:** The assistant acts on the user's project, and projects can contain content written to
+steer it. Asking by default keeps the user in control until they trust it; letting them turn
+asking off keeps it fast once they do. Undo back to a point, rather than undoing changes one by
+one, always leaves the project consistent, e.g. never a page using a dataset that was undone.
+
+**Alternatives considered:** asking only for deletions and outside connections (the user chose
+to decide for themselves); undoing each change on its own (can leave the project inconsistent).
+
+**Consequences:** Every change tool declares the files it may touch, so they can be copied before
+it runs. Undo history lasts while the project is open (it survives a crash, but isn't saved in
+the project file). Changes that can't be undone, such as loading data, must say so before they
+run.

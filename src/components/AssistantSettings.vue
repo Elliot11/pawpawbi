@@ -5,7 +5,11 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { PROVIDERS, pickModel } from '../assistant/models';
 import { errorMessage } from '../errors';
-import type { AssistantProvider, AssistantSettings } from '../shared/types';
+import type {
+  AssistantPermissions,
+  AssistantProvider,
+  AssistantSettings,
+} from '../shared/types';
 
 const emit = defineEmits<{
   close: [];
@@ -22,6 +26,11 @@ const busy = ref<'' | 'key' | 'models'>('');
 const error = ref('');
 
 const info = computed(() => PROVIDERS[provider.value]);
+
+async function setPermissions(permissions: AssistantPermissions) {
+  await window.api.assistant.setPermissions(permissions);
+  await reload();
+}
 const hasKey = computed(() => settings.value?.hasKey[provider.value] ?? false);
 /** Whether models can be listed: a key is saved, or the provider doesn't need one. */
 const canList = computed(() => !info.value.needsKey || hasKey.value);
@@ -241,6 +250,39 @@ function onKeydown(event: KeyboardEvent) {
         </select>
       </section>
 
+      <fieldset class="section permissions">
+        <legend>Changes</legend>
+        <label class="option">
+          <input
+            type="radio"
+            name="permissions"
+            :checked="settings?.permissions !== 'allow'"
+            @change="setPermissions('ask')"
+          />
+          <span>
+            <strong>Ask before each change</strong>
+            <small
+              >The assistant asks you to allow each change it wants to make to
+              the project.</small
+            >
+          </span>
+        </label>
+        <label class="option">
+          <input
+            type="radio"
+            name="permissions"
+            :checked="settings?.permissions === 'allow'"
+            @change="setPermissions('allow')"
+          />
+          <span>
+            <strong>Make changes without asking</strong>
+            <small
+              >Changes still show in the chat, and each can be undone.</small
+            >
+          </span>
+        </label>
+      </fieldset>
+
       <p v-if="error" class="error" role="alert">{{ error }}</p>
 
       <p v-if="info.needsKey" class="privacy">
@@ -389,6 +431,42 @@ select {
   border-radius: var(--radius-sm);
   background: var(--surface);
   font: inherit;
+}
+
+.permissions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.permissions legend {
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+
+.option {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.option input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.option span {
+  display: flex;
+  flex-direction: column;
+}
+
+.option small {
+  color: var(--ink-muted);
+  font-size: 12px;
 }
 
 .hint code {

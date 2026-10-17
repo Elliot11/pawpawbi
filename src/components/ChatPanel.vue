@@ -1,17 +1,21 @@
 <script setup lang="ts">
 // The assistant chat. Replies come from the model chosen in Assistant settings, run by the
 // main process (src/assistant/), which saves every message to the project and streams
-// progress here: text as it's written, and each tool it uses.
+// progress here: text as it's written, each tool it uses, and requests to approve changes.
+// Each change it makes can be undone from here.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { PROVIDERS } from '../assistant/models';
 import { blocks } from '../chat-format';
 import { errorMessage } from '../errors';
 import type {
+  ApprovalAnswer,
+  AssistantChange,
   AssistantEnd,
   AssistantSettings as Settings,
   ChatMessage,
   WorkflowStage,
 } from '../shared/types';
+import { pageToShow, projectChanged } from '../ui-signals';
 import { INTRO_MESSAGE } from '../workflow';
 import AssistantSettings from './AssistantSettings.vue';
 
@@ -29,6 +33,15 @@ const endNote = ref('');
 const settings = ref<Settings | null>(null);
 const showSettings = ref(false);
 const scroller = ref<HTMLElement | null>(null);
+// Changes waiting for the user's approval.
+const approvals = ref<{ id: string; summary: string }[]>([]);
+// The assistant's changes to this project, by ID, to show Undo or "Undone".
+const changes = ref<Record<string, AssistantChange>>({});
+
+async function loadChanges() {
+  const list = await window.api.assistant.listChanges().catch(() => []);
+  changes.value = Object.fromEntries(list.map((c) => [c.id, c]));
+}
 
 // The welcome message is shown until the first reply, which saves it with the conversation.
 const intro: ChatMessage = {
@@ -78,7 +91,7 @@ onMounted(async () => {
           summary: event.summary,
           status: event.status,
         });
-    } else {
+    } else if (event.type === 'message') {
       const m = event.message;
       if (!messages.value.some((x) => x.id === m.id)) messages.value.push(m);
       // A saved message replaces what was shown live.
@@ -86,6 +99,15 @@ onMounted(async () => {
       if (m.role === 'tool') {
         liveTools.value = liveTools.value.filter((t) => t.id !== m.toolCallId);
       }
+      if (m.changeId) loadChanges();
+    } else if (event.type === 'approval') {
+      approvals.value.push({ id: event.id, summary: event.summary });
+    } else if (event.type === 'changed') {
+      projectChanged.value++;
+    } else if (event.type === 'show') {
+      stage.value = event.stage;
+      window.api.projects.setStage(event.stage);
+      if (event.pageId) pageToShow.value = event.pageId;
     }
     scrollToBottom();
   });
@@ -97,6 +119,7 @@ onMounted(async () => {
   stage.value = chat.stage;
   messages.value = chat.messages;
   settings.value = current;
+  await loadChanges();
   loading.value = false;
   await scrollToBottom('auto');
 });
@@ -131,7 +154,47 @@ async function run(request: () => Promise<AssistantEnd>, text?: string) {
     replying.value = false;
     liveText.value = '';
     liveTools.value = [];
+    approvals.value = [];
     await scrollToBottom();
+  }
+}
+
+async function answer(id: string, choice: ApprovalAnswer) {
+  approvals.value = approvals.value.filter((a) => a.id !== id);
+  await window.api.assistant.answer(id, choice);
+  if (choice === 'allow-all') {
+    settings.value = await window.api.assistant.getSettings();
+  }
+}
+
+/** Undoes a change and every later one, checking with the user first where it matters. */
+async function undo(id: string) {
+  const list = Object.values(changes.value);
+  const later = list
+    .slice(list.findIndex((c) => c.id === id) + 1)
+    .filter((c) => !c.undone);
+  if (
+    later.length &&
+    !window.confirm(
+      `Undo this change and the ${later.length === 1 ? 'change' : `${later.length} changes`} the assistant made after it?`,
+    )
+  ) {
+    return;
+  }
+  error.value = '';
+  try {
+    const result = await window.api.assistant.undo(id);
+    if (
+      result.conflicts.length &&
+      window.confirm(
+        `These files have been edited since the assistant changed them: ${result.conflicts.join(', ')}. Undo anyway? Those edits will be lost.`,
+      )
+    ) {
+      await window.api.assistant.undo(id, true);
+    }
+    await loadChanges();
+  } catch (e) {
+    error.value = errorMessage(e);
   }
 }
 
@@ -196,16 +259,46 @@ async function copy(text: string, id: string) {
 
     <div ref="scroller" class="messages">
       <template v-for="m in shown" :key="m.id">
-        <div v-if="m.role === 'user'" class="message user">{{ m.text }}</div>
+        <div v-if="m.event" class="activity undone">
+          <span class="mark" aria-hidden="true">↶</span>
+          {{ m.summary ?? 'Undid changes' }}
+        </div>
+        <div v-else-if="m.role === 'user'" class="message user">
+          {{ m.text }}
+        </div>
         <div
           v-else-if="m.role === 'tool'"
           class="activity"
-          :class="{ failed: m.isError }"
+          :class="{
+            failed: m.isError,
+            change: m.changeId,
+            declined: m.declined,
+          }"
         >
           <span class="mark" aria-hidden="true">{{
-            m.isError ? '!' : '✓'
+            m.isError ? '!' : m.declined ? '–' : '✓'
           }}</span>
-          {{ m.summary ?? m.toolName }}{{ m.isError ? ': didn’t work' : '' }}
+          <span>
+            {{ m.summary ?? m.toolName }}{{ m.isError ? ': didn’t work' : '' }}
+          </span>
+          <template v-if="m.changeId && changes[m.changeId]">
+            <span v-if="changes[m.changeId].undone" class="undone-tag"
+              >Undone</span
+            >
+            <button
+              v-else
+              class="undo"
+              :disabled="replying"
+              :title="
+                replying
+                  ? 'Wait for the reply to finish'
+                  : 'Undo this change and any made after it'
+              "
+              @click="undo(m.changeId)"
+            >
+              Undo
+            </button>
+          </template>
         </div>
         <div v-else-if="m.text" class="message assistant">
           <template v-for="(b, i) in blocks(m.text)" :key="i">
@@ -240,6 +333,20 @@ async function copy(text: string, id: string) {
         }}</span>
         {{ t.summary }}…
       </div>
+      <div v-for="a in approvals" :key="a.id" class="approval" role="group">
+        <p class="approval-text">
+          The assistant wants to: <strong>{{ a.summary }}</strong>
+        </p>
+        <div class="approval-actions">
+          <button class="allow" @click="answer(a.id, 'allow')">Allow</button>
+          <button class="allow-all" @click="answer(a.id, 'allow-all')">
+            Allow all changes
+          </button>
+          <button class="deny" @click="answer(a.id, 'deny')">
+            Don’t allow
+          </button>
+        </div>
+      </div>
       <div v-if="liveText" class="message assistant">
         <template v-for="(b, i) in blocks(liveText)" :key="i">
           <div v-if="b.kind === 'code'" class="code">
@@ -255,7 +362,11 @@ async function copy(text: string, id: string) {
         </template>
       </div>
       <div
-        v-else-if="replying && !liveTools.some((t) => t.status === 'running')"
+        v-else-if="
+          replying &&
+          !approvals.length &&
+          !liveTools.some((t) => t.status === 'running')
+        "
         class="message assistant typing"
         aria-label="Assistant is typing"
       >
@@ -623,6 +734,77 @@ async function copy(text: string, id: string) {
   background: var(--accent);
   color: #fff;
   font-weight: 600;
+}
+
+.activity.change {
+  color: var(--ink);
+}
+
+.activity.undone .mark,
+.activity.declined .mark {
+  background: var(--surface-muted);
+  color: var(--ink-muted);
+}
+
+.undo {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.undo:hover:not(:disabled) {
+  border-color: var(--ink-faint);
+  color: var(--ink);
+}
+
+.undo:disabled {
+  opacity: 0.5;
+}
+
+.undone-tag {
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+
+.approval {
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.approval-text {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.approval-actions button {
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.allow {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+}
+
+.allow-all,
+.deny {
+  border: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .send.stop {

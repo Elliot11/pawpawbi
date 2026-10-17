@@ -23,7 +23,8 @@ export function toTurns(messages: ChatMessage[]): Turn[] {
   const kept = start === -1 ? [] : recent.slice(start);
   return kept.flatMap((m, i): Turn[] => {
     if (m.role === 'user') {
-      const unanswered = kept[i + 1]?.role === 'user';
+      // A note about something the user did (e.g. undoing) isn't a question to answer.
+      const unanswered = !m.event && kept[i + 1]?.role === 'user';
       return [
         { role: 'user', text: m.text },
         ...(unanswered ? [{ role: 'assistant' as const, text: NO_REPLY }] : []),

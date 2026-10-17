@@ -178,7 +178,7 @@ async function writeDataset(name: string, sql: string) {
   });
 }
 
-async function saveDataset(name: string, sql: string): Promise<Dataset> {
+export async function saveDataset(name: string, sql: string): Promise<Dataset> {
   if (!DATASET_NAME.test(name)) {
     throw new Error(
       'Dataset names use lowercase letters, digits and underscores, starting with a letter.',
@@ -199,7 +199,7 @@ async function saveDataset(name: string, sql: string): Promise<Dataset> {
   return toDataset(name, file.datasets[name]);
 }
 
-async function deleteDataset(name: string) {
+export async function deleteDataset(name: string) {
   const file = await readDatasets(filesDir());
   if (!(name in file.datasets)) return;
   delete file.datasets[name];

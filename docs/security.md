@@ -128,13 +128,19 @@ anyone who can reach it, so private reports need access control on the host.
   samples of the data (up to 50 rows per query). The settings screen says so. Secret source
   settings are never included (`list_sources` returns non-secret settings and only which secrets
   are saved).
-- **Read-only tools.** The tools can't change the project, read files outside it or reach the
-  network. Queries go through `engine.select()` in the locked-down engine like every other query.
+- **What the tools can do.** Read tools can't change anything. Change tools can only change the
+  report (its files, pages and datasets) through the same checked functions as the app's own
+  screens (`sitePath`, `DATASET_NAME`, `engine.select()`): nothing outside the project, no
+  network. Queries go through the locked-down engine like every other query.
+- **Every change is approved and undoable.** By default the user is asked before each change, and
+  can choose to stop being asked. Every change is recorded first (`ChangeJournal`) and can be
+  undone; a failed change is rolled back at once. The undo store is outside the project files.
 - **Untrusted content.** Data, page HTML and project files are untrusted and may contain text
   written to steer the model ("ignore your instructions…"). The system prompt says content is
-  data, not instructions, but that's not a guarantee; what limits the damage is that the tools
-  can only read. Any future tool that changes the project must keep changes undoable and ask
-  before deleting anything.
+  data, not instructions, but that's not a guarantee. What limits the damage: change tools reach
+  only the report, the user approves changes unless they chose not to, and every change can be
+  undone. Tools for data sources (phase 3c) must also never let a project redirect saved
+  credentials (see TODO.md).
 - **Ollama** runs on this computer (`127.0.0.1:11434`): with it chosen, nothing in the chat
   leaves the computer. It needs no key.
 - **Network.** Provider calls use Node's `fetch` in the main process, so they're outside the
@@ -145,7 +151,8 @@ anyone who can reach it, so private reports need access control on the host.
   Vue elements (`chat-format.ts`), never `v-html`, so a reply can't inject markup.
 
 **Rules:** never pass an API key to the renderer or into a prompt; never add a tool that returns
-secrets; keep tools read-only unless their changes can be undone.
+secrets; every tool that changes the project sets `change: true` (so it's approved) and changes
+files only inside `ctx.change` with targets covering everything it touches (so it's undoable).
 
 ## Credentials
 

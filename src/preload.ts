@@ -105,6 +105,11 @@ const assistant: AssistantApi = {
     ipcRenderer.invoke('assistant:list-models', provider),
   send: (text) => ipcRenderer.invoke('assistant:send', text),
   retry: () => ipcRenderer.invoke('assistant:retry'),
+  answer: (id, answer) => ipcRenderer.invoke('assistant:answer', id, answer),
+  setPermissions: (permissions) =>
+    ipcRenderer.invoke('assistant:set-permissions', permissions),
+  listChanges: () => ipcRenderer.invoke('assistant:list-changes'),
+  undo: (id, force) => ipcRenderer.invoke('assistant:undo', id, force),
   stop: () => ipcRenderer.invoke('assistant:stop'),
   onEvent: (callback) => {
     const listener = (_event: IpcRendererEvent, event: AssistantEvent) =>

@@ -5,7 +5,7 @@
 import { app, safeStorage } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { AssistantSettings } from '../shared/types';
+import type { AssistantPermissions, AssistantSettings } from '../shared/types';
 import { DEFAULT_MODELS, PROVIDERS } from './models';
 import type { ProviderId } from './types';
 
@@ -24,16 +24,20 @@ function keyPath(provider: ProviderId) {
 interface SettingsFile {
   provider: ProviderId;
   models: Record<ProviderId, string>;
+  /** Whether the assistant asks before each change. Asks unless the user chose otherwise. */
+  permissions: AssistantPermissions;
 }
 
 async function readFile(): Promise<SettingsFile> {
   const file: SettingsFile = {
     provider: 'anthropic',
     models: { ...DEFAULT_MODELS },
+    permissions: 'ask',
   };
   try {
     const saved = JSON.parse(await fs.readFile(settingsPath(), 'utf8'));
     if (PROVIDER_IDS.includes(saved?.provider)) file.provider = saved.provider;
+    if (saved?.permissions === 'allow') file.permissions = 'allow';
     for (const id of PROVIDER_IDS) {
       if (typeof saved?.models?.[id] === 'string' && saved.models[id]) {
         file.models[id] = saved.models[id];
@@ -66,6 +70,7 @@ export async function getSettings(): Promise<AssistantSettings> {
     ready: PROVIDERS[file.provider].needsKey
       ? hasKey[file.provider]
       : !!file.models[file.provider],
+    permissions: file.permissions,
   };
 }
 
@@ -75,6 +80,13 @@ export async function saveSettings(provider: ProviderId, model: string) {
   file.provider = provider;
   if (typeof model === 'string' && model.trim())
     file.models[provider] = model.trim();
+  await fs.mkdir(dir(), { recursive: true });
+  await fs.writeFile(settingsPath(), JSON.stringify(file, null, 2) + '\n');
+}
+
+export async function setPermissions(permissions: AssistantPermissions) {
+  const file = await readFile();
+  file.permissions = permissions === 'allow' ? 'allow' : 'ask';
   await fs.mkdir(dir(), { recursive: true });
   await fs.writeFile(settingsPath(), JSON.stringify(file, null, 2) + '\n');
 }

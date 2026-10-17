@@ -53,6 +53,15 @@ export interface ChatMessage {
   isError?: boolean;
   /** Tool messages: a few words for the chat, e.g. "Previewing orders". */
   summary?: string;
+  /** Tool messages that changed the project: the change, which can be undone. */
+  changeId?: string;
+  /** Tool messages: the user didn't allow this change. */
+  declined?: boolean;
+  /**
+   * A note to the assistant about something the user did outside the chat, e.g. undoing
+   * changes. Saved with role "user"; shown as a line, not a message.
+   */
+  event?: boolean;
 }
 
 export interface ChatState {
@@ -346,7 +355,21 @@ export interface AssistantSettings {
   hasKey: Record<AssistantProvider, boolean>;
   /** Whether the chosen provider is set up: a key saved, or (for Ollama) a model chosen. */
   ready: boolean;
+  /** "ask": the assistant asks before each change (the default); "allow": it doesn't. */
+  permissions: AssistantPermissions;
 }
+
+export type AssistantPermissions = 'ask' | 'allow';
+
+/** A change the assistant made, which can be undone. */
+export interface AssistantChange {
+  id: string;
+  summary: string;
+  createdAt: string;
+  undone: boolean;
+}
+
+export type ApprovalAnswer = 'allow' | 'allow-all' | 'deny';
 
 /** Sent while the assistant replies. */
 export type AssistantEvent =
@@ -357,7 +380,13 @@ export type AssistantEvent =
       summary: string;
       status: 'running' | 'done' | 'failed';
     }
-  | { type: 'message'; message: ChatMessage };
+  | { type: 'message'; message: ChatMessage }
+  /** The assistant wants to make a change and is waiting for the user's answer. */
+  | { type: 'approval'; id: string; summary: string }
+  /** The project changed (a change or undo): screens showing these areas should reload. */
+  | { type: 'changed'; areas: ('sources' | 'model' | 'report')[] }
+  /** Show a step of the workflow, and optionally a report page. */
+  | { type: 'show'; stage: WorkflowStage; pageId?: string };
 
 export type AssistantEnd = 'end' | 'length' | 'refused' | 'steps' | 'stopped';
 
@@ -374,6 +403,19 @@ export interface AssistantApi {
   send: (text: string) => Promise<AssistantEnd>;
   /** Tries the last reply again (after an error), without sending a new message. */
   retry: () => Promise<AssistantEnd>;
+  /** Answers an approval request: allow it, allow every change from now on, or don't. */
+  answer: (id: string, answer: ApprovalAnswer) => Promise<void>;
+  setPermissions: (permissions: AssistantPermissions) => Promise<void>;
+  /** The assistant's changes to the open project, oldest first. */
+  listChanges: () => Promise<AssistantChange[]>;
+  /**
+   * Undoes a change and every later one. If files were edited since (and force isn't set),
+   * nothing is undone and those files are returned, so the user can confirm.
+   */
+  undo: (
+    id: string,
+    force?: boolean,
+  ) => Promise<{ undone: AssistantChange[]; conflicts: string[] }>;
   /** Stops the reply in progress. */
   stop: () => Promise<void>;
   onEvent: (callback: (event: AssistantEvent) => void) => () => void;

@@ -24,9 +24,18 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
   `model/relationships.json`. The canvas has an SVG layer and column anchors ready for this.
 - **Column types and descriptions** in the model (`model/tables/<table>.json`), e.g. marking a
   text column as a date.
-- **The assistant's editing tools (phase 3).** Tools to add and edit data sources (asking the user
-  for secrets in the form), run loads, create transforms and transformed tables, and write
-  datasets and report files, each change listed in the chat with Undo; deletions ask first.
+- **The assistant's editing tools for tables and sources (phases 3b and 3c).** 3a (approvals, Undo
+  and the report tools) is done. Next:
+  - **3b, modelling:** in-place transforms, transformed tables, deleting tables; undo must also
+    clear and rebuild derived data.
+  - **3c, sources:** add and edit sources (passwords only through the source's form), discover
+    tables and load data (loads can't be undone, so they must say so). Decide whether changing
+    where a source with a saved password connects should always ask, even with "make changes
+    without asking", so a shared project can't redirect saved credentials.
+- **A structured `add_chart` tool** (page, chart type, dataset, columns, title) that writes the
+  chart's HTML and script itself. In testing, a small local model (qwen3 8B) wrote a page from
+  memory with the wrong chart library and created a duplicate page instead of editing the
+  existing one. Writing the markup in code would make charts reliable for every model.
 - **The assistant's guides and evaluation tasks (phase 4).** Guides for adding data, modelling and
   SQL alongside the report guide, a tuned system prompt, and sample tasks run against both
   providers.

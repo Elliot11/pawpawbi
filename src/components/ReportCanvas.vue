@@ -3,10 +3,18 @@
 // frame served by src/report.ts, with an HTML editor and the datasets beside it. The site is
 // plain HTML, CSS and JavaScript so it can be hosted anywhere; nothing here ends up in it.
 // Writing pages: docs/report-pages.md. Security: docs/security.md
-import { computed, onActivated, onBeforeUnmount, onMounted, ref } from 'vue';
+import {
+  computed,
+  onActivated,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from 'vue';
 import { errorMessage } from '../errors';
 import type { ReportFile } from '../shared/types';
 import { REPORT_ORIGIN } from '../shared/types';
+import { pageToShow, projectChanged } from '../ui-signals';
 import DatasetsPanel from './report/DatasetsPanel.vue';
 
 const report = ref<ReportFile | null>(null);
@@ -61,6 +69,30 @@ onActivated(() => {
   if (!loaded.value) return;
   load().then(() => show(currentId.value));
 });
+
+// The assistant changed the project (or a change was undone): show it as it is now. An open
+// file in the editor is reloaded unless it has unsaved edits.
+watch(projectChanged, async () => {
+  await load();
+  show(currentId.value);
+  datasetsPanel.value?.reload();
+  if (panel.value === 'html' && !editorDirty.value) openFile(filePath.value);
+});
+
+// The assistant asked to show a page.
+watch(
+  pageToShow,
+  async (id) => {
+    if (!id) return;
+    pageToShow.value = null;
+    await load();
+    if (report.value?.pages.some((p) => p.id === id) && confirmLeaveEditor()) {
+      show(id);
+      if (panel.value === 'html') openFile(pagePath());
+    }
+  },
+  { immediate: true },
+);
 
 async function createSite() {
   busy.value = 'create';

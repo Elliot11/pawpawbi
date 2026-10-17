@@ -104,7 +104,7 @@ The conversation sent is the last 80 saved messages, starting at a user message 
 
 ## Tools
 
-The assistant can look at everything in the project but change nothing (`tools.ts`):
+The assistant can look at everything in the project (`tools.ts`):
 
 | Tool               | Returns                                                                      |
 | ------------------ | ---------------------------------------------------------------------------- |
@@ -118,18 +118,68 @@ The assistant can look at everything in the project but change nothing (`tools.t
 | `read_report_file` | A page, stylesheet or script of the report                                   |
 | `read_guide`       | A guide                                                                      |
 
+It can change the report (`report-tools.ts`):
+
+| Tool                | Does                                                                 |
+| ------------------- | -------------------------------------------------------------------- |
+| `create_report`     | Adds the default report to a project that has none                   |
+| `create_page`       | Adds a page, from the template or with given HTML                    |
+| `rename_page`       | Changes a page's title in the navigation                             |
+| `delete_page`       | Deletes a page                                                       |
+| `write_report_file` | Writes a whole page, stylesheet or script                            |
+| `edit_report_file`  | Replaces exact text in a file; the text must appear exactly once     |
+| `save_dataset`      | Creates or changes a dataset, running its query and writing its data |
+| `delete_dataset`    | Deletes a dataset and its data file                                  |
+| `refresh_datasets`  | Rewrites every dataset's data                                        |
+| `show_page`         | Shows a page in Build visuals (doesn't change anything)              |
+
+Tools for data sources and tables are still to come; until then the assistant says how to make
+those changes by hand.
+
 Results are JSON, cut at 20,000 characters with a note asking for less. A tool that fails returns
 its error message to the model instead of stopping the reply.
 
-**Adding a tool:** add a `ToolSpec` to `tools.ts` with a clear description (the model chooses
-tools by it), a JSON Schema for its input, `describe` (the few words the chat shows while it
-runs, e.g. "Previewing orders") and `run`. Validate input: it comes from the model. Never return
-secrets.
+Claude and ChatGPT get every tool. Small local models (Ollama) get the read tools and only the
+changes for the workflow step the user is on (each tool's `step`), so they have fewer to choose
+from.
+
+**Adding a tool:** add a `ToolSpec` with a clear description (the model chooses tools by it), a
+JSON Schema for its input, `describe` (the few words the chat and approval card show, e.g.
+"Previewing orders" or `Save the dataset revenue_by_month`) and `run`. A tool that changes the
+project sets `change: true` and `step`, and makes its change through `ctx.change(...)` with the
+files it may touch (see below). Validate input: it comes from the model. Never return secrets.
+
+## Changes: asking first, and Undo
+
+**Asking first.** Before a tool with `change: true` runs, the loop asks `approve`. Unless the user
+has chosen otherwise, the chat shows a card, "The assistant wants to: _Save the dataset
+revenue_by_month_", with **Allow**, **Allow all changes** and **Don't allow**, and the reply waits.
+**Allow all changes** sets the assistant to make changes without asking; **Assistant settings**
+switches between that and asking (`permissions` in `settings.json`: `ask`, the default, or
+`allow`). A declined change isn't made; the model is told so and asked not to retry it. Stop
+counts as declining.
+
+**Recording.** Every change runs through `ChangeJournal.record` (`changes.ts`) with its targets:
+the files and folders it may create, change or delete (e.g. `report/` without `data/` for page
+changes; `model/datasets.json` and the dataset's data file for a dataset). Before it runs, they're
+copied to the undo store; if it fails, they're put back at once, so a change is never half-done.
+The store is `assistant-changes/` in the working folder, beside the project files: it survives a
+crash but isn't saved in the `.pawpaw` file, and goes when the project is closed.
+
+**Undo** in the chat reverts that change and every later one ("undo back to here"), newest
+first, so the project is always as it was at that point. If any of those files were edited since
+(by the user, say), it lists them and asks before overwriting. Undoing adds a note to the
+conversation, so the model knows those changes are gone. Undo waits until the assistant isn't
+replying.
+
+**Screens follow along.** After a change or undo, the main process sends `changed`; Build visuals
+reloads the report (and the file open in its editor, unless that has unsaved edits).
+`show_page` sends `show`, which switches to Build visuals and opens the page (`ui-signals.ts`).
 
 ## The chat
 
-`ChatPanel.vue` shows user and assistant messages, a line per tool used, and the reply being
-written. Replies are formatted lightly (`chat-format.ts`: code blocks with a Copy button, inline
+`ChatPanel.vue` shows user and assistant messages, a line per tool used (with **Undo** for a
+change, or "Undone"), approval cards, and the reply being written. Replies are formatted lightly (`chat-format.ts`: code blocks with a Copy button, inline
 code, bold), always as text, never as HTML. Without a key it offers to set one up. After an error
 it offers **Try again**, which reruns the reply from the saved conversation without saving the
 message twice. The chat's file format is in [pawpaw-file-format.md](pawpaw-file-format.md).

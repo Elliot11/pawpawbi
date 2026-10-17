@@ -33,9 +33,13 @@ export interface ToolSpec {
     additionalProperties?: boolean;
   };
   /** Runs the tool. The result goes back to the model as JSON (or text, if a string). */
-  run: (input: Record<string, unknown>) => Promise<unknown>;
+  run: (input: Record<string, unknown>, call: ToolCall) => Promise<unknown>;
   /** A few words for the chat while it runs, e.g. "Looking at orders". */
-  describe: (input: Record<string, unknown>) => string;
+  describe: (input: Record<string, unknown>) => string | Promise<string>;
+  /** True if it changes the project: it needs the user's approval and can be undone. */
+  change?: boolean;
+  /** The workflow step it belongs to. Small local models only get the current step's tools. */
+  step?: 'data' | 'model' | 'visuals';
 }
 
 export interface ModelRequest {

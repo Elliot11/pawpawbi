@@ -65,7 +65,9 @@ obvious from the code. Keep this file current when a convention changes.
   process (no SDKs). Keep its conversation, tools and prompts provider-neutral (`types.ts`) and
   usable by small local models; provider specifics stay in `anthropic.ts` / `openai.ts` /
   `ollama.ts`, each tested with streams in the API's format. Keys never reach the
-  renderer, logs or prompts. Tool results go to the provider: never include secrets.
+  renderer, logs or prompts. Tool results go to the provider: never include secrets. A tool that
+  changes the project sets `change: true` (so the user is asked, by default) and makes its change
+  inside `ctx.change(...)` with targets covering every file it may touch (so it can be undone).
 - **The report is untrusted HTML in the app.** It's shown only in the `sandbox="allow-scripts"`
   frame in `ReportCanvas.vue`, served by `src/report.ts` with `SITE_CSP`, with all web requests
   blocked (`lockDownNetwork`). Don't loosen any of these, and don't add web requests to the
