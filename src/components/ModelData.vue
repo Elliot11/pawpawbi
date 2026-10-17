@@ -372,10 +372,105 @@ const totalColumns = computed(() =>
   tables.value.reduce((sum, t) => sum + t.columns.length, 0),
 );
 
+// Card heights vary (column lists, error messages), and dependency lines attach to card edges,
+// so track each card's height as it renders and changes.
+const cardHeights = ref<Record<string, number>>({});
+const resizeObserver = new ResizeObserver((entries) => {
+  const next = { ...cardHeights.value };
+  for (const entry of entries) {
+    const element = entry.target as HTMLElement;
+    if (element.dataset.table)
+      next[element.dataset.table] = element.offsetHeight;
+  }
+  cardHeights.value = next;
+});
+onBeforeUnmount(() => resizeObserver.disconnect());
+
 function setCardElement(table: string, element: unknown) {
-  if (element instanceof HTMLElement) cardElements.set(table, element);
-  else cardElements.delete(table);
+  const previous = cardElements.get(table);
+  if (previous && previous !== element) resizeObserver.unobserve(previous);
+  if (element instanceof HTMLElement) {
+    cardElements.set(table, element);
+    resizeObserver.observe(element);
+  } else {
+    cardElements.delete(table);
+  }
 }
+
+// --- Dependency lines ------------------------------------------------------------------------------
+
+type Box = { x: number; y: number; w: number; h: number };
+
+function cardBox(table: string): Box | null {
+  const position = positions.value[table];
+  if (!position) return null;
+  return { ...position, w: CARD_WIDTH, h: cardHeights.value[table] ?? 300 };
+}
+
+/**
+ * A curve from one card's edge to another's: bottom to top when one card is clearly above the
+ * other, otherwise side to side.
+ */
+function linkPath(from: Box, to: Box): string {
+  const fromCenter = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
+  const toCenter = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
+  const verticalGap = Math.max(
+    to.y - (from.y + from.h),
+    from.y - (to.y + to.h),
+  );
+  const horizontalGap = Math.max(
+    to.x - (from.x + from.w),
+    from.x - (to.x + to.w),
+  );
+
+  let start, end, c1, c2;
+  if (verticalGap > 0 && verticalGap >= horizontalGap) {
+    const down = toCenter.y > fromCenter.y;
+    start = { x: fromCenter.x, y: down ? from.y + from.h : from.y };
+    end = { x: toCenter.x, y: down ? to.y : to.y + to.h };
+    const bend = Math.max(40, Math.abs(end.y - start.y) / 2) * (down ? 1 : -1);
+    c1 = { x: start.x, y: start.y + bend };
+    c2 = { x: end.x, y: end.y - bend };
+  } else {
+    const right = toCenter.x > fromCenter.x;
+    // Attach near the top of the cards, beside their names, rather than mid-way down long cards.
+    start = {
+      x: right ? from.x + from.w : from.x,
+      y: from.y + Math.min(from.h / 2, 40),
+    };
+    end = { x: right ? to.x : to.x + to.w, y: to.y + Math.min(to.h / 2, 40) };
+    const bend = Math.max(40, Math.abs(end.x - start.x) / 2) * (right ? 1 : -1);
+    c1 = { x: start.x + bend, y: start.y };
+    c2 = { x: end.x - bend, y: end.y };
+  }
+  return `M ${start.x} ${start.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${end.x} ${end.y}`;
+}
+
+/** One line per table a transformed table reads, for tables that are on the canvas. */
+const links = computed(() =>
+  tables.value
+    .filter((t) => t.kind === 'transformed')
+    .flatMap((t) =>
+      (definitions.value[t.name]?.dependsOn ?? []).flatMap((source) => {
+        const from = cardBox(source);
+        const to = cardBox(t.name);
+        return from && to
+          ? [
+              {
+                key: `${source}>${t.name}`,
+                from: source,
+                to: t.name,
+                path: linkPath(from, to),
+              },
+            ]
+          : [];
+      }),
+    ),
+);
+
+/** The table under the pointer: its lines are highlighted and the others faded. */
+const hoveredTable = ref<string | null>(null);
+const showLegend = ref(true);
 </script>
 
 <template>
@@ -431,7 +526,35 @@ function setCardElement(table: string, element: unknown) {
         >
           <!-- Relationship lines between tables will be drawn here, underneath the cards, in the
              same coordinates as the cards' positions. -->
-          <svg class="links" aria-hidden="true"></svg>
+          <svg class="links" aria-hidden="true">
+            <defs>
+              <marker
+                id="link-arrow"
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="8"
+                markerHeight="8"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" />
+              </marker>
+            </defs>
+            <path
+              v-for="link in links"
+              :key="link.key"
+              :d="link.path"
+              class="link"
+              :class="{
+                active: hoveredTable === link.from || hoveredTable === link.to,
+                faded:
+                  hoveredTable !== null &&
+                  hoveredTable !== link.from &&
+                  hoveredTable !== link.to,
+              }"
+              marker-end="url(#link-arrow)"
+            />
+          </svg>
 
           <article
             v-for="t in tables"
@@ -447,6 +570,8 @@ function setCardElement(table: string, element: unknown) {
               zIndex: stacking.indexOf(t.name) + 1,
             }"
             @pointerdown.stop="bringToFront(t.name)"
+            @pointerenter="hoveredTable = t.name"
+            @pointerleave="hoveredTable = null"
           >
             <header
               class="card-head"
@@ -656,6 +781,37 @@ function setCardElement(table: string, element: unknown) {
           </button>
         </div>
 
+        <aside
+          v-if="showLegend"
+          class="overlay legend"
+          aria-label="Legend"
+          @pointerdown.stop
+        >
+          <header class="legend-head">
+            <strong>Legend</strong>
+            <button
+              class="dismiss"
+              aria-label="Hide legend"
+              title="Hide legend"
+              @click="showLegend = false"
+            >
+              ×
+            </button>
+          </header>
+          <ul>
+            <li><span class="swatch loaded"></span>Loaded table</li>
+            <li><span class="swatch transformed"></span>Transformed table</li>
+          </ul>
+        </aside>
+        <button
+          v-else
+          class="overlay legend-show"
+          @pointerdown.stop
+          @click="showLegend = true"
+        >
+          Show legend
+        </button>
+
         <p class="overlay hint" @pointerdown.stop>
           Drag tables by their name · drag the background to pan · Ctrl + scroll
           to zoom
@@ -700,6 +856,90 @@ function setCardElement(table: string, element: unknown) {
   left: 0;
   overflow: visible;
   pointer-events: none;
+}
+
+.link {
+  fill: none;
+  stroke: var(--transformed);
+  stroke-width: 2;
+  opacity: 0.55;
+  transition:
+    opacity 0.15s,
+    stroke-width 0.15s;
+}
+
+.link.active {
+  stroke-width: 3;
+  opacity: 1;
+}
+
+.link.faded {
+  opacity: 0.15;
+}
+
+#link-arrow path {
+  fill: var(--transformed);
+}
+
+.legend {
+  bottom: 52px;
+  left: 36px;
+  width: 230px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  font-size: 12px;
+}
+
+.legend-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.legend ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-muted);
+}
+
+.swatch {
+  flex: none;
+  width: 22px;
+  height: 14px;
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--accent);
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.swatch.transformed {
+  border-top-color: var(--transformed);
+}
+
+.legend-show {
+  bottom: 52px;
+  left: 36px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .table-card {
