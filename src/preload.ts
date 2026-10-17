@@ -12,6 +12,7 @@ const projects: ProjectsApi = {
   close: () => ipcRenderer.invoke('projects:close'),
   loadChat: () => ipcRenderer.invoke('projects:load-chat'),
   appendChat: (messages, stage) => ipcRenderer.invoke('projects:append-chat', messages, stage),
+  setStage: (stage) => ipcRenderer.invoke('projects:set-stage', stage),
   onChanged: (callback) => {
     const listener = (_event: IpcRendererEvent, project: Project) => callback(project);
     ipcRenderer.on('project:changed', listener);

@@ -179,6 +179,8 @@ export interface ProjectsApi {
   close: () => Promise<boolean>;
   loadChat: () => Promise<ChatState>;
   appendChat: (messages: ChatMessage[], stage: WorkflowStage) => Promise<void>;
+  /** Moves the workflow to a step (saved in chat/session.json). */
+  setStage: (stage: WorkflowStage) => Promise<void>;
   /** Called whenever the open project changes, e.g. it gains unsaved changes. Returns an unsubscribe function. */
   onChanged: (callback: (project: Project) => void) => () => void;
 }

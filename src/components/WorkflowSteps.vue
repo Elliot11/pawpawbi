@@ -4,6 +4,7 @@ import type { WorkflowStage } from '../shared/types';
 import { STAGES } from '../workflow';
 
 const props = defineProps<{ stage: WorkflowStage }>();
+defineEmits<{ select: [stage: WorkflowStage] }>();
 
 const currentIndex = computed(() => STAGES.findIndex((s) => s.id === props.stage));
 
@@ -20,14 +21,15 @@ const ICONS: Record<WorkflowStage, string> = {
 
 <template>
   <ol class="steps" aria-label="Workflow">
-    <li
-      v-for="(s, i) in STAGES"
-      :key="s.id"
-      :class="{ done: i < currentIndex, current: i === currentIndex }"
-      :aria-current="i === currentIndex ? 'step' : undefined"
-    >
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path :d="ICONS[s.id]" /></svg>
-      {{ s.label }}
+    <li v-for="(s, i) in STAGES" :key="s.id">
+      <button
+        :class="{ done: i < currentIndex, current: i === currentIndex }"
+        :aria-current="i === currentIndex ? 'step' : undefined"
+        @click="$emit('select', s.id)"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path :d="ICONS[s.id]" /></svg>
+        {{ s.label }}
+      </button>
     </li>
   </ol>
 </template>
@@ -41,25 +43,34 @@ const ICONS: Record<WorkflowStage, string> = {
   list-style: none;
 }
 
-.steps li {
+.steps button {
   display: flex;
   align-items: center;
   gap: 7px;
   padding: 6px 12px;
+  border: none;
   border-radius: var(--radius-sm);
   background: var(--surface-muted);
   color: var(--ink-faint);
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
-.steps li.current {
+.steps button:hover:not(.current) {
+  background: #e6e4de;
+  color: var(--ink-muted);
+}
+
+.steps button.current {
   background: var(--accent-soft);
   color: var(--accent);
 }
 
-.steps li.done {
+.steps button.done {
   color: var(--ink-muted);
 }
 

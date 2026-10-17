@@ -355,16 +355,20 @@ async function loadChat(): Promise<ChatState> {
   return { stage, messages };
 }
 
-async function appendChat(messages: ChatMessage[], stage: WorkflowStage) {
+async function setStage(stage: WorkflowStage) {
   if (!WORKFLOW_STAGES.includes(stage)) throw new Error(`Unknown workflow stage: ${stage}`);
+  await writeJson(path.join(requireSession().filesDir, 'chat', 'session.json'), { stage });
+  await markDirty();
+}
+
+async function appendChat(messages: ChatMessage[], stage: WorkflowStage) {
   const chatDir = path.join(requireSession().filesDir, 'chat');
   await fs.mkdir(chatDir, { recursive: true });
   await fs.appendFile(
     path.join(chatDir, 'messages.jsonl'),
     messages.map((m) => JSON.stringify(m) + '\n').join(''),
   );
-  await writeJson(path.join(chatDir, 'session.json'), { stage });
-  await markDirty();
+  await setStage(stage);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -423,4 +427,5 @@ export function registerProjectHandlers() {
   ipcMain.handle('projects:append-chat', (_event, messages: ChatMessage[], stage: WorkflowStage) =>
     appendChat(messages, stage),
   );
+  ipcMain.handle('projects:set-stage', (_event, stage: WorkflowStage) => setStage(stage));
 }
