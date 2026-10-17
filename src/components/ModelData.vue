@@ -397,20 +397,19 @@ function setCardElement(table: string, element: unknown) {
               <template v-else>
                 <button
                   class="tool"
-                  title="Transform this table with SQL"
+                  :class="{ active: t.transformed }"
+                  :title="
+                    t.transformed
+                      ? 'A SQL transform is active. Click to edit it.'
+                      : 'Transform this table with SQL'
+                  "
                   @click="transforming = t.name"
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M8 6l-6 6 6 6M16 6l6 6-6 6" />
                   </svg>
-                  Transform
+                  {{ t.transformed ? 'Transformed' : 'Transform' }}
                 </button>
-                <span
-                  v-if="t.transformed"
-                  class="sql-badge"
-                  title="This table shows the result of a SQL transform"
-                  >SQL</span
-                >
                 <button
                   class="tool delete"
                   title="Delete this table"
@@ -632,13 +631,11 @@ function setCardElement(table: string, element: unknown) {
   font-weight: 600;
 }
 
-.sql-badge {
-  padding: 1px 6px;
-  border-radius: 4px;
+/* A transform is active on this table. */
+.tool.active,
+.tool.active:hover {
   background: #eaf6ee;
   color: #1d6b3a;
-  font-size: 10px;
-  font-weight: 700;
 }
 
 .columns {

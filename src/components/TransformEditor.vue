@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { errorMessage } from '../errors';
 import type { TablePreview, TableSchema } from '../shared/types';
 import DataGrid from './data/DataGrid.vue';
@@ -107,16 +107,18 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 
-/** Inserts text at the cursor in the editor. */
-async function insert(text: string) {
+/** Inserts text at the cursor in the editor, as an edit Ctrl+Z can undo. */
+function insert(text: string) {
   const el = editor.value;
   if (!el) return;
-  const start = el.selectionStart;
-  sql.value =
-    sql.value.slice(0, start) + text + sql.value.slice(el.selectionEnd);
-  await nextTick();
+  // Focusing restores the cursor position the textarea had before the click.
   el.focus();
-  el.selectionStart = el.selectionEnd = start + text.length;
+  // Setting the value directly would bypass the textarea's undo history, so insert the way
+  // typing does. (execCommand is deprecated but is still the only way to do this in Chromium.)
+  if (!document.execCommand('insertText', false, text)) {
+    el.setRangeText(text, el.selectionStart, el.selectionEnd, 'end');
+    el.dispatchEvent(new Event('input'));
+  }
 }
 
 function toggle(table: string) {
