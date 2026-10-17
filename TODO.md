@@ -56,18 +56,9 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
   has a transform it shows the transformed columns, though the query reads the original ones.
 - **Files outside projects are never cleaned up**: saved credentials, dlt state and working folders
   of deleted projects, and connector environments no longer used.
-- **Most of the main process's logic has no automated tests** (opening and saving projects,
-  rebuild orchestration, refusing deletes). Only the pure parts (archive format, dependency
-  ordering, background-work tracking) and the Python side are tested.
-- **Crash recovery has no automated test.** The "Recover unsaved changes" logic in
-  `src/projects.ts` uses Electron directly. Move the decisions into a module without Electron and
-  test it with real `.pawpaw` files in a temporary folder. Cases to cover:
-  - Recover keeps the unsaved changes; Discard reopens the last saved version.
-  - No question when nothing was unsaved, or after saving.
-  - Copies of a project in different locations don't share recovery.
-  - A damaged `state.json` opens normally.
-  - Closing normally removes the working folder.
-  - A renamed project keeps its new name.
+- **Some of the main process's logic has no automated tests**: rebuild orchestration, refusing
+  deletes, data sources and the recent list. Tested: the archive format, working folders and crash
+  recovery, dependency ordering, background-work tracking, and the Python side.
 - **Python code isn't linted or formatted.** Add Ruff (development only) and run it from
   `npm run lint`.
 - **After choosing Wait when closing during a load**, only the top bar's "Working…" shows that a

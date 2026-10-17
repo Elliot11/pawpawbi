@@ -7,30 +7,31 @@ import {
   ipcMain,
   type IpcMainInvokeEvent,
 } from 'electron';
-import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {
-  InvalidProjectFileError,
-  extractArchive,
-  isZipFile,
-  packArchive,
-  readArchiveEntry,
-} from './pawpaw-archive';
+import { InvalidProjectFileError } from './pawpaw-archive';
 import { work } from './background';
 import { stopPython } from './python';
-import { newId } from './shared/ids';
 import type {
   ChatMessage,
   ChatState,
   OpenResult,
   Project,
-  ProjectManifest,
   RecentProject,
   WorkflowStage,
 } from './shared/types';
+import {
+  createWorkspace,
+  markWorkspaceDirty,
+  openWorkspace,
+  removeWorkspace,
+  saveWorkspace,
+  writeJson,
+  type Workspace,
+  type WorkspaceOptions,
+  type WorkspaceState,
+} from './workspace';
 
-const FORMAT_VERSION = 1;
 const PROJECT_EXTENSION = 'pawpaw';
 const PROJECT_FILTERS = [
   { name: 'PawpawBI project', extensions: [PROJECT_EXTENSION] },
@@ -67,77 +68,19 @@ async function removeRecent(filePath: string) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The open project
-//
-// An open project is extracted into a working folder, userData/workspaces/<id>-<path hash>/:
-//   project/     the archive's contents, which everything reads and writes
-//   state.json   which file it came from and whether it has unsaved changes
-// The folder is deleted when the project is closed. If the app crashes it survives, and its
-// unsaved changes are offered back the next time that file is opened.
+// The open project. Its working folder and crash recovery are in workspace.ts; this module adds
+// the dialogs, the recent list, window updates and IPC.
 
-interface Session {
-  manifest: ProjectManifest;
-  filePath: string;
-  workspaceDir: string;
-  filesDir: string;
-  dirty: boolean;
-}
-
-interface WorkspaceState {
-  filePath: string;
-  dirty: boolean;
-  updatedAt: string;
-}
+type Session = Workspace;
 
 let session: Session | null = null;
 
 const appLabel = () => `PawpawBI ${app.getVersion()}`;
-const now = () => new Date().toISOString();
 
-function workspacePaths(id: string, filePath: string) {
-  // Include the file's location so two copies of the same project never share a folder.
-  const key = createHash('sha1')
-    .update(path.resolve(filePath))
-    .digest('hex')
-    .slice(0, 8);
-  const workspaceDir = path.join(
-    app.getPath('userData'),
-    'workspaces',
-    `${id}-${key}`,
-  );
-  return {
-    workspaceDir,
-    filesDir: path.join(workspaceDir, 'project'),
-    statePath: path.join(workspaceDir, 'state.json'),
-  };
-}
-
-async function readWorkspaceState(
-  statePath: string,
-): Promise<WorkspaceState | null> {
-  try {
-    return JSON.parse(await fs.readFile(statePath, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
-async function writeWorkspaceState(s: Session) {
-  const state: WorkspaceState = {
-    filePath: s.filePath,
-    dirty: s.dirty,
-    updatedAt: now(),
-  };
-  await fs.writeFile(
-    path.join(s.workspaceDir, 'state.json'),
-    JSON.stringify(state, null, 2),
-  );
-}
-
-async function writeJson(filePath: string, value: unknown) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, JSON.stringify(value, null, 2) + '\n');
-}
+const workspaceOptions = (): WorkspaceOptions => ({
+  root: path.join(app.getPath('userData'), 'workspaces'),
+  appLabel: appLabel(),
+});
 
 function requireSession(): Session {
   if (!session) throw new Error('No project is open.');
@@ -174,65 +117,7 @@ function notifyChanged() {
 }
 
 async function markDirty() {
-  const s = requireSession();
-  if (s.dirty) return;
-  s.dirty = true;
-  await writeWorkspaceState(s);
-  notifyChanged();
-}
-
-function parseManifest(text: string): ProjectManifest {
-  let manifest;
-  try {
-    manifest = JSON.parse(text);
-  } catch {
-    throw new InvalidProjectFileError(
-      'The project file is damaged: manifest.json is not valid JSON.',
-    );
-  }
-  if (typeof manifest?.formatVersion !== 'number') {
-    throw new InvalidProjectFileError(
-      'The project file is damaged: it has no format version.',
-    );
-  }
-  if (manifest.formatVersion > FORMAT_VERSION) {
-    throw new InvalidProjectFileError(
-      'This project was saved by a newer version of PawpawBI. Update PawpawBI to open it.',
-    );
-  }
-  // The ID becomes part of a folder name, so only allow safe characters.
-  if (
-    typeof manifest.id !== 'string' ||
-    !/^[a-z0-9]{1,32}$/.test(manifest.id) ||
-    typeof manifest.name !== 'string'
-  ) {
-    throw new InvalidProjectFileError(
-      'The project file is damaged: manifest.json is incomplete.',
-    );
-  }
-  return manifest;
-}
-
-/** Before the ZIP format, a .pawpaw file was a small JSON file: { version, name, createdAt }. */
-async function readLegacyProject(filePath: string): Promise<ProjectManifest> {
-  let data;
-  try {
-    data = JSON.parse(await fs.readFile(filePath, 'utf8'));
-  } catch {
-    throw new InvalidProjectFileError('This is not a PawpawBI project file.');
-  }
-  if (typeof data?.name !== 'string') {
-    throw new InvalidProjectFileError('This is not a PawpawBI project file.');
-  }
-  return {
-    formatVersion: FORMAT_VERSION,
-    id: newId(),
-    name: data.name,
-    createdAt: typeof data.createdAt === 'string' ? data.createdAt : now(),
-    modifiedAt: now(),
-    createdWith: appLabel(),
-    modifiedWith: appLabel(),
-  };
+  if (await markWorkspaceDirty(requireSession())) notifyChanged();
 }
 
 async function askToRecover(
@@ -259,44 +144,10 @@ async function openProjectFile(
 ): Promise<Project> {
   if (session) throw new Error('Close the open project first.');
 
-  const isZip = await isZipFile(filePath);
-  const manifest = isZip
-    ? parseManifest(await readArchiveEntry(filePath, 'manifest.json'))
-    : await readLegacyProject(filePath);
-  const paths = workspacePaths(manifest.id, filePath);
-
-  const previous = await readWorkspaceState(paths.statePath);
-  const recover =
-    previous?.dirty === true &&
-    (await askToRecover(win, manifest.name, previous));
-
-  if (!recover) {
-    await fs.rm(paths.workspaceDir, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-    });
-    await fs.mkdir(paths.filesDir, { recursive: true });
-    if (isZip) {
-      await extractArchive(filePath, paths.filesDir);
-    } else {
-      await writeJson(path.join(paths.filesDir, 'manifest.json'), manifest);
-    }
-  }
-
-  session = {
-    manifest: recover
-      ? parseManifest(
-          await fs.readFile(path.join(paths.filesDir, 'manifest.json'), 'utf8'),
-        )
-      : manifest,
-    filePath,
-    workspaceDir: paths.workspaceDir,
-    filesDir: paths.filesDir,
-    // An old-format file is upgraded in the working folder and written as a ZIP on save.
-    dirty: recover || !isZip,
-  };
-  await writeWorkspaceState(session);
+  session = await openWorkspace(filePath, {
+    ...workspaceOptions(),
+    askToRecover: (name, state) => askToRecover(win, name, state),
+  });
   await addRecent(session.manifest.name, filePath);
   notifyChanged();
   return toProject(session);
@@ -316,27 +167,8 @@ async function createProject(win: BrowserWindow): Promise<Project | null> {
   });
   if (canceled || !filePath) return null;
 
-  const manifest: ProjectManifest = {
-    formatVersion: FORMAT_VERSION,
-    id: newId(),
-    name: path.basename(filePath, path.extname(filePath)),
-    createdAt: now(),
-    modifiedAt: now(),
-    createdWith: appLabel(),
-    modifiedWith: appLabel(),
-  };
-  const paths = workspacePaths(manifest.id, filePath);
-  await fs.rm(paths.workspaceDir, {
-    recursive: true,
-    force: true,
-    maxRetries: 5,
-  });
-  await writeJson(path.join(paths.filesDir, 'manifest.json'), manifest);
-  await packArchive(paths.filesDir, filePath);
-
-  session = { manifest, filePath, ...paths, dirty: false };
-  await writeWorkspaceState(session);
-  await addRecent(manifest.name, filePath);
+  session = await createWorkspace(filePath, workspaceOptions());
+  await addRecent(session.manifest.name, filePath);
   notifyChanged();
   return toProject(session);
 }
@@ -345,11 +177,7 @@ async function saveProject(): Promise<Project> {
   const s = requireSession();
   // Never zip a working folder that a load or rebuild is still writing to.
   await work.idle(s.manifest.id);
-  s.manifest = { ...s.manifest, modifiedAt: now(), modifiedWith: appLabel() };
-  await writeJson(path.join(s.filesDir, 'manifest.json'), s.manifest);
-  await packArchive(s.filesDir, s.filePath);
-  s.dirty = false;
-  await writeWorkspaceState(s);
+  await saveWorkspace(s, appLabel());
   notifyChanged();
   return toProject(s);
 }
@@ -410,11 +238,7 @@ export async function closeProject(win: BrowserWindow): Promise<boolean> {
   }
   const closing = session;
   session = null;
-  await fs.rm(closing.workspaceDir, {
-    recursive: true,
-    force: true,
-    maxRetries: 5,
-  });
+  await removeWorkspace(closing);
   notifyChanged();
   return true;
 }

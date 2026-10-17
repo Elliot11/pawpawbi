@@ -22,7 +22,7 @@
     "premake": "npm run setup:python",
     "lock:python": "node scripts/setup-python.mjs --lock",
     "test": "npm run test:node && npm run test:python",
-    "test:node": "node --experimental-strip-types --no-warnings --test \"tests/node/**/*.test.ts\"",
+    "test:node": "node --experimental-strip-types --no-warnings --import ./tests/node/support/register.mjs --test \"tests/node/**/*.test.ts\"",
     "test:python": "node scripts/test-python.mjs"
   },
   "devDependencies": {
