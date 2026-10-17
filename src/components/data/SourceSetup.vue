@@ -28,7 +28,8 @@ const progress = ref('');
 const showAdvanced = ref(false);
 
 const savedSource = ref<DataSource | undefined>(props.source);
-const name = ref(props.source?.name ?? props.connector.name);
+// Left blank for a new source; saving uses the connector's name (shown as the placeholder).
+const name = ref(props.source?.name ?? '');
 const settings = reactive<Record<string, unknown>>(
   Object.fromEntries(
     props.connector.fields.map((f) => [
@@ -159,7 +160,7 @@ const formatNumber = (n: number) => n.toLocaleString();
     <form v-if="step === 'settings'" class="form" @submit.prevent="connect">
       <div class="field-name">
         <label for="source-name">Name</label>
-        <input id="source-name" v-model="name" type="text" />
+        <input id="source-name" v-model="name" type="text" :placeholder="connector.name" />
       </div>
 
       <ConnectorFieldInput
