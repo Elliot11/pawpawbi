@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { blocks, inline } from '../../src/chat-format.ts';
-import { toTurns } from '../../src/assistant/history.ts';
+import { NO_REPLY, toTurns } from '../../src/assistant/history.ts';
 import {
   MAX_RESULT_CHARS,
   resultText,
@@ -295,4 +295,20 @@ test('Ollama has no default model: the first installed one that can use tools is
     pickModel('ollama', ['qwen3:8b', 'qwen3.5:2b'], 'qwen3.5:2b'),
     'qwen3.5:2b',
   );
+});
+
+test('a message that got no reply (stopped or failed) is marked, so it is not answered later', () => {
+  const turns = toTurns([
+    msg('user', 'Describe every column'),
+    msg('user', 'How many orders?'),
+  ]);
+  assert.deepEqual(turns, [
+    { role: 'user', text: 'Describe every column' },
+    { role: 'assistant', text: NO_REPLY },
+    { role: 'user', text: 'How many orders?' },
+  ]);
+  // The latest message, still waiting for its reply, isn't marked.
+  assert.deepEqual(toTurns([msg('user', 'Hi')]), [
+    { role: 'user', text: 'Hi' },
+  ]);
 });

@@ -304,7 +304,7 @@ service. Ollama is for people who don't want their data sent anywhere, or don't 
 the same evaluation tasks can check both. Without SDKs there are no dependencies to pin and
 update, and the parts used (streamed messages with tool calls) are small and stable.
 
-**Alternatives considered:** driving the user's own Claude Code install (`claude -p`) with their Claude subscription. 
+**Alternatives considered:** driving the user's own Claude Code install (`claude -p`) with their Claude subscription.
 
 **Consequences:** Each provider's tool-calling format has to be kept working by us; adapter
 tests use streams in each API's documented format. Local models are much less capable, so

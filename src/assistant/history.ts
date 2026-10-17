@@ -7,14 +7,28 @@ import type { Turn } from './types';
 export const HISTORY_MESSAGES = 80;
 
 /**
+ * Stands in for the reply to a message that got none (the user pressed Stop before anything was
+ * written, or it failed), so the model doesn't answer that message along with the next one.
+ */
+export const NO_REPLY =
+  '[No reply: the user stopped it or it failed. Answer only their next message.]';
+
+/**
  * The most recent messages as the model's conversation, starting at a user message (so a tool
  * result is never sent without the call it answers).
  */
 export function toTurns(messages: ChatMessage[]): Turn[] {
   const recent = messages.slice(-HISTORY_MESSAGES);
   const start = recent.findIndex((m) => m.role === 'user');
-  return (start === -1 ? [] : recent.slice(start)).flatMap((m): Turn[] => {
-    if (m.role === 'user') return [{ role: 'user', text: m.text }];
+  const kept = start === -1 ? [] : recent.slice(start);
+  return kept.flatMap((m, i): Turn[] => {
+    if (m.role === 'user') {
+      const unanswered = kept[i + 1]?.role === 'user';
+      return [
+        { role: 'user', text: m.text },
+        ...(unanswered ? [{ role: 'assistant' as const, text: NO_REPLY }] : []),
+      ];
+    }
     if (m.role === 'assistant') {
       return [
         {

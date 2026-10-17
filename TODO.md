@@ -77,9 +77,12 @@ PawpawBI targets Windows. Before shipping Linux builds:
 - **Unsaved edits in the report's file editor are lost** if the project is closed first.
 - **An exported report doesn't work opened straight from disk** (browsers block reading its data
   files from `file://`); it needs a web server or host.
-- **The assistant hasn't been tried against the real APIs with a working key.** Both APIs were
-  reached and rejected an invalid key as expected, and a full reply with tools was checked against
-  a local stand-in that streams in Anthropic's format. Try a real conversation with each provider.
+- **ChatGPT (gpt-5) is slow on simple questions:** 5 to 40 seconds per reply, against 2 to 9 for
+  Claude Haiku, because gpt-5 reasons before answering. Consider defaulting to a faster OpenAI
+  model, or setting a lower reasoning effort.
+- **The assistant names screens and buttons from its general instructions**, e.g. "add a dataset"
+  rather than Build visuals → Datasets → New dataset. The phase 4 guides should give it the exact
+  names.
 - **The assistant doesn't show what a reply cost**, though usage is reported by the adapters.
 - **Local models through Ollama are much less capable** than Claude or ChatGPT, and thinking is
   turned off for speed. The context window is fixed at 16,384 tokens, so long conversations with
