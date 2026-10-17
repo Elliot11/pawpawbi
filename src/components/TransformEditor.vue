@@ -68,8 +68,10 @@ async function apply() {
       sql.value,
     );
     savedSql.value = sql.value;
-    notice.value = `Applied. ${props.table} now has ${rows.toLocaleString()} rows from this query.`;
     emit('changed');
+    // Show the result of exactly what was applied, even if it wasn't previewed first.
+    preview.value = await window.api.data.previewTransform(sql.value);
+    notice.value = `Applied. ${props.table} now has ${rows.toLocaleString()} rows from this query.`;
   } catch (err) {
     error.value = errorMessage(err);
   } finally {
