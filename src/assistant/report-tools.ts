@@ -114,7 +114,7 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
         properties: {
           title: {
             type: 'string',
-            description: 'Shown in the navigation, at most 80 characters.',
+            description: "Shown in the report's menu, at most 80 characters.",
           },
           html: {
             type: 'string',
@@ -157,7 +157,7 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
     {
       name: 'rename_page',
       description:
-        "Changes a page's title in the navigation. Its heading is part of its HTML: change that with edit_report_file.",
+        "Changes a page's title in the report's menu. Its heading is part of its HTML: change that with edit_report_file.",
       parameters: {
         type: 'object',
         properties: { page_id: { type: 'string' }, title: { type: 'string' } },

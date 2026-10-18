@@ -4,7 +4,7 @@
 //
 //   report/index.html            the landing page
 //   report/report.json           { "title": "...", "pages": [{ "id": "<guid>", "title": "..." }] }
-//   report/pages/<guid>.html     one file per page
+//   report/pages/<guid>.html     one file per page, without the menu (Publish adds it)
 //   report/assets/report.css     the site's styles
 //   report/assets/charts.js      the chart library
 //   report/data/<dataset>.json   datasets: query results, written by the app (report.ts)
@@ -18,6 +18,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readJson, removePath, writeJson } from './fs-json';
 import { GUID, NAME } from './shared/ids';
+import { withMenu } from './shared/site-menu';
 import type { ReportFile, ReportPage } from './shared/types';
 
 const MAX_TITLE = 80;
@@ -159,6 +160,16 @@ async function findPage(filesDir: string, id: string) {
 }
 
 /** Renames a page in report.json. The page's own heading is part of its HTML. */
+/** Changes the report's title, shown at the start of its menu and on its landing page. */
+export async function renameReport(filesDir: string, title: string) {
+  const clean = cleanTitle(title);
+  if (!clean) throw new Error('Enter a title for the report.');
+  await writeReport(filesDir, {
+    ...(await readReport(filesDir)),
+    title: clean,
+  });
+}
+
 export async function renamePage(filesDir: string, id: string, title: string) {
   const clean = cleanTitle(title);
   if (!clean) throw new Error('Enter a title for the page.');
@@ -253,6 +264,14 @@ export async function exportSite(filesDir: string, destination: string) {
     recursive: true,
     filter: (source) => !path.basename(source).startsWith('.'),
   });
+  // Each page gets the menu the app shows above it.
+  const report = await readReport(filesDir);
+  for (const page of report.pages) {
+    const file = path.join(destination, 'pages', `${page.id}.html`);
+    const html = await fs.readFile(file, 'utf8').catch(() => null);
+    if (html !== null)
+      await fs.writeFile(file, withMenu(html, report, page.id));
+  }
 }
 
 // ---------------------------------------------------------------------------------------------

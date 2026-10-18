@@ -342,6 +342,8 @@ export interface ReportApi {
   /** Adds the default report to a project that has none. */
   createSite: () => Promise<ReportFile>;
   createPage: (title: string) => Promise<ReportPage>;
+  /** Changes the report's title (the start of its menu). */
+  rename: (title: string) => Promise<void>;
   renamePage: (id: string, title: string) => Promise<void>;
   deletePage: (id: string) => Promise<void>;
   /** A page, stylesheet or script by its path in the site, e.g. "pages/<id>.html". */

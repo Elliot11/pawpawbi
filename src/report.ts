@@ -36,6 +36,7 @@ import {
   readReport,
   readSiteFile,
   renamePage,
+  renameReport,
   sitePath,
   writeDatasets,
   writeSiteFile,
@@ -43,6 +44,7 @@ import {
 } from './report-site';
 import { SITE_TEMPLATES } from './report-templates';
 import { GUID, NAME, NAME_RULE } from './shared/ids';
+import { withoutOldMenu } from './shared/site-menu';
 import type { Dataset, ReportFile } from './shared/types';
 import { REPORT_ORIGIN, REPORT_SCHEME } from './shared/types';
 
@@ -93,11 +95,15 @@ async function serveSite(request: Request): Promise<Response> {
   if (url.host !== 'site' || !hasOpenProject()) return notFound();
   const file = sitePath(openProject().filesDir, url.pathname);
   if (!file) return notFound();
-  let body;
+  let body: Uint8Array<ArrayBuffer> | string;
   try {
     body = await fs.readFile(file);
   } catch {
     return notFound();
+  }
+  // The app draws the menu above the page, so a page's own old one isn't shown.
+  if (/^\/pages\/[^/]+\.html$/.test(url.pathname)) {
+    body = withoutOldMenu(new TextDecoder().decode(body));
   }
   return new Response(body, {
     headers: {
@@ -297,6 +303,9 @@ export function registerReportHandlers() {
     change('Adding a page', () =>
       createPage(filesDir(), title, SITE_TEMPLATES),
     ),
+  );
+  ipcMain.handle('report:rename', (_event, title: string) =>
+    change('Renaming the report', () => renameReport(filesDir(), title)),
   );
   ipcMain.handle('report:rename-page', (_event, id: string, title: string) =>
     change('Renaming a page', () => renamePage(filesDir(), id, title)),

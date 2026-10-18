@@ -158,7 +158,7 @@ It can change the report (`report-tools.ts`):
 | ------------------- | -------------------------------------------------------------------- |
 | `create_report`     | Adds the default report to a project that has none                   |
 | `create_page`       | Adds a page, from the template or with given HTML                    |
-| `rename_page`       | Changes a page's title in the navigation                             |
+| `rename_page`       | Changes a page's title in the report's menu                          |
 | `delete_page`       | Deletes a page                                                       |
 | `write_report_file` | Writes a whole page, stylesheet or script                            |
 | `edit_report_file`  | Replaces exact text in a file; the text must appear exactly once     |

@@ -77,6 +77,7 @@ const report: ReportApi = {
   get: () => ipcRenderer.invoke('report:get'),
   createSite: () => ipcRenderer.invoke('report:create-site'),
   createPage: (title) => ipcRenderer.invoke('report:create-page', title),
+  rename: (title) => ipcRenderer.invoke('report:rename', title),
   renamePage: (id, title) =>
     ipcRenderer.invoke('report:rename-page', id, title),
   deletePage: (id) => ipcRenderer.invoke('report:delete-page', id),

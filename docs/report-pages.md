@@ -47,7 +47,9 @@ ORDER BY 1, 2
 
 ## Pages
 
-Each page is `pages/<guid>.html` and is listed in `report.json`, which the navigation reads. A
+Each page is `pages/<guid>.html` and is listed in `report.json`. Pages don't contain the
+report's menu (its title and a link to every page): the app shows it above the page, and
+Publish writes the same menu into each page. Don't add navigation to a page. A
 new page starts empty (a heading, a "Nothing on this page yet" section to remove, and an empty
 `grid`). A finished page looks like this:
 
@@ -62,7 +64,6 @@ new page starts empty (a heading, a "Nothing on this page yet" section to remove
     <script src="../assets/charts.js"></script>
   </head>
   <body>
-    <header id="nav" class="site-header"></header>
     <main class="page">
       <h1>Revenue</h1>
       <div class="stats">
@@ -74,7 +75,6 @@ new page starts empty (a heading, a "Nothing on this page yet" section to remove
       </div>
     </main>
     <script>
-      pawpaw.nav('#nav');
       pawpaw.stat('#total', 'totals', {
         label: 'Revenue',
         value: 'revenue',
@@ -98,8 +98,8 @@ new page starts empty (a heading, a "Nothing on this page yet" section to remove
 
 Layout classes from `assets/report.css`: `page` (the content column), `stats` (a row of headline
 numbers), `grid` (charts, two columns on wide screens, one on phones), `wide` (a chart across
-the whole grid) and `empty-state` (the new page's placeholder). `pawpaw.nav(target)` fills in the
-report's title and links to every page.
+the whole grid) and `empty-state` (the new page's placeholder). `pawpaw.nav(target)` lists the
+pages, for the landing page (`index.html`); pages don't use it.
 
 Each chart function takes a **target** (a CSS selector or element), the **data** and
 **options**. It turns the target into a card, shows "Loading…", then the chart, or a short
@@ -200,7 +200,8 @@ Don't reorder them or add more; fold extra series into "Other" instead.
 
 ## Hosting
 
-**Publish** refreshes every dataset and copies the folder into an empty folder you choose. Upload
+**Publish** refreshes every dataset, copies the folder into an empty folder you choose and writes
+the menu into every page. Upload
 its contents as they are, e.g. `aws s3 sync <folder> s3://<bucket>/<prefix>` and, behind
 CloudFront, invalidate the old files. The hosted report is a snapshot: publish again to update it.
 Anyone who can reach the site can read its data files, so put private reports behind access

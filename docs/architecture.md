@@ -221,8 +221,9 @@ Python.
   draggable table canvas: cards for loaded tables (orange) and transformed tables (purple),
   dependency arrows on its SVG layer, a legend, and Refresh all data. It opens
   `TransformEditor.vue` for SQL: a loaded table's in-place transform, or a new or existing
-  transformed table. **Build visuals** is `ReportCanvas.vue`: a tab per report page, the page shown in a
-  sandboxed frame from `pawpaw-report://site/<path>`, and a side panel to edit the site's files
+  transformed table. **Build visuals** is `ReportCanvas.vue`: the report's menu (`report/ReportMenu.vue`,
+  the same markup and styles Publish writes into pages, from `shared/site-menu.ts`; double-click
+  to rename, + to add a page), the page shown in a sandboxed frame from `pawpaw-report://site/<path>`, and a side panel to edit the site's files
   or its datasets (`report/DatasetsPanel.vue`). Publish copies the site to a folder. A project
   without a report is offered one. The report itself is plain HTML, CSS and JavaScript
   ([report-pages.md](report-pages.md)); no Vue.

@@ -332,7 +332,8 @@ The report is a static website of plain HTML, CSS and JavaScript. It depends on 
 ```
 
 - `id`: the page's GUID, a lowercase version 4 UUID, generated when the page is created and never changed. The page's file is `pages/<id>.html`.
-- `title`: shown in the navigation, at most 80 characters (as is the report's `title`).
+- `title`: shown in the report's menu, at most 80 characters (as is the report's `title`, which starts the menu).
+- Page files don't contain the menu. The app shows it above each page and Publish writes it into each page's `<body>`, with its styles in the `<head>` (`src/shared/site-menu.ts`). Pages from older projects have an empty `<header id="nav">` and a `pawpaw.nav('#nav')` call; the app and Publish leave those out.
 - Pages without a valid GUID are ignored, as is an HTML file in `pages/` that isn't listed.
 - Pages, stylesheets and scripts written by the app or the assistant are at most 2 MB each.
 

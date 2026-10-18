@@ -18,6 +18,7 @@ import { REPORT_ORIGIN } from '../shared/types';
 import { pageToShow, projectChanged } from '../ui-signals';
 import CodeEditor from './CodeEditor.vue';
 import DatasetsPanel from './report/DatasetsPanel.vue';
+import ReportMenu from './report/ReportMenu.vue';
 
 const report = ref<ReportFile | null>(null);
 const loaded = ref(false);
@@ -139,27 +140,25 @@ async function newPage() {
   }
 }
 
-const renamingId = ref<string | null>(null);
-const renameText = ref('');
+const menu = ref<InstanceType<typeof ReportMenu> | null>(null);
 
-function startRename(id: string, title: string) {
-  renamingId.value = id;
-  renameText.value = title;
-}
-
-async function finishRename() {
-  const id = renamingId.value;
-  if (!id) return;
-  renamingId.value = null;
-  const page = report.value?.pages.find((p) => p.id === id);
-  const title = renameText.value.trim();
-  if (!page || !title || title === page.title) return;
+async function renamePage(id: string, title: string) {
+  if (title === report.value?.pages.find((p) => p.id === id)?.title) return;
   try {
     await window.api.report.renamePage(id, title);
     await load();
-    show(currentId.value);
   } catch (e) {
     error.value = `Couldn't rename the page. ${errorMessage(e)}`;
+  }
+}
+
+async function renameReport(title: string) {
+  if (title === report.value?.title) return;
+  try {
+    await window.api.report.rename(title);
+    await load();
+  } catch (e) {
+    error.value = `Couldn't rename the report. ${errorMessage(e)}`;
   }
 }
 
@@ -331,51 +330,24 @@ function onEditorKey(event: KeyboardEvent) {
 
     <template v-else-if="report">
       <header class="pagebar">
-        <div class="tabs" role="tablist" aria-label="Report pages">
-          <template v-for="page in report.pages" :key="page.id">
-            <input
-              v-if="renamingId === page.id"
-              v-model="renameText"
-              class="tab rename"
-              aria-label="Page title"
-              maxlength="80"
-              @keydown.enter="finishRename"
-              @keydown.escape="renamingId = null"
-              @blur="finishRename"
-              @vue:mounted="({ el }: { el: HTMLInputElement }) => el.select()"
-            />
-            <div v-else class="tab" :class="{ active: page.id === currentId }">
-              <button
-                class="tab-label"
-                role="tab"
-                :aria-selected="page.id === currentId"
-                title="Double-click to rename"
-                @click="select(page.id)"
-                @dblclick="startRename(page.id, page.title)"
-              >
-                {{ page.title }}
-              </button>
-              <button
-                v-if="page.id === currentId"
-                class="tab-delete"
-                :aria-label="`Delete ${page.title}`"
-                title="Delete page"
-                @click="deletePage(page.id, page.title)"
-              >
-                ×
-              </button>
-            </div>
-          </template>
+        <div v-if="current" class="page-actions">
           <button
-            class="add"
-            title="New page"
-            aria-label="New page"
-            :disabled="!!busy"
-            @click="newPage"
+            class="btn-ghost"
+            @click="menu?.startRename(current.id, current.title)"
           >
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 5v14M5 12h14" />
+              <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
             </svg>
+            Rename page
+          </button>
+          <button
+            class="btn-ghost delete"
+            @click="deletePage(current.id, current.title)"
+          >
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+            </svg>
+            Delete page
           </button>
         </div>
 
@@ -431,23 +403,35 @@ function onEditorKey(event: KeyboardEvent) {
       </header>
 
       <div class="stage">
-        <!-- The site's pages are HTML and JavaScript from the project. sandbox without
+        <div class="site">
+          <ReportMenu
+            ref="menu"
+            :report="report"
+            :current-id="currentId"
+            :busy="!!busy"
+            @select="select"
+            @add="newPage"
+            @rename-page="renamePage"
+            @rename-report="renameReport"
+          />
+          <!-- The site's pages are HTML and JavaScript from the project. sandbox without
              allow-same-origin gives them an opaque origin: no access to the app, window.api,
              storage or cookies. -->
-        <iframe
-          v-if="frameSrc"
-          :key="frameSrc"
-          class="page"
-          :src="frameSrc"
-          sandbox="allow-scripts"
-          referrerpolicy="no-referrer"
-          :title="current?.title ?? 'Report page'"
-        ></iframe>
-        <div v-else class="no-pages">
-          <p>This report has no pages.</p>
-          <button class="btn-primary" :disabled="!!busy" @click="newPage">
-            Add a page
-          </button>
+          <iframe
+            v-if="frameSrc"
+            :key="frameSrc"
+            class="page"
+            :src="frameSrc"
+            sandbox="allow-scripts"
+            referrerpolicy="no-referrer"
+            :title="current?.title ?? 'Report page'"
+          ></iframe>
+          <div v-else class="no-pages">
+            <p>This report has no pages.</p>
+            <button class="btn-primary" :disabled="!!busy" @click="newPage">
+              Add a page
+            </button>
+          </div>
         </div>
 
         <aside v-if="panel" class="side">
@@ -584,94 +568,16 @@ function onEditorKey(event: KeyboardEvent) {
   background: var(--surface);
 }
 
-.tabs {
+.page-actions {
   display: flex;
   flex: 1;
-  align-items: center;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
-  overflow-x: auto;
 }
 
-.tab {
-  display: flex;
-  flex: none;
-  align-items: center;
-  max-width: 240px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-}
-
-.tab:hover {
-  background: var(--surface-muted);
-}
-
-.tab.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.tab-label {
-  overflow: hidden;
-  padding: 6px 12px;
-  border: none;
-  background: none;
-  color: var(--ink-muted);
-  font-weight: 600;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.tab.active .tab-label,
-.tab:hover .tab-label {
-  color: var(--ink);
-}
-
-.tab.active .tab-label {
-  padding-right: 4px;
-}
-
-.tab-delete {
-  margin-right: 4px;
-  padding: 0 6px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--ink-muted);
-  font-size: 16px;
-  line-height: 1.4;
-}
-
-.tab-delete:hover {
-  background: var(--danger-soft);
+.page-actions .delete:hover:not(:disabled) {
+  border-color: var(--danger);
   color: var(--danger);
-}
-
-.tab.rename {
-  width: 180px;
-  padding: 6px 12px;
-  border-color: var(--accent);
-  background: var(--surface);
-  color: var(--ink);
-  font: inherit;
-  font-weight: 600;
-}
-
-.add {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--ink-muted);
-}
-
-.add:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 .actions {
@@ -697,6 +603,14 @@ function onEditorKey(event: KeyboardEvent) {
   display: flex;
   flex: 1;
   min-height: 0;
+}
+
+/* The page as published: the menu, then the page's own document. */
+.site {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .page {

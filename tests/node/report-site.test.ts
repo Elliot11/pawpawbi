@@ -7,6 +7,12 @@ import path from 'node:path';
 import { afterEach, beforeEach, test } from 'node:test';
 import { GUID } from '../../src/shared/ids.ts';
 import {
+  MENU_CSS,
+  menuHtml,
+  withMenu,
+  withoutOldMenu,
+} from '../../src/shared/site-menu.ts';
+import {
   MAX_FILE_BYTES,
   cleanDatasets,
   cleanReport,
@@ -19,6 +25,7 @@ import {
   readReport,
   readSiteFile,
   renamePage,
+  renameReport,
   sitePath,
   writeSiteFile,
   type SiteTemplates,
@@ -200,4 +207,88 @@ test('datasets.json keeps only valid names and fields', () => {
     datasetFile(dir, 'sales'),
     path.join(dir, 'report', 'data', 'sales.json'),
   );
+});
+
+test('the menu lists every page, marks the current one and escapes titles', () => {
+  const report = {
+    title: 'Sales & <Co>',
+    pages: [
+      { id: 'a', title: 'Overview' },
+      { id: 'b', title: '"Q1"' },
+    ],
+  };
+  assert.equal(
+    menuHtml(report, 'b'),
+    '<header class="pp-menu"><a class="pp-menu-title" href="../index.html">Sales &amp; &lt;Co&gt;</a>' +
+      '<ul class="pp-menu-list"><li><a class="pp-menu-link" href="a.html">Overview</a></li>' +
+      '<li><a class="pp-menu-link" href="b.html" aria-current="page">&quot;Q1&quot;</a></li></ul></header>',
+  );
+});
+
+test('pages lose the menu they used to draw for themselves', () => {
+  const old = `<body>
+    <header id="nav" class="site-header"></header>
+    <main class="page"><h1>Hi</h1></main>
+    <script>
+      pawpaw.nav('#nav');
+      pawpaw.barChart('#a', 'sales');
+    </script>
+  </body>`;
+  const page = withoutOldMenu(old);
+  assert.doesNotMatch(page, /id="nav"|pawpaw\.nav/);
+  assert.match(page, /<main class="page">[\s\S]*pawpaw\.barChart/);
+  // The landing page's list of pages is left alone.
+  assert.equal(
+    withoutOldMenu("pawpaw.nav('#pages');"),
+    "pawpaw.nav('#pages');",
+  );
+});
+
+test('publishing writes the menu and its styles into each page', async () => {
+  const report = await createSite(dir, 'Report', {
+    ...TEMPLATES,
+    page: '<html><head><title>{{title}}</title></head><body><h1>{{title}}</h1></body></html>',
+  });
+  const second = await createPage(dir, 'Second', {
+    ...TEMPLATES,
+    page: '<html><head></head><body class="x"><h1>{{title}}</h1></body></html>',
+  });
+  const out = path.join(dir, 'out');
+  await exportSite(dir, out);
+
+  const first = await fs.readFile(
+    path.join(out, 'pages', `${report.pages[0].id}.html`),
+    'utf8',
+  );
+  assert.ok(first.includes(`<style>\n${MENU_CSS}\n</style>\n</head>`));
+  assert.match(first, /<body>\n<header class="pp-menu">.*<\/header><h1>/);
+  assert.match(
+    first,
+    new RegExp(`href="${report.pages[0].id}.html" aria-current="page"`),
+  );
+
+  const other = await fs.readFile(
+    path.join(out, 'pages', `${second.id}.html`),
+    'utf8',
+  );
+  assert.match(other, /<body class="x">\n<header class="pp-menu">/);
+  assert.match(
+    other,
+    new RegExp(`href="${second.id}.html" aria-current="page">Second`),
+  );
+  // The project's own page files keep no menu.
+  const own = await readSiteFile(dir, `pages/${second.id}.html`);
+  assert.doesNotMatch(own, /pp-menu/);
+  // Without a head or body, the menu and its styles go first.
+  assert.match(
+    withMenu('<p>no head or body</p>', await readReport(dir), second.id),
+    /^<header class="pp-menu">.*<\/header><style>[\s\S]*<\/style>\n<p>no head or body<\/p>$/,
+  );
+});
+
+test('the report can be renamed', async () => {
+  await createSite(dir, 'Report', TEMPLATES);
+  await renameReport(dir, '  Sales   overview ');
+  assert.equal((await readReport(dir)).title, 'Sales overview');
+  await assert.rejects(renameReport(dir, '  '), /Enter a title/);
 });
