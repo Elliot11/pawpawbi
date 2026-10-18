@@ -5,16 +5,19 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  shell,
   type IpcMainInvokeEvent,
 } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { deleteProjectSecrets } from './credentials';
 import { readJson, writeJson } from './fs-json';
 import { InvalidProjectFileError } from './pawpaw-archive';
 import { work } from './background';
 import { stopPython } from './python';
 import { createSite } from './report-site';
 import { SITE_TEMPLATES } from './report-templates';
+import { MAX_PROJECT_NAME } from './shared/ids';
 import type {
   ChatMessage,
   ChatState,
@@ -28,6 +31,7 @@ import {
   markWorkspaceDirty,
   openWorkspace,
   removeWorkspace,
+  renameWorkspace,
   saveWorkspace,
   type Workspace,
   type WorkspaceOptions,
@@ -269,6 +273,55 @@ async function closeOpenProject(win: BrowserWindow): Promise<boolean> {
   return true;
 }
 
+/** Renames the open project. The new name is saved with the project, like any change. */
+async function renameProject(name: unknown): Promise<Project> {
+  const s = requireSession();
+  const clean = typeof name === 'string' ? name.trim() : '';
+  if (!clean) throw new Error('Enter a name for the project.');
+  if (clean.length > MAX_PROJECT_NAME) {
+    throw new Error(
+      `Use a shorter name: at most ${MAX_PROJECT_NAME} characters.`,
+    );
+  }
+  if (clean === s.manifest.name) return toProject(s);
+  await renameWorkspace(s, clean);
+  await writeRecents(
+    (await readRecents()).map((r) =>
+      r.path === s.filePath ? { ...r, name: clean } : r,
+    ),
+  );
+  await markProjectChanged();
+  notifyChanged();
+  return toProject(s);
+}
+
+/**
+ * Deletes the open project: its file goes to the Recycle Bin (if it was ever saved), it leaves
+ * the recent list, its data sources' saved credentials are deleted and it's closed without
+ * saving. False if the user chose to keep working while background work finishes.
+ */
+async function deleteProject(win: BrowserWindow): Promise<boolean> {
+  const s = requireSession();
+  if (!(await finishBackgroundWork(win, s.manifest.id))) return false;
+  if (session !== s) return true;
+  try {
+    await fs.access(s.filePath);
+    await shell.trashItem(s.filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw new Error(
+        `Couldn't move the project file to the Recycle Bin. Close any program using it and try again. (${(error as Error).message})`,
+      );
+    }
+  }
+  await removeRecent(s.filePath);
+  await deleteProjectSecrets(s.manifest.id);
+  session = null;
+  await removeWorkspace(s);
+  notifyChanged();
+  return true;
+}
+
 export const hasOpenProject = () => session !== null;
 
 /** The open project's ID, name and working folder, for other modules that use its files. */
@@ -397,6 +450,10 @@ export function registerProjectHandlers() {
 
   ipcMain.handle('projects:save', () => saveProject());
   ipcMain.handle('projects:close', (event) => closeProject(windowFor(event)));
+  ipcMain.handle('projects:rename', (_event, name: string) =>
+    tracked('Renaming the project', () => renameProject(name)),
+  );
+  ipcMain.handle('projects:delete', (event) => deleteProject(windowFor(event)));
   ipcMain.handle('projects:load-chat', () => loadChat());
   ipcMain.handle(
     'projects:append-chat',

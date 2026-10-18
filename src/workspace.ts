@@ -234,6 +234,12 @@ export async function createWorkspace(
   return ws;
 }
 
+/** Renames the project (its manifest's name; the file keeps its own name). */
+export async function renameWorkspace(ws: Workspace, name: string) {
+  ws.manifest = { ...ws.manifest, name };
+  await writeJson(path.join(ws.filesDir, 'manifest.json'), ws.manifest);
+}
+
 /** Records that the project has unsaved changes, so a crash will offer them back. */
 export async function markWorkspaceDirty(ws: Workspace): Promise<boolean> {
   if (ws.dirty) return false;

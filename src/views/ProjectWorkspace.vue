@@ -7,6 +7,7 @@ import WorkflowSteps from '../components/WorkflowSteps.vue';
 import GetData from '../components/data/GetData.vue';
 import ModelData from '../components/ModelData.vue';
 import ReportCanvas from '../components/ReportCanvas.vue';
+import EditProject from './EditProject.vue';
 
 const props = defineProps<{ project: Project }>();
 const emit = defineEmits<{ close: [] }>();
@@ -15,7 +16,11 @@ const emit = defineEmits<{ close: [] }>();
 // from the project and advances it; the user can also jump to a step from the top bar.
 const stage = ref<WorkflowStage>('data');
 
+// The Edit project screen, shown instead of the chat and the step's screen.
+const editing = ref(false);
+
 async function goToStage(next: WorkflowStage) {
+  editing.value = false;
   if (next === stage.value) return;
   stage.value = next;
   await window.api.projects.setStage(next);
@@ -67,6 +72,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       </button>
       <span class="divider" aria-hidden="true"></span>
       <h1 :title="project.path">{{ project.name }}</h1>
+      <button
+        class="edit"
+        :class="{ active: editing }"
+        title="Edit project"
+        aria-label="Edit project"
+        @click="editing = true"
+      >
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+      </button>
 
       <div class="steps-slot">
         <WorkflowSteps :stage="stage" @select="goToStage" />
@@ -100,7 +117,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       </div>
     </header>
 
-    <div class="body">
+    <div v-if="editing" class="body edit-body">
+      <EditProject
+        :project="project"
+        @back="editing = false"
+        @deleted="emit('close')"
+      />
+    </div>
+    <div v-show="!editing" class="body">
       <ChatPanel v-model:stage="stage" />
       <section class="main">
         <!-- The screen follows the workflow step. Kept alive so switching steps doesn't lose a
@@ -156,6 +180,27 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 .back .icon {
   width: 18px;
   height: 18px;
+}
+
+.edit {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-left: -6px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink-faint);
+}
+
+.edit:hover,
+.edit.active {
+  background: var(--surface-muted);
+  color: var(--ink);
 }
 
 .divider {
@@ -219,6 +264,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   display: flex;
   flex: 1;
   min-height: 0;
+}
+
+.edit-body {
+  overflow-y: auto;
+  background: var(--bg);
 }
 
 .main {

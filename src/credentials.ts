@@ -63,3 +63,11 @@ export async function writeSecrets(
 export async function deleteSecrets(projectId: string, sourceId: string) {
   await removePath(credentialsPath(projectId, sourceId));
 }
+
+/** Deletes every saved credential of a project, when the project is deleted. */
+export async function deleteProjectSecrets(projectId: string) {
+  if (!SAFE_ID.test(projectId)) throw new Error('Invalid ID.');
+  await removePath(
+    path.join(app.getPath('userData'), 'credentials', projectId),
+  );
+}

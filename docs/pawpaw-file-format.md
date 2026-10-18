@@ -403,6 +403,8 @@ PawpawBI never edits the inside of a ZIP in place.
 - **Saving:** update `modifiedAt` and `modifiedWith`, zip the working folder into a temporary file next to the destination, then replace the original with it in one step. If anything fails partway, the original file is left untouched.
 - **Crash recovery:** the working folder survives a crash. When a project is opened and its working folder contains unsaved changes newer than the file, PawpawBI offers to recover them.
 - **Closing:** the working folder is deleted once the project is saved or the user discards their changes.
+- **Renaming** (Edit project) changes `name` in `manifest.json`, saved with the next save; the file keeps its own name.
+- **Deleting** (Edit project) moves the file to the Recycle Bin, removes it from the recent list, deletes the data sources' saved credentials on this computer and the working folder, without saving.
 
 ## Versioning
 

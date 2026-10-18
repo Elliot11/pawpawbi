@@ -19,6 +19,8 @@ const projects: ProjectsApi = {
   openRecent: (path) => ipcRenderer.invoke('projects:open-recent', path),
   save: () => ipcRenderer.invoke('projects:save'),
   close: () => ipcRenderer.invoke('projects:close'),
+  rename: (name) => ipcRenderer.invoke('projects:rename', name),
+  delete: () => ipcRenderer.invoke('projects:delete'),
   loadChat: () => ipcRenderer.invoke('projects:load-chat'),
   appendChat: (messages, stage) =>
     ipcRenderer.invoke('projects:append-chat', messages, stage),

@@ -283,6 +283,13 @@ export interface ProjectsApi {
   save: () => Promise<Project>;
   /** Closes the open project, asking to save unsaved changes. Resolves false if cancelled. */
   close: () => Promise<boolean>;
+  /** Renames the open project (saved with it). */
+  rename: (name: string) => Promise<Project>;
+  /**
+   * Deletes the open project: its file goes to the Recycle Bin, and it's closed without saving.
+   * Resolves false if the user chose to keep working while background work finishes.
+   */
+  delete: () => Promise<boolean>;
   loadChat: () => Promise<ChatState>;
   appendChat: (messages: ChatMessage[], stage: WorkflowStage) => Promise<void>;
   /** Moves the workflow to a step (saved in chat/session.json). */

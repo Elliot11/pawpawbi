@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { registerAssistantHandlers } from './assistant';
@@ -96,6 +96,8 @@ app.whenReady().then(async () => {
   registerReportHandlers();
   registerAssistantHandlers();
 
+  // No File/Edit/View/Window menu bar: everything is in the app's own screens.
+  Menu.setApplicationMenu(null);
   createWindow();
 
   // On OS X it's common to re-create a window in the app when the
