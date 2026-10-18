@@ -28,8 +28,7 @@ const currentId = ref<string | null>(null);
 const frameSrc = ref('');
 let reloads = 0;
 const error = ref('');
-const notice = ref('');
-const busy = ref<'' | 'create' | 'page' | 'refresh' | 'export'>('');
+const busy = ref<'' | 'create' | 'page' | 'refresh'>('');
 const panel = ref<'' | 'html' | 'datasets'>('');
 
 const current = computed(
@@ -180,7 +179,7 @@ async function deletePage(id: string, title: string) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Refresh and export
+// Refresh
 
 async function refresh() {
   busy.value = 'refresh';
@@ -195,22 +194,6 @@ async function refresh() {
     show(currentId.value);
   } catch (e) {
     error.value = `Couldn't update the report's data. ${errorMessage(e)}`;
-  } finally {
-    busy.value = '';
-  }
-}
-
-async function exportSite() {
-  busy.value = 'export';
-  error.value = '';
-  notice.value = '';
-  try {
-    const folder = await window.api.report.exportSite();
-    if (folder) {
-      notice.value = `Published to ${folder}. Upload the folder's contents to your web host, such as an S3 bucket.`;
-    }
-  } catch (e) {
-    error.value = `Couldn't publish the report. ${errorMessage(e)}`;
   } finally {
     busy.value = '';
   }
@@ -304,12 +287,6 @@ function onEditorKey(event: KeyboardEvent) {
 <template>
   <main class="report">
     <p v-if="error" class="banner box-error" role="alert">{{ error }}</p>
-    <p v-else-if="notice" class="banner box-notice" role="status">
-      {{ notice }}
-      <button class="dismiss" aria-label="Dismiss" @click="notice = ''">
-        ×
-      </button>
-    </p>
 
     <div v-if="loaded && !report" class="empty">
       <div class="empty-icon" aria-hidden="true">
@@ -387,17 +364,6 @@ function onEditorKey(event: KeyboardEvent) {
               <path d="M8 7l-5 5 5 5M16 7l5 5-5 5" />
             </svg>
             Edit HTML
-          </button>
-          <button
-            class="btn-ghost"
-            :disabled="!!busy"
-            title="Save the report as a folder of files to host on a website"
-            @click="exportSite"
-          >
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 15V3M7 8l5-5 5 5M5 21h14" />
-            </svg>
-            {{ busy === 'export' ? 'Publishing…' : 'Publish' }}
           </button>
         </div>
       </header>
@@ -508,15 +474,6 @@ function onEditorKey(event: KeyboardEvent) {
   align-items: center;
   gap: 12px;
   margin: 12px 16px 0;
-}
-
-.dismiss {
-  margin-left: auto;
-  border: none;
-  background: none;
-  color: inherit;
-  font-size: 18px;
-  line-height: 1;
 }
 
 /* Empty states */

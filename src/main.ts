@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
+import { registerAccountHandlers } from './account';
 import { registerAssistantHandlers } from './assistant';
 import { work } from './background';
 import { registerDataHandlers } from './data';
@@ -9,6 +10,7 @@ import {
   hasOpenProject,
   registerProjectHandlers,
 } from './projects';
+import { registerPublishHandlers } from './published';
 import { registerPythonHandlers } from './python';
 import {
   guardFrames,
@@ -95,6 +97,8 @@ app.whenReady().then(async () => {
   registerDataHandlers();
   registerReportHandlers();
   registerAssistantHandlers();
+  registerAccountHandlers();
+  registerPublishHandlers();
 
   // No File/Edit/View/Window menu bar: everything is in the app's own screens.
   Menu.setApplicationMenu(null);

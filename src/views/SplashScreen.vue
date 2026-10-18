@@ -4,7 +4,7 @@ import { errorMessage } from '../errors';
 import type { OpenResult, Project, RecentProject } from '../shared/types';
 import { timeAgo } from '../time';
 
-const emit = defineEmits<{ open: [project: Project] }>();
+const emit = defineEmits<{ open: [project: Project]; published: [] }>();
 
 const version = ref('');
 const recents = ref<RecentProject[]>([]);
@@ -88,6 +88,17 @@ const openRecent = (recent: RecentProject) =>
           <span class="action-text">
             <strong>Open project</strong>
             <small>Browse for a .pawpaw file</small>
+          </span>
+        </button>
+        <button class="action" :disabled="busy" @click="emit('published')">
+          <span class="action-icon" aria-hidden="true">
+            <svg class="icon" viewBox="0 0 24 24">
+              <path d="M12 15V3M7 8l5-5 5 5M5 21h14" />
+            </svg>
+          </span>
+          <span class="action-text">
+            <strong>Published projects</strong>
+            <small>Refresh data on published reports</small>
           </span>
         </button>
       </div>

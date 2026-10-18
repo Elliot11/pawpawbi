@@ -20,5 +20,7 @@ interface Window {
     python: import('./shared/types').PythonApi;
     report: import('./shared/types').ReportApi;
     assistant: import('./shared/types').AssistantApi;
+    account: import('./shared/types').AccountApi;
+    publish: import('./shared/types').PublishApi;
   };
 }

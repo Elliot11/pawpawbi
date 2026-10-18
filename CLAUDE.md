@@ -45,7 +45,8 @@ obvious from the code. Keep this file current when a convention changes.
   Electron's "Error invoking remote method…" prefix.
 - **Secrets never go in the project.** Connector fields marked `secret=True` are stored with
   `src/credentials.ts` (OS encryption), never in `sources/*.json` or anywhere in the `.pawpaw` file.
-  The assistant's API keys are stored the same way by `src/assistant/settings.ts`.
+  The assistant's API keys are stored the same way by `src/assistant/settings.ts`, and the
+  PawpawBI account's sign-in token by `src/account.ts`.
 - **All reading of loaded data goes through `python/sidecar/engine.py`**: one locked-down,
   in-memory DuckDB over the Parquet files (table info, previews, transforms, report datasets;
   later relationships). Don't read tables any other way, and don't loosen `engine.connect()`,

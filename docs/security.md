@@ -177,6 +177,25 @@ files only inside `ctx.change` with targets covering everything it touches (so i
 **Rules:** never log a job's settings or include secrets in error messages. Any new secret
 must be a `secret=True` field, not a regular one.
 
+## Publishing to PawpawBI
+
+- The account's sign-in token is stored encrypted with `safeStorage` (`account.bin` in userData,
+  `src/account.ts`), never in a project, and sent only to the PawpawBI server, over HTTPS.
+  Passwords aren't stored at all: they're sent once, to sign in.
+- Google and Microsoft sign-in happens in the user's browser, never in the app's windows. The
+  server sends the browser back to a one-off `http://127.0.0.1:<port>/callback` with a code,
+  checked against a random `state`, and swapped for a token (RFC 8252,
+  [pawpaw-server-api.md](pawpaw-server-api.md)).
+- Publishing uploads the report site (pages, styles, scripts, `data/*.json`): never the
+  project's tables, sources or credentials. Anyone with a published report's link can read its
+  data files, as for any hosted report.
+- `published.json` comes from the project file, so it's untrusted: report IDs are checked before
+  use in a URL and only `https:` links are shown or opened. The server only lets the account
+  that owns a report change it, so a project naming someone else's report can't update it.
+- Refreshing from Published projects loads the project's sources with the credentials saved on
+  this computer, the same as Refresh all, and doesn't open a project with unsaved changes from
+  a crash (so they're never discarded unseen).
+
 ## The renderer
 
 - Electron defaults are kept: context isolation on, Node integration off, sandboxed renderer.

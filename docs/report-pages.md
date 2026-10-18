@@ -3,8 +3,8 @@
 A project's report is a small static website in its `report/` folder: plain HTML, CSS and
 JavaScript, with the data it shows saved alongside as JSON. It needs nothing from PawpawBI, so
 the folder can be hosted anywhere, such as an S3 bucket behind a CDN. In the app, **Build
-visuals** shows it, edits its files and datasets, and **Publish** writes it to a folder for
-hosting. File layout: [pawpaw-file-format.md](pawpaw-file-format.md).
+visuals** shows it and edits its files and datasets; **Publish** hosts it on PawpawBI or writes
+it to a folder for hosting anywhere. File layout: [pawpaw-file-format.md](pawpaw-file-format.md).
 
 Two parts work together:
 

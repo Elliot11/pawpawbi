@@ -2,12 +2,14 @@
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type {
+  AccountApi,
   AssistantApi,
   AssistantEvent,
   DataApi,
   DataProgress,
   Project,
   ProjectsApi,
+  PublishApi,
   PythonApi,
   ReportApi,
 } from './shared/types';
@@ -123,6 +125,25 @@ const assistant: AssistantApi = {
   },
 };
 
+const account: AccountApi = {
+  get: () => ipcRenderer.invoke('account:get'),
+  signUp: (email, password) =>
+    ipcRenderer.invoke('account:sign-up', email, password),
+  signIn: (email, password) =>
+    ipcRenderer.invoke('account:sign-in', email, password),
+  signInWith: (provider) =>
+    ipcRenderer.invoke('account:sign-in-with', provider),
+  signOut: () => ipcRenderer.invoke('account:sign-out'),
+};
+
+const publish: PublishApi = {
+  get: () => ipcRenderer.invoke('publish:get'),
+  toPawpawBI: () => ipcRenderer.invoke('publish:to-pawpawbi'),
+  list: () => ipcRenderer.invoke('publish:list'),
+  refresh: (projectPath) => ipcRenderer.invoke('publish:refresh', projectPath),
+  addFiles: () => ipcRenderer.invoke('publish:add-files'),
+};
+
 // Expose a small, explicit API to the renderer (available as window.api).
 contextBridge.exposeInMainWorld('api', {
   getAppVersion: (): Promise<string> => ipcRenderer.invoke('app:get-version'),
@@ -131,4 +152,6 @@ contextBridge.exposeInMainWorld('api', {
   python,
   report,
   assistant,
+  account,
+  publish,
 });

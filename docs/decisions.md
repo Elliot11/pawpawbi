@@ -355,3 +355,29 @@ it); recording loads for undo (copies all of a source's data on every load).
 **Consequences:** Undoing a table change can take as long as a refresh of the derived tables.
 Undo across a load can leave a source's tables out of step with its restored settings until it's
 loaded again (TODO.md).
+
+## 19. Publishing to PawpawBI, and a list of published projects on each computer
+
+**Decision:** Publish has its own screen. Its first option hosts the report on PawpawBI, with a
+PawpawBI account (email and password, or Google or Microsoft); publishing to a folder stays as
+the second. A project records its published report in `published.json`; each computer keeps a
+list of published projects, rebuilt from the project files if it's lost, and the start screen's
+Published projects refreshes a report's data: the project is opened in the background, its
+sources loaded again, the new data uploaded and the project saved. The app talks to the server
+through a written API ([pawpaw-server-api.md](pawpaw-server-api.md)); the server is built
+separately, with a stand-in for development.
+
+**Why:** Hosting a folder of files is a hurdle for most users; a link they can share isn't.
+Keeping the record in the project means it travels with the file and the list can always be
+rebuilt. Refreshing from the start screen means a report can be kept current without opening
+and working through the project. Google and Microsoft sign-in go through the server, so the
+app holds no OAuth secrets, and through the browser with a loopback redirect (RFC 8252), so the
+user signs in where they already are.
+
+**Alternatives considered:** only re-uploading the data already in the project (doesn't fetch
+anything new); a server that checks who's asking before returning data (row-level security
+will use a copy of the data per audience instead).
+
+**Consequences:** The app depends on a server that has to be built and run; until then,
+packaged builds say publishing to PawpawBI isn't available. A refresh needs the project file and
+its saved passwords on this computer, and saves the project.

@@ -52,7 +52,7 @@ const WORKFLOW_STAGES = STAGES.map((s) => s.id);
 const recentsPath = () =>
   path.join(app.getPath('userData'), 'recent-projects.json');
 
-const readRecents = () =>
+export const readRecents = () =>
   readJson(recentsPath(), (raw): RecentProject[] =>
     Array.isArray(raw)
       ? raw.filter(
@@ -152,6 +152,13 @@ async function askToRecover(
   return response === 0;
 }
 
+/** Called after a project is opened in a window (e.g. to list it if it's published). */
+const openedListeners = new Set<() => Promise<void>>();
+
+export const onProjectOpened = (listener: () => Promise<void>) => {
+  openedListeners.add(listener);
+};
+
 async function openProjectFile(
   filePath: string,
   win: BrowserWindow,
@@ -164,7 +171,38 @@ async function openProjectFile(
   });
   await addRecent(session.manifest.name, filePath);
   notifyChanged();
+  for (const listener of openedListeners) {
+    await listener().catch((error) =>
+      console.error('After opening the project:', error),
+    );
+  }
   return toProject(session);
+}
+
+/**
+ * Opens a project without a window (refreshing a published report from the start screen). A
+ * project with unsaved changes from a crash isn't opened, so they're never discarded unseen.
+ */
+export async function openProjectInBackground(filePath: string) {
+  if (session) throw new Error('Close the open project first.');
+  session = await openWorkspace(filePath, {
+    ...workspaceOptions(),
+    askToRecover: () => {
+      throw new Error(
+        'This project has unsaved changes from when PawpawBI closed unexpectedly. Open it to recover or discard them first.',
+      );
+    },
+  });
+  notifyChanged();
+}
+
+/** Closes the open project without saving or asking (after a background refresh). */
+export async function closeProjectQuietly() {
+  if (!session) return;
+  const closed = session;
+  session = null;
+  await removeWorkspace(closed);
+  notifyChanged();
 }
 
 async function createProject(win: BrowserWindow): Promise<Project | null> {
@@ -191,7 +229,7 @@ async function createProject(win: BrowserWindow): Promise<Project | null> {
   return toProject(session);
 }
 
-async function saveProject(): Promise<Project> {
+export async function saveProject(): Promise<Project> {
   const s = requireSession();
   // Never zip a working folder that a load or rebuild is writing to, or could start writing to.
   work.block(s.manifest.id);
@@ -328,9 +366,20 @@ async function deleteProject(win: BrowserWindow): Promise<boolean> {
 export const hasOpenProject = () => session !== null;
 
 /** The open project's ID, name and working folder, for other modules that use its files. */
-export function openProject(): { id: string; name: string; filesDir: string } {
+export function openProject(): {
+  id: string;
+  name: string;
+  filesDir: string;
+  /** The .pawpaw file. */
+  filePath: string;
+} {
   const s = requireSession();
-  return { id: s.manifest.id, name: s.manifest.name, filesDir: s.filesDir };
+  return {
+    id: s.manifest.id,
+    name: s.manifest.name,
+    filesDir: s.filesDir,
+    filePath: s.filePath,
+  };
 }
 
 // ---------------------------------------------------------------------------------------------

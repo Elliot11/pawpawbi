@@ -562,7 +562,7 @@ export async function load(
 }
 
 /** Loads every source in turn, then re-applies transforms and rebuilds transformed tables once. */
-async function refreshAll(): Promise<RefreshAllResult> {
+export async function refreshAll(): Promise<RefreshAllResult> {
   const sources = await readAllSources();
   const failedSources: RefreshAllResult['failedSources'] = [];
   // Once any source's data has arrived, Refresh all can't be stopped: the rebuild must follow.

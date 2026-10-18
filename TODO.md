@@ -35,7 +35,14 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
 - **The assistant's guides and evaluation tasks (phase 4).** Guides for adding data, modelling and
   SQL alongside the report guide, a tuned system prompt, and sample tasks run against both
   providers.
-- **Publish to S3 and CloudFront** from the app. Publish writes the site to a folder for now.
+- **The PawpawBI server.** The app publishes to it (`src/published.ts`, `src/account.ts`) per
+  [docs/pawpaw-server-api.md](docs/pawpaw-server-api.md), but it isn't built: accounts, Google and
+  Microsoft OAuth (app registrations with both), report hosting, and limits. Until then
+  `SERVER_URL` in `src/account.ts` is empty, so packaged builds say publishing to PawpawBI isn't
+  available; development uses the stand-in (`npm run server:stub`, `PAWPAW_SERVER`).
+- **Publishing to PawpawBI, next steps:** unpublish (delete a hosted report), forgetting a
+  project on Published projects, refreshing every project at once or on a schedule.
+- **Publish to S3 and CloudFront** from the app. Publish to a folder writes the site for now.
 - **Row-level security**: different viewers see different rows (e.g. each region manager only
   their region). The report is a static site, so anyone who can reach it can read every
   `data/*.json` file: filtering in the page's JavaScript isn't security. The approach: a copy
@@ -60,7 +67,8 @@ PawpawBI targets Windows. Before shipping Linux builds:
   secrets with DPAPI (the user's Windows sign-in), and on macOS with the Keychain. On Linux, if no
   password store (GNOME Keyring/libsecret or KWallet) is found, Electron falls back to
   `basic_text`: a fixed built-in password, which is effectively plain text, and
-  `isEncryptionAvailable()` doesn't catch it. In `credentials.ts` and `assistant/settings.ts`,
+  `isEncryptionAvailable()` doesn't catch it. In `credentials.ts`, `assistant/settings.ts` and
+  `account.ts`,
   also check `safeStorage.getSelectedStorageBackend() !== 'basic_text'` before saving, and tell
   the user to set up a password store.
 

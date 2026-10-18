@@ -3,7 +3,8 @@ import { computed } from 'vue';
 import type { WorkflowStage } from '../shared/types';
 import { STAGES } from '../workflow';
 
-const props = defineProps<{ stage: WorkflowStage }>();
+// `elsewhere`: another screen (Publish, Edit project) is showing, so no step is current.
+const props = defineProps<{ stage: WorkflowStage; elsewhere?: boolean }>();
 defineEmits<{ select: [stage: WorkflowStage] }>();
 
 const currentIndex = computed(() =>
@@ -25,8 +26,11 @@ const ICONS: Record<WorkflowStage, string> = {
   <ol class="steps" aria-label="Workflow">
     <li v-for="(s, i) in STAGES" :key="s.id">
       <button
-        :class="{ done: i < currentIndex, current: i === currentIndex }"
-        :aria-current="i === currentIndex ? 'step' : undefined"
+        :class="{
+          done: i < currentIndex,
+          current: i === currentIndex && !elsewhere,
+        }"
+        :aria-current="i === currentIndex && !elsewhere ? 'step' : undefined"
         @click="$emit('select', s.id)"
       >
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">

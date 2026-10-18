@@ -108,6 +108,29 @@ export async function packArchive(
 }
 
 /**
+ * A folder as a ZIP in memory (e.g. a report site to upload), with paths relative to it.
+ * `include` picks the files (all of them by default).
+ */
+export async function zipFolder(
+  srcDir: string,
+  include: (relativePath: string) => boolean = () => true,
+): Promise<Buffer> {
+  const zip = new yazl.ZipFile();
+  for (const relativePath of await listFiles(srcDir)) {
+    if (!include(relativePath)) continue;
+    zip.addFile(path.join(srcDir, ...relativePath.split('/')), relativePath, {
+      compress: !STORED_EXTENSIONS.has(
+        path.extname(relativePath).toLowerCase(),
+      ),
+    });
+  }
+  zip.end();
+  const chunks: Buffer[] = [];
+  for await (const chunk of zip.outputStream as Readable) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
+/**
  * Opens the archive, checks the `mimetype` entry, then calls visit for every other entry in
  * order. visit can return 'stop' to finish early.
  */

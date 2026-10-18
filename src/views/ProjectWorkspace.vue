@@ -8,6 +8,7 @@ import GetData from '../components/data/GetData.vue';
 import ModelData from '../components/ModelData.vue';
 import ReportCanvas from '../components/ReportCanvas.vue';
 import EditProject from './EditProject.vue';
+import PublishPage from './PublishPage.vue';
 
 const props = defineProps<{ project: Project }>();
 const emit = defineEmits<{ close: [] }>();
@@ -16,11 +17,11 @@ const emit = defineEmits<{ close: [] }>();
 // from the project and advances it; the user can also jump to a step from the top bar.
 const stage = ref<WorkflowStage>('data');
 
-// The Edit project screen, shown instead of the chat and the step's screen.
-const editing = ref(false);
+// The Edit project and Publish screens, shown instead of the chat and the step's screen.
+const screen = ref<'workflow' | 'edit' | 'publish'>('workflow');
 
 async function goToStage(next: WorkflowStage) {
-  editing.value = false;
+  screen.value = 'workflow';
   if (next === stage.value) return;
   stage.value = next;
   await window.api.projects.setStage(next);
@@ -74,10 +75,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       <h1 :title="project.path">{{ project.name }}</h1>
       <button
         class="edit"
-        :class="{ active: editing }"
+        :class="{ active: screen === 'edit' }"
         title="Edit project"
         aria-label="Edit project"
-        @click="editing = true"
+        @click="screen = 'edit'"
       >
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 20h9" />
@@ -86,7 +87,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       </button>
 
       <div class="steps-slot">
-        <WorkflowSteps :stage="stage" @select="goToStage" />
+        <WorkflowSteps
+          :stage="stage"
+          :elsewhere="screen !== 'workflow'"
+          @select="goToStage"
+        />
+        <button
+          class="publish-button"
+          :class="{ active: screen === 'publish' }"
+          @click="screen = 'publish'"
+        >
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 15V3M7 8l5-5 5 5M5 21h14" />
+          </svg>
+          Publish
+        </button>
       </div>
 
       <div class="save-area">
@@ -117,14 +132,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       </div>
     </header>
 
-    <div v-if="editing" class="body edit-body">
+    <div v-if="screen === 'edit'" class="body edit-body">
       <EditProject
         :project="project"
-        @back="editing = false"
+        @back="screen = 'workflow'"
         @deleted="emit('close')"
       />
     </div>
-    <div v-show="!editing" class="body">
+    <div v-else-if="screen === 'publish'" class="body edit-body">
+      <PublishPage :project="project" @back="screen = 'workflow'" />
+    </div>
+    <div v-show="screen === 'workflow'" class="body">
       <ChatPanel v-model:stage="stage" />
       <section class="main">
         <!-- The screen follows the workflow step. Kept alive so switching steps doesn't lose a
@@ -221,8 +239,28 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 .steps-slot {
   display: flex;
   flex: 1;
+  align-items: center;
   justify-content: center;
+  gap: 10px;
   min-width: max-content;
+}
+
+.publish-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.publish-button:hover,
+.publish-button.active {
+  background: var(--accent);
+  color: #fff;
 }
 
 .save-area {

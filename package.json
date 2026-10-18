@@ -13,6 +13,7 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "release": "electron-forge release",
+    "server:stub": "node scripts/pawpaw-server-stub.mjs",
     "lint": "oxlint && oxfmt --check",
     "lint:fix": "oxlint --fix && oxfmt --write",
     "typecheck": "vue-tsc --noEmit",

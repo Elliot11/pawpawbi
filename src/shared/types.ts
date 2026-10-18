@@ -281,6 +281,62 @@ export interface PythonApi {
   info: () => Promise<PythonInfo>;
 }
 
+// --- Publishing (src/published.ts, src/account.ts; server API: docs/pawpaw-server-api.md) ------
+
+/** A project's report published to PawpawBI: published.json in the project. */
+export interface PublishedReport {
+  reportId: string;
+  /** Where it's hosted. */
+  url: string;
+  /** The PawpawBI account it was published from. */
+  account: string;
+  publishedAt: string | null;
+  refreshedAt: string | null;
+}
+
+/** A published project, as listed on this computer (published-reports.json in userData). */
+export interface PublishedProject extends PublishedReport {
+  projectId: string;
+  projectName: string;
+  projectPath: string;
+  /** Why the last refresh failed, or which sources couldn't be loaded. */
+  lastError?: string;
+}
+
+export type SignInProvider = 'google' | 'microsoft';
+
+export interface AccountState {
+  /** False when this version has no PawpawBI server to talk to. */
+  available: boolean;
+  /** The signed-in account's email, or null. */
+  email: string | null;
+}
+
+export interface AccountApi {
+  get: () => Promise<AccountState>;
+  signUp: (email: string, password: string) => Promise<AccountState>;
+  signIn: (email: string, password: string) => Promise<AccountState>;
+  /** Signs in with Google or Microsoft in the user's browser. */
+  signInWith: (provider: SignInProvider) => Promise<AccountState>;
+  signOut: () => Promise<AccountState>;
+}
+
+export interface PublishApi {
+  /** The open project's published report, or null if it hasn't been published. */
+  get: () => Promise<PublishedReport | null>;
+  /** Publishes (or publishes again) the open project's report to PawpawBI. */
+  toPawpawBI: () => Promise<PublishedReport>;
+  /** Every published project on this computer. */
+  list: () => Promise<PublishedProject[]>;
+  /**
+   * Opens a published project in the background, loads every data source again, uploads the
+   * report's new data and saves the project. Progress comes as data progress for ALL_SOURCES.
+   */
+  refresh: (projectPath: string) => Promise<PublishedProject>;
+  /** Adds published projects to the list from .pawpaw files the user picks. */
+  addFiles: () => Promise<PublishedProject[]>;
+}
+
 export interface ProjectsApi {
   listRecent: () => Promise<RecentProject[]>;
   /** Prompts for a save location and creates a new project. */

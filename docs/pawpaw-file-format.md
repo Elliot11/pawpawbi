@@ -11,6 +11,7 @@ A `.pawpaw` file is a standard ZIP archive containing one PawpawBI project: its 
 Sales report.pawpaw            (ZIP archive)
 ├── mimetype                   Identifies the archive as a PawpawBI project
 ├── manifest.json              Project metadata and format version
+├── published.json             Where the report is published to PawpawBI (only once it is)
 ├── thumbnail.png              Preview image for the start screen (optional, not written yet)
 │
 ├── sources/                   Where the data came from
@@ -203,6 +204,33 @@ How tables join. The assistant proposes these and the user confirms them.
 ```
 
 `cardinality` is `one-to-one`, `many-to-one` or `many-to-many`.
+
+### published.json
+
+Written when the project's report is published to PawpawBI (the PawpawBI server:
+[pawpaw-server-api.md](pawpaw-server-api.md)). It's what the app needs to publish the same report
+again and to refresh its data, and to list the project on Published projects; that list
+(`published-reports.json` on each computer) can always be rebuilt from these files.
+
+```json
+{
+  "pawpawbi": {
+    "reportId": "k3J9xQ2mT",
+    "url": "https://reports.pawpawbi.example/k3J9xQ2mT/",
+    "account": "ana@example.com",
+    "publishedAt": "2026-10-18T10:00:00.000Z",
+    "refreshedAt": "2026-10-19T07:30:00.000Z"
+  }
+}
+```
+
+- `reportId`: the server's ID for the report: letters, digits, `-` and `_`, at most 64.
+- `url`: where it's hosted; `https:` only (or a loopback address, for the development stand-in).
+- `account`: the email of the PawpawBI account it was published from. Only that account can
+  publish it again or refresh it.
+- `publishedAt`, `refreshedAt`: when the site and its data were last uploaded (or `null`).
+- The file is read defensively: if any of it isn't valid, the project counts as unpublished.
+  No sign-in token is ever stored in the project.
 
 ### model/diagram.json
 
