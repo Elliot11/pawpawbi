@@ -62,6 +62,7 @@ pinned versions change.
 | `npm run setup:python`      | Downloads Python and installs `python/requirements.txt` (runs automatically before start, package and make).                                                             |
 | `npm run lock:python`       | Reinstalls Python packages from scratch and rewrites `python/constraints.txt`. Run after editing `requirements.txt`.                                                     |
 | `npm run server:stub`       | Runs a stand-in PawpawBI server (and S3) on port 8790, for trying publishing; start the app with `PAWPAW_SERVER=http://127.0.0.1:8790/v1`.                               |
+| `npm run test-data`         | Generates joinable test data into `test-data/`: retail, SaaS, HR and logistics models of 7–9 tables (CSV and SQLite; options for scale, Parquet, Excel and messy data).  |
 
 ## Project layout
 
@@ -107,7 +108,8 @@ python/
   tests/                   Python tests
   runtime/                 Downloaded Python (not in git)
 tests/node/              TypeScript tests
-scripts/                 Setup and test helper scripts, and the stand-in PawpawBI server
+scripts/                 Setup and test helpers, the stand-in PawpawBI server, and the test
+                           data generator (test-data/make_test_data.py)
 .github/workflows/       CI (lint, type-check and tests on Windows)
 docs/                    Documentation (see below)
 assets/, public/         App icon and favicon
