@@ -193,7 +193,7 @@ function onKeydown(event: KeyboardEvent) {
         </p>
         <button
           v-if="error"
-          class="link"
+          class="btn-link"
           :disabled="busy === 'models'"
           @click="loadModels"
         >
@@ -206,8 +206,8 @@ function onKeydown(event: KeyboardEvent) {
         <template v-if="hasKey && !replacing">
           <p class="saved">
             A {{ info.name }} key is saved on this computer.
-            <button class="link" @click="replacing = true">Replace</button>
-            <button class="link danger" @click="removeKey">Remove</button>
+            <button class="btn-link" @click="replacing = true">Replace</button>
+            <button class="btn-link danger" @click="removeKey">Remove</button>
           </p>
         </template>
         <form v-else class="key-form" @submit.prevent="saveKey">
@@ -220,7 +220,7 @@ function onKeydown(event: KeyboardEvent) {
             aria-label="API key"
           />
           <button
-            class="primary"
+            class="btn-primary"
             type="submit"
             :disabled="!key.trim() || busy === 'key'"
           >
@@ -283,7 +283,7 @@ function onKeydown(event: KeyboardEvent) {
         </label>
       </fieldset>
 
-      <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <p v-if="error" class="box-error error" role="alert">{{ error }}</p>
 
       <p v-if="info.needsKey" class="privacy">
         Your messages, and the samples of your data the assistant looks at, are
@@ -296,7 +296,7 @@ function onKeydown(event: KeyboardEvent) {
       </p>
 
       <footer class="foot">
-        <button class="primary" @click="emit('close')">Done</button>
+        <button class="btn-primary" @click="emit('close')">Done</button>
       </footer>
     </div>
   </div>
@@ -396,7 +396,7 @@ function onKeydown(event: KeyboardEvent) {
 
 .provider-key {
   margin-top: 6px;
-  color: #1d6b3a;
+  color: var(--success);
   font-size: 12px;
   font-weight: 600;
 }
@@ -473,7 +473,7 @@ select {
   padding: 1px 5px;
   border-radius: 5px;
   background: var(--surface-muted);
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
@@ -499,38 +499,8 @@ select {
   color: var(--ink);
 }
 
-.link {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--ink);
-  font-size: 13px;
-  text-decoration: underline;
-}
-
-.link.danger {
-  color: var(--danger);
-}
-
-.primary {
-  padding: 8px 16px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-}
-
-.primary:disabled {
-  opacity: 0.5;
-}
-
 .error {
-  margin: 0;
   padding: 10px 12px;
-  border-radius: var(--radius-sm);
-  background: #fbeceb;
-  color: var(--danger);
   font-size: 13px;
 }
 

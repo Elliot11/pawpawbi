@@ -110,7 +110,9 @@ def is_transformed(data_dir: Path, table: str) -> bool:
 
 
 def table_folders(data_dir: Path, layer: Layer = "current") -> dict[str, Path]:
-    """Table name -> the folder of Parquet files to read for it, for tables that have data."""
+    """Table name -> the folder of Parquet files to read for it, for tables that have data.
+    Folders are resolved paths, so they're under the folder connect() allows."""
+    data_dir = data_dir.resolve()
     candidates = {}
     for table in table_names(data_dir):
         folder = data_dir / RAW_DATASET / table
@@ -123,12 +125,17 @@ def table_folders(data_dir: Path, layer: Layer = "current") -> dict[str, Path]:
     return {t: f for t, f in candidates.items() if next(f.glob("*.parquet"), None) is not None}
 
 
-def connect(data_dir: Path, layer: Layer = "current") -> duckdb.DuckDBPyConnection:
-    """An in-memory DuckDB with one view per table, locked to the project's data folder."""
+def connect(
+    data_dir: Path, layer: Layer = "current", folders: dict[str, Path] | None = None
+) -> duckdb.DuckDBPyConnection:
+    """An in-memory DuckDB with one view per table, locked to the project's data folder.
+    `folders` is table_folders(data_dir, layer), for callers that already have it."""
     data_dir = data_dir.resolve()
+    if folders is None:
+        folders = table_folders(data_dir, layer)
     con = duckdb.connect(":memory:")
     try:
-        for table, folder in table_folders(data_dir, layer).items():
+        for table, folder in folders.items():
             # Leave out dlt's own bookkeeping columns.
             first_file = next(folder.glob("*.parquet"))
             columns = [f.name for f in pq.read_schema(first_file) if not f.name.startswith("_dlt")]
@@ -153,9 +160,10 @@ def connect(data_dir: Path, layer: Layer = "current") -> duckdb.DuckDBPyConnecti
     return con
 
 
-def select(con: duckdb.DuckDBPyConnection, sql: str) -> str:
-    """The query, checked to be exactly one read-only SELECT statement."""
-    statements = con.extract_statements(sql)
+def select(sql: str) -> str:
+    """The query, checked to be exactly one read-only SELECT statement. This only parses (on
+    DuckDB's default connection); the query then runs on a locked connection from connect()."""
+    statements = duckdb.extract_statements(sql)
     if len(statements) != 1:
         raise ValueError("Enter one SELECT query." if not statements else "Enter just one query.")
     if statements[0].type != duckdb.StatementType.SELECT:
@@ -208,14 +216,36 @@ def json_value(value):
     return str(value)
 
 
-def preview(con: duckdb.DuckDBPyConnection, query: str, limit: int) -> dict:
-    """A query's columns, its first `limit` rows and its total row count."""
+def columns(relation: duckdb.DuckDBPyRelation, kinds: bool = False) -> list[dict]:
+    """A relation's columns as [{name, type: DuckDB type}], plus each column's broad `kind`
+    when asked (see TablePreview and TableSchema in src/shared/types.ts)."""
+    result = []
+    for name, type_ in zip(relation.columns, relation.types):
+        column = {"name": name, "type": str(type_)}
+        if kinds:
+            column["kind"] = column_kind(str(type_))
+        result.append(column)
+    return result
+
+
+def fetch(con: duckdb.DuckDBPyConnection, query: str, limit: int) -> tuple[duckdb.DuckDBPyRelation, list, bool]:
+    """Run a query under the time limit: its relation (for the columns), its first `limit` rows,
+    and whether there were more."""
     with time_limit(con):
         relation = con.sql(query)
-        rows = relation.limit(limit).fetchall()
-        row_count = con.sql(f"SELECT count(*) FROM ({query})").fetchone()[0]
+        rows = relation.fetchmany(limit + 1)
+    return relation, rows[:limit], len(rows) > limit
+
+
+def preview(con: duckdb.DuckDBPyConnection, query: str, limit: int) -> dict:
+    """A query's columns, its first `limit` rows and its total row count."""
+    relation, rows, truncated = fetch(con, query, limit)
+    row_count = len(rows)
+    if truncated:
+        with time_limit(con):
+            row_count = con.sql(f"SELECT count(*) FROM ({query})").fetchone()[0]
     return {
-        "columns": [{"name": n, "dtype": str(t)} for n, t in zip(relation.columns, relation.types)],
+        "columns": columns(relation),
         "rows": [[json_value(v) for v in row] for row in rows],
         "row_count": row_count,
     }

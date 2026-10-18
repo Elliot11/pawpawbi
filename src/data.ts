@@ -15,7 +15,8 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { CancelledError, work } from './background';
 import { deleteSecrets, readSecrets, writeSecrets } from './credentials';
-import { markProjectChanged, openProject } from './projects';
+import { readJson, removePath, writeJson } from './fs-json';
+import { markProjectChanged, openProject, tracked } from './projects';
 import { refreshDatasets } from './report';
 import {
   PYTHON_FLAGS,
@@ -32,7 +33,7 @@ import {
   findCycle,
   type DependencyMap,
 } from './shared/dependencies';
-import { newId } from './shared/ids';
+import { NAME, NAME_RULE, SAFE_ID, SAFE_TABLE, newId } from './shared/ids';
 import type {
   ConnectorCatalog,
   ConnectorField,
@@ -52,8 +53,14 @@ import type {
 } from './shared/types';
 import { ALL_SOURCES } from './shared/types';
 
-const SAFE_ID = /^[a-z0-9]{1,32}$/;
-const SAFE_TABLE = /^[A-Za-z0-9_]+$/;
+// Paths inside the open project's working folder.
+const filesDir = () => openProject().filesDir;
+const sourcesDir = () => path.join(filesDir(), 'sources');
+const dataDir = () => path.join(filesDir(), 'data');
+const diagramPath = () => path.join(filesDir(), 'model', 'diagram.json');
+const transformsPath = () => path.join(filesDir(), 'model', 'transforms.json');
+const transformedPath = () =>
+  path.join(filesDir(), 'model', 'transformed.json');
 
 // ---------------------------------------------------------------------------------------------
 // Connector catalog (defined in python/sidecar/connectors)
@@ -88,8 +95,6 @@ export interface SourceFile {
   lastLoadedAt: string | null;
 }
 
-const sourcesDir = () => path.join(openProject().filesDir, 'sources');
-
 function sourcePath(id: string) {
   if (!SAFE_ID.test(id)) throw new Error('Invalid data source ID.');
   return path.join(sourcesDir(), `${id}.json`);
@@ -109,11 +114,7 @@ async function readSource(id: string): Promise<SourceFile> {
 }
 
 async function writeSource(source: SourceFile) {
-  await fs.mkdir(sourcesDir(), { recursive: true });
-  await fs.writeFile(
-    sourcePath(source.id),
-    JSON.stringify(source, null, 2) + '\n',
-  );
+  await writeJson(sourcePath(source.id), source);
   await markProjectChanged();
 }
 
@@ -209,7 +210,7 @@ async function removeSource(id: string) {
   }
   await removeTables(source.tables);
   await deleteSecrets(openProject().id, id);
-  await fs.rm(sourcePath(id), { force: true });
+  await removePath(sourcePath(id));
   await markProjectChanged();
 }
 
@@ -540,9 +541,6 @@ async function refreshAll(): Promise<RefreshAllResult> {
 // ---------------------------------------------------------------------------------------------
 // Model diagram (model/diagram.json)
 
-const diagramPath = () =>
-  path.join(openProject().filesDir, 'model', 'diagram.json');
-
 /** Keeps only well-formed table positions, rounded to whole pixels. */
 function cleanDiagram(value: unknown): ModelDiagram {
   const tables: ModelDiagram['tables'] = {};
@@ -564,20 +562,10 @@ function cleanDiagram(value: unknown): ModelDiagram {
   return { tables };
 }
 
-async function loadDiagram(): Promise<ModelDiagram> {
-  try {
-    return cleanDiagram(JSON.parse(await fs.readFile(diagramPath(), 'utf8')));
-  } catch {
-    return { tables: {} };
-  }
-}
+const loadDiagram = () => readJson(diagramPath(), cleanDiagram);
 
 async function saveDiagram(diagram: ModelDiagram) {
-  await fs.mkdir(path.dirname(diagramPath()), { recursive: true });
-  await fs.writeFile(
-    diagramPath(),
-    JSON.stringify(cleanDiagram(diagram), null, 2) + '\n',
-  );
+  await writeJson(diagramPath(), cleanDiagram(diagram));
   await markProjectChanged();
 }
 
@@ -594,35 +582,26 @@ export interface TransformsFile {
   tables: Record<string, { sql: string; updatedAt: string }>;
 }
 
-const transformsPath = () =>
-  path.join(openProject().filesDir, 'model', 'transforms.json');
-const dataDir = () => path.join(openProject().filesDir, 'data');
-
-export async function readTransforms(): Promise<TransformsFile> {
-  try {
-    const parsed = JSON.parse(await fs.readFile(transformsPath(), 'utf8'));
-    const tables: TransformsFile['tables'] = {};
-    for (const [table, t] of Object.entries(parsed?.tables ?? {})) {
-      const transform = t as { sql?: unknown; updatedAt?: unknown };
-      if (SAFE_TABLE.test(table) && typeof transform.sql === 'string') {
-        tables[table] = {
-          sql: transform.sql,
-          updatedAt: String(transform.updatedAt ?? ''),
-        };
-      }
+/** Keeps only well-formed transforms of safely named tables. */
+export function cleanTransforms(value: unknown): TransformsFile {
+  const tables: TransformsFile['tables'] = {};
+  const raw = (value as TransformsFile | null)?.tables;
+  for (const [table, t] of Object.entries(raw ?? {})) {
+    const transform = t as { sql?: unknown; updatedAt?: unknown };
+    if (SAFE_TABLE.test(table) && typeof transform?.sql === 'string') {
+      tables[table] = {
+        sql: transform.sql,
+        updatedAt: String(transform.updatedAt ?? ''),
+      };
     }
-    return { tables };
-  } catch {
-    return { tables: {} };
   }
+  return { tables };
 }
 
+export const readTransforms = () => readJson(transformsPath(), cleanTransforms);
+
 async function writeTransforms(transforms: TransformsFile) {
-  await fs.mkdir(path.dirname(transformsPath()), { recursive: true });
-  await fs.writeFile(
-    transformsPath(),
-    JSON.stringify(transforms, null, 2) + '\n',
-  );
+  await writeJson(transformsPath(), transforms);
   await markProjectChanged();
 }
 
@@ -694,41 +673,34 @@ interface TransformedFile {
   >;
 }
 
-const transformedPath = () =>
-  path.join(openProject().filesDir, 'model', 'transformed.json');
-/** Names for new transformed tables: also what dlt produces for loaded tables. */
-const TRANSFORMED_NAME = /^[a-z][a-z0-9_]{0,62}$/;
-
-async function readTransformed(): Promise<TransformedFile> {
-  try {
-    const parsed = JSON.parse(await fs.readFile(transformedPath(), 'utf8'));
-    const tables: TransformedFile['tables'] = {};
-    for (const [table, t] of Object.entries(parsed?.tables ?? {})) {
-      const def = t as {
-        sql?: unknown;
-        dependsOn?: unknown;
-        updatedAt?: unknown;
-        error?: unknown;
-      };
-      if (!SAFE_TABLE.test(table) || typeof def.sql !== 'string') continue;
-      tables[table] = {
-        sql: def.sql,
-        dependsOn: Array.isArray(def.dependsOn)
-          ? def.dependsOn.filter((d): d is string => typeof d === 'string')
-          : [],
-        updatedAt: String(def.updatedAt ?? ''),
-        error: typeof def.error === 'string' ? def.error : null,
-      };
-    }
-    return { tables };
-  } catch {
-    return { tables: {} };
+/** Keeps only well-formed transformed tables with safe names. */
+export function cleanTransformed(value: unknown): TransformedFile {
+  const tables: TransformedFile['tables'] = {};
+  const raw = (value as TransformedFile | null)?.tables;
+  for (const [table, t] of Object.entries(raw ?? {})) {
+    const def = t as {
+      sql?: unknown;
+      dependsOn?: unknown;
+      updatedAt?: unknown;
+      error?: unknown;
+    };
+    if (!SAFE_TABLE.test(table) || typeof def?.sql !== 'string') continue;
+    tables[table] = {
+      sql: def.sql,
+      dependsOn: Array.isArray(def.dependsOn)
+        ? def.dependsOn.filter((d): d is string => typeof d === 'string')
+        : [],
+      updatedAt: String(def.updatedAt ?? ''),
+      error: typeof def.error === 'string' ? def.error : null,
+    };
   }
+  return { tables };
 }
 
+const readTransformed = () => readJson(transformedPath(), cleanTransformed);
+
 async function writeTransformed(file: TransformedFile) {
-  await fs.mkdir(path.dirname(transformedPath()), { recursive: true });
-  await fs.writeFile(transformedPath(), JSON.stringify(file, null, 2) + '\n');
+  await writeJson(transformedPath(), file);
   await markProjectChanged();
 }
 
@@ -813,10 +785,8 @@ async function saveTransformed(
   input: SaveTransformedInput,
 ): Promise<{ rows: number }> {
   const name = input.name.trim();
-  if (!TRANSFORMED_NAME.test(name)) {
-    throw new Error(
-      'Use a name of lowercase letters, numbers and underscores that starts with a letter, e.g. sales_by_region.',
-    );
+  if (!NAME.test(name)) {
+    throw new Error(`${NAME_RULE} For example sales_by_region.`);
   }
   const file = await readTransformed();
   const loaded = await callPython<string[]>('list_tables', {
@@ -950,13 +920,6 @@ async function pickPaths(
   return canceled ? [] : filePaths;
 }
 
-/**
- * Runs an operation that changes the open project as tracked background work, so saving waits
- * for it and closing waits for it or stops it (see background.ts).
- */
-const tracked = <R>(label: string, operation: () => Promise<R>) =>
-  work.run(openProject().id, label, operation);
-
 export function registerDataHandlers() {
   ipcMain.handle('data:catalog', () => catalog());
   ipcMain.handle('data:list-sources', async () =>
@@ -978,12 +941,12 @@ export function registerDataHandlers() {
   );
   ipcMain.handle('data:list-tables', () =>
     callPython<string[]>('list_tables', {
-      data_dir: path.join(openProject().filesDir, 'data'),
+      data_dir: dataDir(),
     }),
   );
   ipcMain.handle('data:describe-tables', () =>
     callPython<TableSchema[]>('describe_tables', {
-      data_dir: path.join(openProject().filesDir, 'data'),
+      data_dir: dataDir(),
     }),
   );
   ipcMain.handle(
@@ -1025,7 +988,7 @@ export function registerDataHandlers() {
   );
   ipcMain.handle('data:preview-table', (_event, table: string, limit = 100) =>
     callPython<TablePreview>('preview_table', {
-      data_dir: path.join(openProject().filesDir, 'data'),
+      data_dir: dataDir(),
       table,
       limit,
     }),

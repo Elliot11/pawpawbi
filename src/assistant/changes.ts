@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { newId } from '../shared/ids';
+import type { AssistantChange } from '../shared/types';
 
 /** What a change may touch, relative to the project folder. */
 export type Target =
@@ -20,13 +21,8 @@ export type Target =
   /** A folder and everything in it, except subfolders named in `exclude`. */
   | { dir: string; exclude?: string[] };
 
-export interface ChangeRecord {
-  id: string;
-  /** What it did, for the chat, e.g. "Created dataset revenue_by_month". */
-  summary: string;
-  createdAt: string;
-  undone: boolean;
-}
+/** A change as the chat shows it: what it did (e.g. "Created the dataset revenue_by_month"). */
+export type ChangeRecord = AssistantChange;
 
 interface Snapshot {
   /** Project-relative path -> content hash before and after the change (null: no file). */
@@ -188,7 +184,7 @@ export class ChangeJournal {
   async record<T>(
     summary: string,
     targets: Target[],
-    change: () => Promise<T>,
+    operation: () => Promise<T>,
   ): Promise<{ result: T; record: ChangeRecord }> {
     const changes = await this.load();
     const id = newId();
@@ -202,7 +198,7 @@ export class ChangeJournal {
     };
     let result: T;
     try {
-      result = await change();
+      result = await operation();
     } catch (error) {
       stored.files = Object.fromEntries(
         Object.entries(before).map(([p, h]) => [p, { before: h, after: null }]),
@@ -256,7 +252,7 @@ export class ChangeJournal {
     const changes = await this.load();
     const index = changes.findIndex((c) => c.id === id);
     if (index === -1)
-      throw new Error('That change isn’t in the record any more.');
+      throw new Error("That change isn't in the record any more.");
     if (changes[index].undone)
       throw new Error('That change has already been undone.');
     return changes.slice(index).filter((c) => !c.undone);

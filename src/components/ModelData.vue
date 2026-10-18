@@ -319,12 +319,12 @@ function fitToScreen() {
     right = -Infinity,
     bottom = -Infinity;
   for (const t of tables.value) {
-    const p = positions.value[t.name];
-    const height = cardElements.get(t.name)?.offsetHeight ?? GRID_ROW_HEIGHT;
-    left = Math.min(left, p.x);
-    top = Math.min(top, p.y);
-    right = Math.max(right, p.x + CARD_WIDTH);
-    bottom = Math.max(bottom, p.y + height);
+    const box = cardBox(t.name);
+    if (!box) continue;
+    left = Math.min(left, box.x);
+    top = Math.min(top, box.y);
+    right = Math.max(right, box.x + box.w);
+    bottom = Math.max(bottom, box.y + box.h);
   }
   const padding = 48;
   const { clientWidth, clientHeight } = viewport.value;
@@ -486,7 +486,7 @@ const showLegend = ref(true);
     />
 
     <template v-else>
-      <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <p v-if="error" class="box-error error" role="alert">{{ error }}</p>
 
       <div v-if="loading" class="centered status">Loading tables…</div>
 
@@ -500,7 +500,9 @@ const showLegend = ref(true);
         <p>
           Add data first. Each table you load will appear here with its columns.
         </p>
-        <button class="primary" @click="$emit('addData')">Add data</button>
+        <button class="btn-primary add-data" @click="$emit('addData')">
+          Add data
+        </button>
       </div>
 
       <div
@@ -524,8 +526,8 @@ const showLegend = ref(true);
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           }"
         >
-          <!-- Relationship lines between tables will be drawn here, underneath the cards, in the
-             same coordinates as the cards' positions. -->
+          <!-- Dependency lines between tables, underneath the cards, in the same coordinates as
+             the cards' positions. -->
           <svg class="links" aria-hidden="true">
             <defs>
               <marker
@@ -614,32 +616,20 @@ const showLegend = ref(true);
                   Cancel
                 </button>
               </template>
-              <template v-else-if="t.kind === 'transformed'">
+              <template v-else>
                 <button
+                  v-if="t.kind === 'transformed'"
                   class="tool"
                   title="Edit the SQL that builds this table"
                   @click="editing = { table: t.name, kind: 'transformed' }"
                 >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M8 6l-6 6 6 6M16 6l6 6-6 6" />
                   </svg>
                   Edit SQL
                 </button>
                 <button
-                  class="tool delete"
-                  title="Delete this table"
-                  @click="askToDelete(t.name)"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"
-                    />
-                  </svg>
-                  Delete
-                </button>
-              </template>
-              <template v-else>
-                <button
+                  v-else
                   class="tool"
                   :class="{ active: t.transformed }"
                   :title="
@@ -649,7 +639,7 @@ const showLegend = ref(true);
                   "
                   @click="editing = { table: t.name, kind: 'loaded' }"
                 >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M8 6l-6 6 6 6M16 6l6 6-6 6" />
                   </svg>
                   {{ t.transformed ? 'Transformed' : 'Transform' }}
@@ -659,7 +649,7 @@ const showLegend = ref(true);
                   title="Delete this table"
                   @click="askToDelete(t.name)"
                 >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
                     <path
                       d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"
                     />
@@ -716,7 +706,7 @@ const showLegend = ref(true);
               title="Create a table from other tables with SQL"
               @click="editing = { table: null, kind: 'transformed' }"
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 5v14M5 12h14" />
               </svg>
               New transformed table
@@ -728,6 +718,7 @@ const showLegend = ref(true);
               @click="refreshAll"
             >
               <svg
+                class="icon"
                 viewBox="0 0 24 24"
                 aria-hidden="true"
                 :class="{ spinning: refreshing }"
@@ -1016,14 +1007,9 @@ const showLegend = ref(true);
   color: var(--ink);
 }
 
-.tool svg {
+.tool .icon {
   width: 14px;
   height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 .tool.delete {
@@ -1031,7 +1017,7 @@ const showLegend = ref(true);
 }
 
 .tool.delete:hover {
-  background: #fbeceb;
+  background: var(--danger-soft);
   color: var(--danger);
 }
 
@@ -1051,8 +1037,8 @@ const showLegend = ref(true);
 /* A transform is active on this table. */
 .tool.active,
 .tool.active:hover {
-  background: #eaf6ee;
-  color: #1d6b3a;
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .columns {
@@ -1101,15 +1087,15 @@ const showLegend = ref(true);
 }
 
 .badge.text {
-  background: #f1ecf8;
-  color: #6b46a3;
+  background: var(--transformed-soft);
+  color: var(--transformed);
 }
 
 .badge.date,
 .badge.datetime,
 .badge.time {
-  background: #eaf6ee;
-  color: #1d6b3a;
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .badge.boolean {
@@ -1174,7 +1160,7 @@ const showLegend = ref(true);
   margin: 0;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
-  background: #fbeceb;
+  background: var(--danger-soft);
   color: var(--danger);
   font-size: 12px;
   overflow-wrap: anywhere;
@@ -1211,24 +1197,8 @@ const showLegend = ref(true);
   color: var(--ink-muted);
 }
 
-.refresh svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 .spinning {
   animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .refresh-status,
@@ -1250,12 +1220,12 @@ const showLegend = ref(true);
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  background: #eaf6ee;
-  color: #1d6b3a;
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .refresh-result.failed {
-  background: #fbeceb;
+  background: var(--danger-soft);
   color: var(--danger);
 }
 
@@ -1323,11 +1293,6 @@ const showLegend = ref(true);
   top: 80px;
   left: 36px;
   z-index: 10001;
-  margin: 0;
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  background: #fbeceb;
-  color: var(--danger);
 }
 
 .centered {
@@ -1347,27 +1312,6 @@ const showLegend = ref(true);
   text-align: center;
 }
 
-.empty-icon {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.empty-icon svg {
-  width: 26px;
-  height: 26px;
-  fill: none;
-  stroke: var(--ink-muted);
-  stroke-width: 1.75;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 .empty h3 {
   font-size: 22px;
 }
@@ -1377,13 +1321,7 @@ const showLegend = ref(true);
   color: var(--ink-muted);
 }
 
-.primary {
+.add-data {
   margin-top: 6px;
-  padding: 9px 18px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
 }
 </style>

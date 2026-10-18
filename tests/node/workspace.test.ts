@@ -14,10 +14,10 @@ import {
   removeWorkspace,
   saveWorkspace,
   workspacePaths,
-  writeJson,
   type Workspace,
   type WorkspaceState,
 } from '../../src/workspace.ts';
+import { writeJson } from '../../src/fs-json.ts';
 
 const APP = 'PawpawBI test';
 let tmp: string;

@@ -8,16 +8,13 @@ import pytest
 import datasets
 import engine
 import transforms
+from conftest import describe
 
 BY_REGION = "SELECT region, sum(revenue) AS revenue, count(*) AS orders FROM monthly_sales GROUP BY region"
 
 
 def build(data_dir: Path, table: str, sql: str):
     return transforms.build_table({"data_dir": str(data_dir), "table": table, "sql": sql})
-
-
-def describe(data_dir: Path) -> dict:
-    return {t["name"]: t for t in datasets.describe_tables({"data_dir": str(data_dir)})}
 
 
 def query_tables(data_dir: Path, sql: str, kind="transformed"):

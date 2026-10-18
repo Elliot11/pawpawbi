@@ -14,30 +14,15 @@ import { callPython } from '../python';
 import { listDatasets } from '../report';
 import { hasSite, readReport, readSiteFile } from '../report-site';
 import type { TablePreview, TableSchema } from '../shared/types';
+import { MAX_ROWS, rowLimit, text } from './input';
 import { GUIDES } from './prompt';
 import type { ToolSpec } from './types';
 
-const MAX_ROWS = 50;
 const dataDir = () => path.join(openProject().filesDir, 'data');
-
-function text(input: Record<string, unknown>, key: string): string {
-  const value = input[key];
-  if (typeof value !== 'string' || !value.trim()) {
-    throw new Error(`"${key}" is required.`);
-  }
-  return value;
-}
-
-function rowLimit(input: Record<string, unknown>, fallback: number) {
-  const value = Number(input.limit ?? fallback);
-  return Number.isFinite(value)
-    ? Math.max(1, Math.min(MAX_ROWS, Math.floor(value)))
-    : fallback;
-}
 
 /** A preview as compact JSON: column names and types, then rows as arrays. */
 const compact = (preview: TablePreview) => ({
-  columns: preview.columns.map((c) => `${c.name} ${c.dtype}`),
+  columns: preview.columns.map((c) => `${c.name} ${c.type}`),
   rows: preview.rows,
   total_rows: preview.row_count,
 });

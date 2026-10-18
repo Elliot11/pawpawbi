@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import { errorMessage } from '../errors';
 import type { OpenResult, Project, RecentProject } from '../shared/types';
+import { timeAgo } from '../time';
 
 const emit = defineEmits<{ open: [project: Project] }>();
 
@@ -22,7 +24,8 @@ onMounted(async () => {
   ]);
 });
 
-async function run(action: () => Promise<OpenResult>) {
+/** Runs a create or open action. `failure` prefixes the message if it throws. */
+async function run(action: () => Promise<OpenResult>, failure: string) {
   if (busy.value) return;
   busy.value = true;
   error.value = '';
@@ -35,29 +38,21 @@ async function run(action: () => Promise<OpenResult>) {
       recents.value = await window.api.projects.listRecent();
     }
   } catch (err) {
-    console.error(err);
-    error.value = 'Something went wrong. Please try again.';
+    error.value = `${failure} ${errorMessage(err)}`;
   } finally {
     busy.value = false;
   }
 }
 
-const createProject = () => run(window.api.projects.create);
-const openProject = () => run(window.api.projects.open);
+const createProject = () =>
+  run(window.api.projects.create, "Couldn't create the project.");
+const openProject = () =>
+  run(window.api.projects.open, "Couldn't open the project.");
 const openRecent = (recent: RecentProject) =>
-  run(() => window.api.projects.openRecent(recent.path));
-
-const relativeTime = new Intl.RelativeTimeFormat(undefined, {
-  numeric: 'auto',
-});
-
-function timeAgo(iso: string) {
-  const minutes = Math.round((Date.now() - Date.parse(iso)) / 60_000);
-  if (minutes < 60) return relativeTime.format(-minutes, 'minute');
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return relativeTime.format(-hours, 'hour');
-  return relativeTime.format(-Math.round(hours / 24), 'day');
-}
+  run(
+    () => window.api.projects.openRecent(recent.path),
+    "Couldn't open the project.",
+  );
 </script>
 
 <template>
@@ -74,7 +69,9 @@ function timeAgo(iso: string) {
       <div class="actions">
         <button class="action primary" :disabled="busy" @click="createProject">
           <span class="action-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+            <svg class="icon" viewBox="0 0 24 24">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
           </span>
           <span class="action-text">
             <strong>New project</strong>
@@ -83,7 +80,7 @@ function timeAgo(iso: string) {
         </button>
         <button class="action" :disabled="busy" @click="openProject">
           <span class="action-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
+            <svg class="icon" viewBox="0 0 24 24">
               <path
                 d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
               />
@@ -106,7 +103,7 @@ function timeAgo(iso: string) {
 
     <section class="recents">
       <h2>Recent projects</h2>
-      <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <p v-if="error" class="box-error error" role="alert">{{ error }}</p>
 
       <ul v-if="recents.length" class="recent-list">
         <li v-for="recent in recents" :key="recent.path">
@@ -218,14 +215,9 @@ function timeAgo(iso: string) {
   background: rgb(255 255 255 / 0.12);
 }
 
-.action-icon svg {
+.action-icon .icon {
   width: 20px;
   height: 20px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 .action-text {
@@ -265,10 +257,6 @@ function timeAgo(iso: string) {
 
 .error {
   margin: 0 0 16px;
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  background: #fbeceb;
-  color: var(--danger);
 }
 
 .recent-list {

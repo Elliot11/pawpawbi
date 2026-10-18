@@ -16,10 +16,15 @@ import {
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { work } from './background';
-import { hasOpenProject, markProjectChanged, openProject } from './projects';
+import { removePath } from './fs-json';
+import {
+  hasOpenProject,
+  markProjectChanged,
+  openProject,
+  tracked,
+} from './projects';
 import { callPython } from './python';
 import {
-  DATASET_NAME,
   SITE_TYPES,
   createPage,
   createSite,
@@ -34,8 +39,10 @@ import {
   sitePath,
   writeDatasets,
   writeSiteFile,
+  type DatasetEntry,
 } from './report-site';
 import { SITE_TEMPLATES } from './report-templates';
+import { GUID, NAME, NAME_RULE } from './shared/ids';
 import type { Dataset, ReportFile } from './shared/types';
 import { REPORT_ORIGIN, REPORT_SCHEME } from './shared/types';
 
@@ -44,7 +51,7 @@ import { REPORT_ORIGIN, REPORT_SCHEME } from './shared/types';
  * scripts and styles, and data: images and fonts. Nothing from anywhere else, no frames, no
  * workers, no forms.
  */
-export const SITE_CSP = [
+const SITE_CSP = [
   "default-src 'none'",
   `script-src ${REPORT_ORIGIN} 'unsafe-inline'`,
   `style-src ${REPORT_ORIGIN} 'unsafe-inline'`,
@@ -144,7 +151,8 @@ export function guardFrames(contents: WebContents) {
       return;
     }
     const match = /\/pages\/([0-9a-f-]{36})\.html(?:[?#]|$)/.exec(event.url);
-    if (match) contents.send('report:navigated', match[1]);
+    if (match && GUID.test(match[1]))
+      contents.send('report:navigated', match[1]);
   });
 }
 
@@ -154,12 +162,10 @@ export function guardFrames(contents: WebContents) {
 const filesDir = () => openProject().filesDir;
 const dataDir = () => path.join(filesDir(), 'data');
 
-function toDataset(
+const toDataset = (
   name: string,
-  entry: Awaited<ReturnType<typeof readDatasets>>['datasets'][string],
-): Dataset {
-  return { name, ...entry };
-}
+  { sql, rows, refreshedAt, error }: DatasetEntry,
+): Dataset => ({ name, sql, rows, refreshedAt, error });
 
 export async function listDatasets(): Promise<Dataset[]> {
   const file = await readDatasets(filesDir());
@@ -179,11 +185,7 @@ async function writeDataset(name: string, sql: string) {
 }
 
 export async function saveDataset(name: string, sql: string): Promise<Dataset> {
-  if (!DATASET_NAME.test(name)) {
-    throw new Error(
-      'Dataset names use lowercase letters, digits and underscores, starting with a letter.',
-    );
-  }
+  if (!NAME.test(name)) throw new Error(`Dataset names: ${NAME_RULE}`);
   if (!sql.trim()) throw new Error('Enter a query for the dataset.');
   const result = await writeDataset(name, sql);
   const file = await readDatasets(filesDir());
@@ -204,14 +206,15 @@ export async function deleteDataset(name: string) {
   if (!(name in file.datasets)) return;
   delete file.datasets[name];
   await writeDatasets(filesDir(), file);
-  await fs.rm(datasetFile(filesDir(), name), { force: true, maxRetries: 5 });
+  await removePath(datasetFile(filesDir(), name));
   await markProjectChanged();
 }
 
 /**
  * Rewrites every dataset's data from the tables as they are now. Called after data loads and
  * rebuilds (data.ts), before exporting, and from the Refresh button. A dataset whose query
- * fails keeps its previous data and records the error.
+ * fails keeps its previous data and records the error. Marks the project changed itself, like
+ * the other dataset functions, because the assistant's tools call these directly.
  */
 export async function refreshDatasets(
   onProgress?: (message: string) => void,
@@ -264,10 +267,10 @@ async function pickExportFolder(event: IpcMainInvokeEvent) {
 // ---------------------------------------------------------------------------------------------
 // IPC
 
-const tracked = <R>(label: string, operation: () => Promise<R>) =>
-  work.run(openProject().id, label, operation);
-
-/** Runs a change to the project and marks it as changed. */
+/**
+ * Runs a change to the site's files (report-site.ts, which doesn't know about the open project)
+ * as tracked work and marks the project changed.
+ */
 const change = <R>(label: string, operation: () => Promise<R>) =>
   tracked(label, async () => {
     const result = await operation();

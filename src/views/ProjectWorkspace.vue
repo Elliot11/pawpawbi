@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { errorMessage } from '../errors';
 import type { Project, WorkflowStage } from '../shared/types';
 import ChatPanel from '../components/ChatPanel.vue';
 import WorkflowSteps from '../components/WorkflowSteps.vue';
@@ -30,9 +31,7 @@ async function save() {
   try {
     await window.api.projects.save();
   } catch (error) {
-    console.error(error);
-    saveError.value =
-      "Couldn't save. Check the file isn't open in another program.";
+    saveError.value = `Couldn't save. ${errorMessage(error)}`;
   } finally {
     saving.value = false;
   }
@@ -42,9 +41,7 @@ async function close() {
   try {
     if (await window.api.projects.close()) emit('close');
   } catch (error) {
-    console.error(error);
-    saveError.value =
-      "Couldn't save. Check the file isn't open in another program.";
+    saveError.value = `Couldn't close the project. ${errorMessage(error)}`;
   }
 }
 
@@ -63,7 +60,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   <div class="workspace">
     <header class="topbar">
       <button class="back" title="Back to projects" @click="close">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M15 18l-6-6 6-6" />
         </svg>
         Projects
@@ -156,14 +153,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   color: var(--ink);
 }
 
-.back svg {
+.back .icon {
   width: 18px;
   height: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 .divider {

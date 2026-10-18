@@ -7,16 +7,15 @@ from pathlib import Path
 
 import pytest
 
+import engine
 import report_data
 import transforms
-from test_transforms import ESCAPES
+from conftest import ESCAPE_PARAMS, SLOW, escape_query
 
 
-def write(data_dir: Path, sql: str, **extra) -> dict:
+def write(data_dir: Path, sql: str) -> dict:
     out = data_dir.parent / "report" / "data" / "sales.json"
-    result = report_data.write_dataset(
-        {"data_dir": str(data_dir), "name": "sales", "sql": sql, "path": str(out), **extra}
-    )
+    result = report_data.write_dataset({"data_dir": str(data_dir), "name": "sales", "sql": sql, "path": str(out)})
     return {**result, "file": json.loads(out.read_text(encoding="utf-8")) if out.exists() else None}
 
 
@@ -36,6 +35,19 @@ def test_dates_are_iso_text(data_dir):
     assert doc["rows"] == [["2024-03-01", "2024-03-01T06:30:00"]]
 
 
+def test_nan_and_infinity_become_null(data_dir):
+    # JSON has no NaN or infinity; the report shows them as missing.
+    doc = write(data_dir, "SELECT 'nan'::DOUBLE AS n, 'inf'::DOUBLE AS i, 1.5 AS ok")["file"]
+    assert doc["rows"] == [[None, None, 1.5]]
+
+
+def test_empty_result(data_dir):
+    result = write(data_dir, "SELECT region FROM monthly_sales WHERE false")
+    assert result["file"]["columns"] == [{"name": "region", "type": "VARCHAR"}]
+    assert result["file"]["rows"] == []
+    assert result == {**result, "rows": 0, "truncated": False}
+
+
 def test_reads_tables_as_shown(data_dir):
     transforms.apply_transform(
         {"data_dir": str(data_dir), "table": "budget_targets", "sql": "SELECT region FROM budget_targets"}
@@ -44,15 +56,16 @@ def test_reads_tables_as_shown(data_dir):
     assert [c["name"] for c in doc["columns"]] == ["region"]
 
 
-def test_rows_are_capped(data_dir):
-    result = write(data_dir, "SELECT * FROM range(10)", max_rows=4)
+def test_rows_are_capped(data_dir, monkeypatch):
+    monkeypatch.setattr(report_data, "MAX_ROWS", 4)
+    result = write(data_dir, "SELECT * FROM range(10)")
     assert len(result["file"]["rows"]) == 4
     assert result["truncated"] is True
 
-
-def test_the_cap_cannot_be_raised(data_dir):
-    result = write(data_dir, f"SELECT * FROM range({report_data.MAX_ROWS + 5})", max_rows=10**9)
-    assert result["rows"] == report_data.MAX_ROWS
+    monkeypatch.setattr(report_data, "MAX_ROWS", 0)
+    result = write(data_dir, "SELECT * FROM range(10)")
+    assert result["file"]["rows"] == []
+    assert result["truncated"] is True
 
 
 def test_oversized_results_are_refused_and_the_old_file_kept(data_dir, monkeypatch):
@@ -64,20 +77,16 @@ def test_oversized_results_are_refused_and_the_old_file_kept(data_dir, monkeypat
     assert json.loads(out.read_text(encoding="utf-8"))["rows"] == [[1]]
 
 
-def test_slow_queries_are_stopped(data_dir):
+def test_slow_queries_are_stopped(data_dir, monkeypatch):
+    monkeypatch.setattr(engine, "TIME_LIMIT_SECONDS", 0.5)
     with pytest.raises(TimeoutError, match="longer than 0.5 seconds"):
-        write(data_dir, "SELECT count(*) FROM range(1000000000000) a", time_limit=0.5)
+        write(data_dir, SLOW)
 
 
-@pytest.mark.parametrize("sql", [sql for _, sql in ESCAPES], ids=[name for name, _ in ESCAPES])
-def test_sandbox_blocks(data_dir, outside, sql):
-    sql = sql.format(outside=outside.as_posix(), outside_dir=outside.parent.as_posix(), data=data_dir.as_posix())
-    sibling = data_dir.parent / f"{data_dir.name}2"
-    sibling.mkdir()
-    (sibling / "secret.txt").write_text("secret\nhunter2\n", encoding="utf-8")
-
+@pytest.mark.parametrize(**ESCAPE_PARAMS)
+def test_sandbox_blocks(data_dir, outside, sibling_secret, sql):
     with pytest.raises(Exception) as caught:
-        write(data_dir, sql)
+        write(data_dir, escape_query(sql, data_dir, outside))
     assert "hunter2" not in str(caught.value)
     assert not (data_dir.parent / "report" / "data" / "sales.json").exists()
     assert not (outside.parent / "x.csv").exists()

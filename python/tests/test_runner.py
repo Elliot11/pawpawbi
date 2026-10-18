@@ -40,9 +40,8 @@ def test_local_files_discover_csv_and_excel_sheets(run_job, sales_csv, budget_xl
     ]
 
 
-def test_local_files_load_csv_and_excel_sheets(run_job, tmp_path, sales_csv, budget_xlsx):
-    data_dir = tmp_path / "project" / "data"
-    events = run_job(load_job("local_files", {"files": [str(sales_csv), str(budget_xlsx)]}, data_dir))
+def test_local_files_load_csv_and_excel_sheets(run_job, project_data_dir, sales_csv, budget_xlsx):
+    events = run_job(load_job("local_files", {"files": [str(sales_csv), str(budget_xlsx)]}, project_data_dir))
     assert result_of(events) == {
         "tables": [
             {"name": "budget_staff", "rows": 3},
@@ -52,42 +51,39 @@ def test_local_files_load_csv_and_excel_sheets(run_job, tmp_path, sales_csv, bud
     }
     progress = [e["message"] for e in events if e["event"] == "progress"]
     assert progress == ["Connecting…", "Downloading data…", "Preparing tables…", "Saving to the project…"]
-    assert on_disk(data_dir) == {"budget_staff": 3, "budget_targets": 2, "monthly_sales": 4}
-    assert list((data_dir / "raw" / "monthly_sales").glob("*.parquet"))
+    assert on_disk(project_data_dir) == {"budget_staff": 3, "budget_targets": 2, "monthly_sales": 4}
+    assert list((project_data_dir / "raw" / "monthly_sales").glob("*.parquet"))
 
-    preview = datasets.preview_table({"data_dir": str(data_dir), "table": "budget_targets"})
-    assert [row[:2] for row in preview["rows"]] == [["North", 5000], ["South", 4000]]
+    preview = datasets.preview_table({"data_dir": str(project_data_dir), "table": "budget_targets"})
+    assert preview["rows"] == [["North", 5000], ["South", 4000]]
 
 
-def test_local_files_csv_gets_proper_column_types(run_job, tmp_path, sales_csv):
+def test_local_files_csv_gets_proper_column_types(run_job, project_data_dir, sales_csv):
     """DuckDB reads CSV, so dates and numbers aren't left as text."""
-    data_dir = tmp_path / "project" / "data"
-    result_of(run_job(load_job("local_files", {"files": [str(sales_csv)]}, data_dir)))
-    sales = {t["name"]: t for t in datasets.describe_tables({"data_dir": str(data_dir)})}["monthly_sales"]
+    result_of(run_job(load_job("local_files", {"files": [str(sales_csv)]}, project_data_dir)))
+    sales = {t["name"]: t for t in datasets.describe_tables({"data_dir": str(project_data_dir)})}["monthly_sales"]
     assert {c["name"]: c["kind"] for c in sales["columns"]} == {
         "order_id": "integer",
         "order_date": "date",
         "region": "text",
         "revenue": "decimal",
     }
-    preview = datasets.preview_table({"data_dir": str(data_dir), "table": "monthly_sales"})
+    preview = datasets.preview_table({"data_dir": str(project_data_dir), "table": "monthly_sales"})
     assert preview["rows"][0] == [1001, "2026-07-03", "North", 1250.5]
     assert preview["rows"][3][3] is None  # the empty revenue cell
 
 
-def test_local_files_load_json_variants(run_job, tmp_path, json_array, json_wrapper, json_lines, json_nested):
-    data_dir = tmp_path / "project" / "data"
+def test_local_files_load_json_variants(run_job, project_data_dir, json_array, json_wrapper, json_lines, json_nested):
     files = [str(p) for p in (json_array, json_wrapper, json_lines, json_nested)]
-    tables = {t["name"]: t["rows"] for t in result_of(run_job(load_job("local_files", {"files": files}, data_dir)))["tables"]}
+    tables = {t["name"]: t["rows"] for t in result_of(run_job(load_job("local_files", {"files": files}, project_data_dir)))["tables"]}
     assert tables == {"people": 3, "wrapped": 3, "events": 3, "orders": 2, "orders__items": 3}
 
-    orders = {t["name"]: t for t in datasets.describe_tables({"data_dir": str(data_dir)})}["orders"]
+    orders = {t["name"]: t for t in datasets.describe_tables({"data_dir": str(project_data_dir)})}["orders"]
     assert {"customer__name", "customer__city"} <= {c["name"] for c in orders["columns"]}
 
 
-def test_local_files_selected_resources_only(run_job, tmp_path, budget_xlsx):
-    data_dir = tmp_path / "project" / "data"
-    events = run_job(load_job("local_files", {"files": [str(budget_xlsx)]}, data_dir, resources=["Budget Staff"]))
+def test_local_files_selected_resources_only(run_job, project_data_dir, budget_xlsx):
+    events = run_job(load_job("local_files", {"files": [str(budget_xlsx)]}, project_data_dir, resources=["Budget Staff"]))
     assert result_of(events) == {"tables": [{"name": "budget_staff", "rows": 3}]}
 
 
@@ -96,36 +92,32 @@ def test_sqlite_discover(run_job, sqlite_db):
     assert sorted(r["name"] for r in result_of(events)) == ["customers", "products"]
 
 
-def test_sqlite_reload_replaces_rather_than_duplicates(run_job, tmp_path, sqlite_db):
-    data_dir = tmp_path / "project" / "data"
-    job = load_job("sqlite", {"file": str(sqlite_db)}, data_dir, resources=["customers"], reserved=["monthly_sales"])
+def test_sqlite_reload_replaces_rather_than_duplicates(run_job, project_data_dir, sqlite_db):
+    job = load_job("sqlite", {"file": str(sqlite_db)}, project_data_dir, resources=["customers"], reserved=["monthly_sales"])
     assert result_of(run_job(job)) == {"tables": [{"name": "customers", "rows": 3}]}
-    assert on_disk(data_dir) == {"customers": 3}
+    assert on_disk(project_data_dir) == {"customers": 3}
 
     assert result_of(run_job(job)) == {"tables": [{"name": "customers", "rows": 3}]}
-    assert on_disk(data_dir) == {"customers": 3}
+    assert on_disk(project_data_dir) == {"customers": 3}
 
 
-def test_folder_combines_files_into_one_table(run_job, tmp_path, csv_folder):
-    data_dir = tmp_path / "project" / "data"
+def test_folder_combines_files_into_one_table(run_job, project_data_dir, csv_folder):
     settings = {"folder": str(csv_folder), "format": "csv", "table": "all_sales"}
-    assert result_of(run_job(load_job("folder", settings, data_dir))) == {"tables": [{"name": "all_sales", "rows": 4}]}
-    assert on_disk(data_dir) == {"all_sales": 4}
+    assert result_of(run_job(load_job("folder", settings, project_data_dir))) == {"tables": [{"name": "all_sales", "rows": 4}]}
+    assert on_disk(project_data_dir) == {"all_sales": 4}
 
 
-def test_table_name_clash_with_another_source_is_rejected(run_job, tmp_path, sqlite_db):
-    data_dir = tmp_path / "project" / "data"
-    job = load_job("sqlite", {"file": str(sqlite_db)}, data_dir, resources=["customers"], reserved=["customers"])
+def test_table_name_clash_with_another_source_is_rejected(run_job, project_data_dir, sqlite_db):
+    job = load_job("sqlite", {"file": str(sqlite_db)}, project_data_dir, resources=["customers"], reserved=["customers"])
     assert error_of(run_job(job)) == (
         "Another data source already has a table called customers. Remove or rename that source first."
     )
-    assert not (data_dir / "raw" / "customers").exists()
+    assert not (project_data_dir / "raw" / "customers").exists()
 
 
-def test_clash_check_uses_normalised_table_names(run_job, tmp_path, sales_csv):
+def test_clash_check_uses_normalised_table_names(run_job, project_data_dir, sales_csv):
     """"Monthly Sales" becomes the table monthly_sales, so it clashes with that name."""
-    data_dir = tmp_path / "project" / "data"
-    job = load_job("local_files", {"files": [str(sales_csv)]}, data_dir, reserved=["monthly_sales"])
+    job = load_job("local_files", {"files": [str(sales_csv)]}, project_data_dir, reserved=["monthly_sales"])
     assert "already has a table called Monthly Sales" in error_of(run_job(job))
 
 
@@ -161,13 +153,12 @@ def test_invalid_job_line(run_job):
     assert error_of(run_job("not json")) == "Expecting value: line 1 column 1 (char 0)"
 
 
-def test_sidecar_rpc_after_load(run_job, tmp_path, budget_xlsx):
+def test_sidecar_rpc_after_load(run_job, tmp_path, project_data_dir, budget_xlsx):
     """The main sidecar (main.py) reads what runner.py loaded, over its JSON-lines protocol."""
-    data_dir = tmp_path / "project" / "data"
-    result_of(run_job(load_job("local_files", {"files": [str(budget_xlsx)]}, data_dir)))
+    result_of(run_job(load_job("local_files", {"files": [str(budget_xlsx)]}, project_data_dir)))
     requests = [
-        {"id": 1, "method": "list_tables", "params": {"data_dir": str(data_dir)}},
-        {"id": 2, "method": "preview_table", "params": {"data_dir": str(data_dir), "table": "budget_targets", "limit": 5}},
+        {"id": 1, "method": "list_tables", "params": {"data_dir": str(project_data_dir)}},
+        {"id": 2, "method": "preview_table", "params": {"data_dir": str(project_data_dir), "table": "budget_targets", "limit": 5}},
         {"id": 3, "method": "nope"},
         {"id": 4, "method": "catalog"},
     ]
@@ -181,13 +172,12 @@ def test_sidecar_rpc_after_load(run_job, tmp_path, budget_xlsx):
     responses = [json.loads(line) for line in proc.stdout.decode("utf-8").splitlines()]
     assert [r["id"] for r in responses] == [1, 2, 3, 4]
     assert responses[0]["result"] == ["budget_staff", "budget_targets"]
-    assert [row[:2] for row in responses[1]["result"]["rows"]] == [["North", 5000], ["South", 4000]]
+    assert responses[1]["result"]["rows"] == [["North", 5000], ["South", 4000]]
     assert responses[2]["error"] == "ValueError: Unknown method: nope"
     assert any(c["id"] == "local_files" for c in responses[3]["result"]["connectors"])
 
 
 @pytest.mark.network
-def test_url_loads_json_api(run_job, tmp_path):
-    data_dir = tmp_path / "project" / "data"
+def test_url_loads_json_api(run_job, project_data_dir):
     settings = {"url": "https://jsonplaceholder.typicode.com/comments"}
-    assert result_of(run_job(load_job("url", settings, data_dir))) == {"tables": [{"name": "comments", "rows": 500}]}
+    assert result_of(run_job(load_job("url", settings, project_data_dir))) == {"tables": [{"name": "comments", "rows": 500}]}

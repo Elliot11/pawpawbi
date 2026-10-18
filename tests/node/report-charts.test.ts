@@ -11,6 +11,19 @@ const source = fs.readFileSync(
   'utf8',
 );
 const window: Record<string, any> = { addEventListener() {} };
+
+// charts.js formats with the viewer's locale (Intl with no locale given). Pin it to en-US in
+// the sandbox so the formatting assertions don't depend on this machine's settings.
+const LOCALE = 'en-US';
+const fixedLocale = (Format: any) =>
+  function (_locale: unknown, options?: unknown) {
+    return new Format(LOCALE, options);
+  };
+const fixedIntl = Object.create(Intl, {
+  NumberFormat: { value: fixedLocale(Intl.NumberFormat) },
+  DateTimeFormat: { value: fixedLocale(Intl.DateTimeFormat) },
+});
+
 vm.runInNewContext(source, {
   window,
   document: {
@@ -22,7 +35,7 @@ vm.runInNewContext(source, {
     head: { prepend() {} },
   },
   URL,
-  Intl,
+  Intl: fixedIntl,
 });
 const { niceTicks, timeTicks, parseTime, formatValue, buildSeries, toRows } =
   window.pawpaw._internal;
@@ -73,9 +86,13 @@ test('time ticks fall on round dates', () => {
 test('values are formatted, compactly on axes', () => {
   assert.equal(formatValue(null), '–');
   assert.equal(formatValue('North'), 'North');
-  assert.equal(formatValue(1234.567), (1234.57).toLocaleString());
-  assert.match(formatValue(12900, null, { compact: true }), /^12\.9\s?K$/i);
-  assert.match(formatValue(0.255, 'percent'), /25\.5\s?%/);
+  assert.equal(formatValue(1234.567), '1,234.57');
+  assert.equal(formatValue(12900, null, { compact: true }), '12.9K');
+  // 'auto' shortens from 10,000 (labels on the marks and headline numbers).
+  assert.equal(formatValue(12900, null, { compact: 'auto' }), '12.9K');
+  assert.equal(formatValue(9999, null, { compact: 'auto' }), '9,999');
+  assert.equal(formatValue(0.255, 'percent'), '25.5%');
+  assert.equal(formatValue(1234.5, 'currency'), '$1,234.50');
   assert.doesNotMatch(
     formatValue(0, 'currency', { compact: true }),
     /\.00/,

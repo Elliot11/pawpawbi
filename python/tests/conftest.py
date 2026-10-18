@@ -164,10 +164,16 @@ def _write_raw(data_dir: Path, table: str, columns: dict, files: int = 1):
 
 
 @pytest.fixture
-def data_dir(tmp_path) -> Path:
+def project_data_dir(tmp_path) -> Path:
+    """Where a project's data folder would be: nothing has been loaded into it yet."""
+    return tmp_path / "project" / "data"
+
+
+@pytest.fixture
+def data_dir(project_data_dir) -> Path:
     """A project data folder with three loaded tables and dlt's own bookkeeping table.
     monthly_sales is split over two Parquet files, as dlt does for larger tables."""
-    data = tmp_path / "project" / "data"
+    data = project_data_dir
     _write_raw(data, "monthly_sales", SALES, files=2)
     _write_raw(data, "budget_targets", {"region": ["North", "South"], "budget": [5000, 4000]})
     _write_raw(data, "budget_staff", {"month": ["Jul", "Aug", "Sep"], "headcount": [12, 14, 15]})
@@ -175,6 +181,62 @@ def data_dir(tmp_path) -> Path:
     loads.mkdir()
     pq.write_table(pa.table({"load_id": ["1792192294.07"], "status": [0]}), loads / "loads.parquet")
     return data
+
+
+def describe(data_dir: Path) -> dict:
+    """Table name -> what describe_tables reports for it."""
+    import datasets
+
+    return {t["name"]: t for t in datasets.describe_tables({"data_dir": str(data_dir)})}
+
+
+# Queries that must never succeed against the locked-down engine ------------------------------------
+
+SYSTEM_FILE = "C:/Windows/win.ini" if sys.platform == "win32" else "/etc/hosts"
+
+# (test id, SQL, where {outside} is the secret file, {outside_dir} its folder and {data} the
+# data folder). Format them with escape_query().
+ESCAPES = [
+    ("read_system_file", f"SELECT * FROM read_csv('{SYSTEM_FILE}')"),
+    ("read_text_outside_data_dir", "SELECT * FROM read_text('{outside}')"),
+    ("read_csv_outside_data_dir", "SELECT * FROM read_csv('{outside}')"),
+    ("read_blob_outside_data_dir", "SELECT * FROM read_blob('{outside}')"),
+    ("from_first_syntax_outside_data_dir", "FROM read_csv('{outside}')"),
+    ("dotdot_out_of_data_dir", "SELECT * FROM read_text('{data}/../secret.txt')"),
+    ("sibling_folder_with_same_prefix", "SELECT * FROM read_text('{data}2/secret.txt')"),
+    ("file_url_outside_data_dir", "SELECT * FROM read_text('file:///{outside}')"),
+    ("glob_lists_files_outside", "SELECT * FROM glob('{outside_dir}/*')"),
+    ("hidden_in_union", "SELECT 'x' AS a UNION ALL SELECT content FROM read_text('{outside}')"),
+    ("hidden_in_cte", "WITH s AS (SELECT * FROM read_text('{outside}')) SELECT * FROM s"),
+    ("web_request", "SELECT * FROM read_csv('https://jsonplaceholder.typicode.com/comments')"),
+    ("set_external_access", "SET enable_external_access = true"),
+    ("reset_setting", "RESET enable_external_access"),
+    ("pragma_setting", "PRAGMA enable_external_access=true"),
+    ("query_function_runs_set", "SELECT * FROM query('SET enable_external_access = true')"),
+    ("copy_to_file", "COPY (SELECT 1) TO '{outside_dir}/x.csv'"),
+    ("export_database", "EXPORT DATABASE '{outside_dir}/export'"),
+    ("attach_database", "ATTACH '{outside_dir}/x.db'"),
+    ("create_table", "CREATE TABLE x AS SELECT 1"),
+    ("drop_view", "DROP VIEW monthly_sales"),
+    ("two_statements", "SELECT 1; SELECT 2"),
+    ("install_extension", "INSTALL httpfs"),
+    ("load_extension", "LOAD httpfs"),
+    ("call_procedure", "CALL pragma_version()"),
+    ("syntax_error", "SELEC * FROM monthly_sales"),
+    ("unknown_table", "SELECT * FROM nope"),
+    ("empty_query", "   "),
+]
+ESCAPE_PARAMS = dict(argnames="sql", argvalues=[sql for _, sql in ESCAPES], ids=[name for name, _ in ESCAPES])
+
+
+def escape_query(sql: str, data_dir: Path, outside: Path) -> str:
+    """An ESCAPES query with its placeholders filled in."""
+    return sql.format(outside=outside.as_posix(), outside_dir=outside.parent.as_posix(), data=data_dir.as_posix())
+
+
+# A query that never finishes within a test's time limit. A cross join rather than one huge
+# range(), which DuckDB could one day answer from the range's size without scanning it.
+SLOW = "SELECT count(*) FROM range(1000000) a, range(1000000) b"
 
 
 # Running runner.py like the app does ----------------------------------------------------------------
@@ -225,5 +287,15 @@ def error_of(events: list[dict]) -> str:
 def outside(tmp_path) -> Path:
     """A file next to the project, outside its data folder."""
     path = tmp_path / "secret.txt"
+    path.write_text("secret\nhunter2\n", encoding="utf-8")
+    return path
+
+
+@pytest.fixture
+def sibling_secret(data_dir) -> Path:
+    """A secret file in a sibling folder (<data_dir>2) whose name starts with the data folder's."""
+    sibling = data_dir.parent / f"{data_dir.name}2"
+    sibling.mkdir()
+    path = sibling / "secret.txt"
     path.write_text("secret\nhunter2\n", encoding="utf-8")
     return path

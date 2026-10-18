@@ -54,8 +54,8 @@ obvious from the code. Keep this file current when a convention changes.
 - **pandas isn't bundled**, deliberately (decision 4 in [docs/decisions.md](docs/decisions.md)). Use DuckDB, pyarrow or plain Python instead of adding
   it back.
 - **Anything read from a `.pawpaw` file is untrusted** (projects are shared). Validate IDs and
-  names before using them in paths (`SAFE_ID`, `SAFE_TABLE`, `GUID`, `DATASET_NAME`;
-  `engine.table_dir` on the Python side); never execute stored code, except the report in its
+  names before using them in paths (`SAFE_ID`, `SAFE_TABLE`, `GUID` and `NAME` in
+  `src/shared/ids.ts`; `engine.table_dir` on the Python side); never execute stored code, except the report in its
   sandbox.
 - **The report (`report/`) is a static website** that must work hosted on its own (e.g. S3 + CDN):
   plain HTML, CSS and JavaScript, no Vue or framework, nothing loaded from outside the folder, no
@@ -90,7 +90,7 @@ obvious from the code. Keep this file current when a convention changes.
   files; data lives as Parquet in `data/raw` and `data/model`.
 - Data loads are full refreshes (`write_disposition="replace"`, `refresh="drop_resources"`).
 - **Background work must be tracked.** A new IPC handler that changes the open project goes
-  through `tracked(label, …)` in `src/data.ts`. A process it starts registers with
+  through `tracked(label, …)` from `src/projects.ts`. A process it starts registers with
   `work.onCancel` (see `stoppable` in `data.ts`). Multi-step work calls `work.checkCancelled()`
   between steps and rethrows when stopped instead of recording an error. Otherwise saving can
   zip half-written data, and closing can delete the folder the work is writing to.

@@ -27,9 +27,9 @@ def _layer(params) -> engine.Layer:
 
 def preview_transform(params):
     """Run a query and return its first rows, without saving anything."""
+    query = engine.select(params["sql"])
     con = engine.connect(Path(params["data_dir"]), layer=_layer(params))
     try:
-        query = engine.select(con, params["sql"])
         return engine.preview(con, query, int(params.get("limit", 200)))
     finally:
         con.close()
@@ -42,15 +42,10 @@ def query_tables(params) -> list[str]:
     dlt), because DuckDB's get_table_names resolves views to the files behind them, and without
     the views it can't bind queries such as JOIN ... USING.
     """
-    import duckdb
     import sqlglot
     from sqlglot import exp
 
-    con = duckdb.connect(":memory:")
-    try:
-        query = engine.select(con, params["sql"])
-    finally:
-        con.close()
+    query = engine.select(params["sql"])
     try:
         tree = sqlglot.parse_one(query, dialect="duckdb")
     except sqlglot.errors.ParseError as exc:
@@ -69,10 +64,11 @@ def _write_result(data_dir: Path, sql: str, layer: engine.Layer, dataset: str, t
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir()
 
+    query = engine.select(sql)
     con = engine.connect(data_dir, layer=layer)
     try:
         with engine.time_limit(con):
-            reader = con.sql(engine.select(con, sql)).to_arrow_reader(BATCH_ROWS)
+            reader = con.sql(query).to_arrow_reader(BATCH_ROWS)
             rows = 0
             with pq.ParquetWriter(staging / "data.parquet", reader.schema) as writer:
                 for batch in reader:
@@ -94,7 +90,7 @@ def apply_transform(params):
     data_dir = Path(params["data_dir"])
     table = params["table"]
     if table not in engine.table_names(data_dir):
-        raise ValueError(f"No table named {table!r}")
+        raise ValueError(f'No table called "{table}".')
     return {"rows": _write_result(data_dir, params["sql"], "raw", engine.MODEL_DATASET, table)}
 
 
@@ -123,6 +119,6 @@ def delete_table(params):
     data_dir = Path(params["data_dir"])
     table = params["table"]
     if table not in engine.table_names(data_dir) and table not in engine.transformed_table_names(data_dir):
-        raise ValueError(f"No table named {table!r}")
+        raise ValueError(f'No table called "{table}".')
     for dataset in (engine.RAW_DATASET, engine.MODEL_DATASET, engine.TRANSFORMED_DATASET):
         shutil.rmtree(engine.table_dir(data_dir, dataset, table), ignore_errors=True)

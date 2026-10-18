@@ -1,7 +1,6 @@
 """SQL transforms (python/sidecar/transforms.py): running, saving and removing them, and the
 lockdown that stops a transform from reaching anything outside the project's data folder."""
 
-import sys
 from pathlib import Path
 
 import pytest
@@ -9,14 +8,11 @@ import pytest
 import datasets
 import engine
 import transforms
+from conftest import ESCAPE_PARAMS, SLOW, describe, escape_query
 
 
 def preview(data_dir: Path, sql: str, **extra):
     return transforms.preview_transform({"data_dir": str(data_dir), "sql": sql, **extra})
-
-
-def describe(data_dir: Path) -> dict:
-    return {t["name"]: t for t in datasets.describe_tables({"data_dir": str(data_dir)})}
 
 
 CLEAN_SALES = (
@@ -122,7 +118,7 @@ def test_failed_apply_keeps_previous_result(data_dir):
 
 
 def test_apply_to_unknown_table_is_rejected(data_dir):
-    with pytest.raises(ValueError, match="No table named 'nope'"):
+    with pytest.raises(ValueError, match='No table called "nope"'):
         transforms.apply_transform({"data_dir": str(data_dir), "table": "nope", "sql": "SELECT 1"})
 
 
@@ -144,7 +140,7 @@ def test_delete_table_removes_original_and_transformed_copy(data_dir):
     assert datasets.list_tables({"data_dir": str(data_dir)}) == ["budget_targets", "monthly_sales"]
     assert not (data_dir / "raw" / "budget_staff").exists()
     assert not (data_dir / "model" / "budget_staff").exists()
-    with pytest.raises(ValueError, match="No table named"):
+    with pytest.raises(ValueError, match='No table called "budget_staff"'):
         transforms.delete_table({"data_dir": str(data_dir), "table": "budget_staff"})
 
 
@@ -156,53 +152,13 @@ def test_table_named_like_a_sql_keyword(data_dir):
 
 
 # Sandbox: a transform can only read the project's data folder -------------------------------------
+# (the queries, ESCAPES, are in conftest.py; report datasets run the same ones)
 
 
-SYSTEM_FILE = "C:/Windows/win.ini" if sys.platform == "win32" else "/etc/hosts"
-
-# (test id, SQL, where {outside} is the secret file and {data} the data folder)
-ESCAPES = [
-    ("read_system_file", f"SELECT * FROM read_csv('{SYSTEM_FILE}')"),
-    ("read_text_outside_data_dir", "SELECT * FROM read_text('{outside}')"),
-    ("read_csv_outside_data_dir", "SELECT * FROM read_csv('{outside}')"),
-    ("read_blob_outside_data_dir", "SELECT * FROM read_blob('{outside}')"),
-    ("from_first_syntax_outside_data_dir", "FROM read_csv('{outside}')"),
-    ("dotdot_out_of_data_dir", "SELECT * FROM read_text('{data}/../secret.txt')"),
-    ("sibling_folder_with_same_prefix", "SELECT * FROM read_text('{data}2/secret.txt')"),
-    ("file_url_outside_data_dir", "SELECT * FROM read_text('file:///{outside}')"),
-    ("glob_lists_files_outside", "SELECT * FROM glob('{outside_dir}/*')"),
-    ("hidden_in_union", "SELECT 'x' AS a UNION ALL SELECT content FROM read_text('{outside}')"),
-    ("hidden_in_cte", "WITH s AS (SELECT * FROM read_text('{outside}')) SELECT * FROM s"),
-    ("web_request", "SELECT * FROM read_csv('https://jsonplaceholder.typicode.com/comments')"),
-    ("set_external_access", "SET enable_external_access = true"),
-    ("reset_setting", "RESET enable_external_access"),
-    ("pragma_setting", "PRAGMA enable_external_access=true"),
-    ("query_function_runs_set", "SELECT * FROM query('SET enable_external_access = true')"),
-    ("copy_to_file", "COPY (SELECT 1) TO '{outside_dir}/x.csv'"),
-    ("export_database", "EXPORT DATABASE '{outside_dir}/export'"),
-    ("attach_database", "ATTACH '{outside_dir}/x.db'"),
-    ("create_table", "CREATE TABLE x AS SELECT 1"),
-    ("drop_view", "DROP VIEW monthly_sales"),
-    ("two_statements", "SELECT 1; SELECT 2"),
-    ("install_extension", "INSTALL httpfs"),
-    ("load_extension", "LOAD httpfs"),
-    ("call_procedure", "CALL pragma_version()"),
-    ("syntax_error", "SELEC * FROM monthly_sales"),
-    ("unknown_table", "SELECT * FROM nope"),
-    ("empty_query", "   "),
-]
-
-
-@pytest.mark.parametrize("sql", [sql for _, sql in ESCAPES], ids=[name for name, _ in ESCAPES])
-def test_sandbox_blocks(data_dir, outside, sql):
-    sql = sql.format(outside=outside.as_posix(), outside_dir=outside.parent.as_posix(), data=data_dir.as_posix())
-    # A sibling folder whose name starts with the data folder's name.
-    sibling = data_dir.parent / f"{data_dir.name}2"
-    sibling.mkdir()
-    (sibling / "secret.txt").write_text("secret\nhunter2\n", encoding="utf-8")
-
+@pytest.mark.parametrize(**ESCAPE_PARAMS)
+def test_sandbox_blocks(data_dir, outside, sibling_secret, sql):
     with pytest.raises(Exception) as caught:
-        preview(data_dir, sql)
+        preview(data_dir, escape_query(sql, data_dir, outside))
     assert "hunter2" not in str(caught.value)
 
     # Nothing was written or changed.
@@ -261,8 +217,6 @@ def test_sandbox_blocks_duckdb_temp_directory_in_working_dir(data_dir, tmp_path,
 
 
 # Time limits and name checks -------------------------------------------------------------------
-
-SLOW = "SELECT count(*) FROM range(1000000000000) a"
 
 
 def test_slow_previews_are_stopped(data_dir, monkeypatch):

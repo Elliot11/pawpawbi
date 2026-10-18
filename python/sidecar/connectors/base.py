@@ -125,14 +125,14 @@ def required(settings: dict, key: str, label: str | None = None) -> str:
     return value
 
 
-def integer(settings: dict, key: str, default: int | None = None) -> int | None:
+def integer(settings: dict, key: str, default: int | None = None, label: str | None = None) -> int | None:
     value = text(settings, key)
     if value is None:
         return default
     try:
         return int(value)
     except ValueError:
-        raise ValueError(f"{key} must be a whole number.") from None
+        raise ValueError(f"{label or key} must be a whole number.") from None
 
 
 def boolean(settings: dict, key: str, default: bool = False) -> bool:
@@ -155,17 +155,19 @@ def lines(settings: dict, key: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
-def date(settings: dict, key: str, default: _dt.date | None = None) -> _dt.date | None:
+def date(
+    settings: dict, key: str, default: _dt.date | None = None, label: str | None = None
+) -> _dt.date | None:
     value = text(settings, key)
     if value is None:
         return default
     try:
         return _dt.date.fromisoformat(value)
     except ValueError:
-        raise ValueError(f"{key} must be a date like 2026-01-31.") from None
+        raise ValueError(f"{label or key} must be a date like 2026-01-31.") from None
 
 
-def json_object(settings: dict, key: str) -> dict | None:
+def json_object(settings: dict, key: str, label: str | None = None) -> dict | None:
     """Parse a pasted JSON object, e.g. a Google service account key."""
     value = text(settings, key)
     if value is None:
@@ -173,9 +175,9 @@ def json_object(settings: dict, key: str) -> dict | None:
     try:
         parsed = json.loads(value)
     except json.JSONDecodeError:
-        raise ValueError(f"{key} must be valid JSON.") from None
+        raise ValueError(f"{label or key} must be valid JSON.") from None
     if not isinstance(parsed, dict):
-        raise ValueError(f"{key} must be a JSON object.")
+        raise ValueError(f"{label or key} must be a JSON object.")
     return parsed
 
 

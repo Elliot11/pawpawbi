@@ -19,8 +19,8 @@ flowchart LR
   I --> F[("chat/messages.jsonl")]
 ```
 
-1. The user sends a message. The main process saves it (with the welcome message, on the first
-   one) to `chat/messages.jsonl`.
+1. The user sends a message. The main process (`reply.ts`) saves it (with the welcome message,
+   on the first one) to `chat/messages.jsonl`. One reply or undo runs at a time (`chat.ts`).
 2. `loop.ts` sends the conversation to the chosen provider, with the instructions, a snapshot of
    the project and the tools. Text streams back to the chat as it's written.
 3. If the model asks for tools, they run and their results go back to the model, which carries
@@ -66,11 +66,12 @@ Ollama runs models on the user's computer at `http://127.0.0.1:11434`, so nothin
   especially with SQL. Tested with qwen3 8B, which answered table questions correctly using
   `run_query`.
 
-**Adding a provider:** write an adapter implementing `Provider` (`complete`, `listModels`), add
-it to `PROVIDERS` (with `needsKey`) and `DEFAULT_MODELS` in `models.ts`, to the provider lists in
-`types.ts`, `shared/types.ts` and `settings.ts`, and to `providerFor` in `index.ts`, and
-test it the way `tests/node/assistant-providers.test.ts` tests the others: request shape, a
-streamed reply in the API's format split at odd places, errors.
+**Adding a provider:** write an adapter implementing `Provider` (`complete`, `listModels`), using
+`http.ts` (`ensureOk`, `describeHttpError`) and `sse.ts` for the plumbing; add it to
+`AssistantProvider` in `shared/types.ts`, to `PROVIDERS` (with `needsKey`) and `DEFAULT_MODELS`
+in `models.ts`, and to `providerFor` in `providers.ts`; and test it the way
+`tests/node/assistant-providers.test.ts` tests the others: request shape, a streamed reply in
+the API's format split at odd places, errors.
 
 ## Settings and keys
 

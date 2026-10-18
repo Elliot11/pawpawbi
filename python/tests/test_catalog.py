@@ -39,6 +39,15 @@ def test_unknown_connector():
         connectors.get("nope")
 
 
+def test_connector_packages_use_the_bundled_dlt_version():
+    """dlt extras downloaded for a connector must match the dlt that ships with the app."""
+    from conftest import ROOT
+
+    requirements = (ROOT / "python" / "requirements.txt").read_text(encoding="utf-8")
+    [pinned] = re.findall(r"^dlt(?:\[[^\]]*\])?==(\S+)$", requirements, re.MULTILINE)
+    assert connectors.storage.DLT_VERSION == pinned
+
+
 @pytest.mark.parametrize("connector", ALL, ids=lambda c: c.id)
 def test_connector_is_well_formed(connector):
     assert re.fullmatch(r"[a-z][a-z0-9_]*", connector.id)
@@ -79,3 +88,19 @@ def test_a_request_without_params_is_handled():
     assert main.handle({"method": "catalog"})["connectors"]
     with pytest.raises(ValueError, match="Unknown method"):
         main.handle({"method": "nope"})
+
+
+def test_form_value_errors_use_the_field_label():
+    from connectors import base
+
+    with pytest.raises(ValueError, match="Port must be a whole number"):
+        base.integer({"port": "x"}, "port", label="Port")
+    with pytest.raises(ValueError, match="Start date must be a date"):
+        base.date({"start": "yesterday"}, "start", label="Start date")
+    with pytest.raises(ValueError, match="Service account key must be valid JSON"):
+        base.json_object({"key": "{"}, "key", label="Service account key")
+    with pytest.raises(ValueError, match="Service account key must be a JSON object"):
+        base.json_object({"key": "[]"}, "key", label="Service account key")
+    # Without a label, messages fall back to the field key.
+    with pytest.raises(ValueError, match="port must be a whole number"):
+        base.integer({"port": "x"}, "port")

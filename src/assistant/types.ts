@@ -1,8 +1,25 @@
 // The assistant's provider-neutral pieces: the conversation, tools, and what a provider streams
-// back. Each provider (anthropic.ts, openai.ts) translates these to and from its own API.
-// Design: docs/assistant.md. No Electron imports, so all of this is tested with plain Node.
+// back. Each provider (anthropic.ts, openai.ts, ollama.ts) translates these to and from its own
+// API. Design: docs/assistant.md. No Electron imports, so all of this is tested with plain Node.
+import type { AssistantProvider, WorkflowStage } from '../shared/types';
 
-export type ProviderId = 'anthropic' | 'openai' | 'ollama';
+export type ProviderId = AssistantProvider;
+
+/** The tool result given for a call that never ran (the reply was stopped, or the app crashed). */
+export const NOT_RUN = 'This tool call was not run (the reply was stopped).';
+
+/** A tool call's arguments from JSON the model streamed, or {} if it isn't valid JSON. */
+export function parseToolInput(json: unknown): Record<string, unknown> {
+  if (json && typeof json === 'object') return json as Record<string, unknown>;
+  if (typeof json !== 'string' || !json) return {};
+  try {
+    const value = JSON.parse(json);
+    return value && typeof value === 'object' ? value : {};
+  } catch {
+    // Leave it empty; the tool will report the missing input.
+    return {};
+  }
+}
 
 export interface ToolCall {
   id: string;
@@ -38,8 +55,6 @@ export interface ToolSpec {
   describe: (input: Record<string, unknown>) => string | Promise<string>;
   /** True if it changes the project: it needs the user's approval and can be undone. */
   change?: boolean;
-  /** The workflow step it belongs to. Small local models only get the current step's tools. */
-  step?: 'data' | 'model' | 'visuals';
 }
 
 export interface ModelRequest {
@@ -76,32 +91,10 @@ export interface Provider {
 
 /** An error from a provider's API, with a message fit to show the user. */
 export class ProviderError extends Error {
-  readonly status?: number;
-
-  constructor(message: string, status?: number) {
+  constructor(message: string) {
     super(message);
     this.name = 'ProviderError';
-    this.status = status;
   }
 }
 
-/** A user-facing message for an HTTP error from a provider. */
-export function describeHttpError(
-  provider: string,
-  status: number,
-  detail: string,
-): string {
-  if (status === 401 || status === 403) {
-    return `${provider} didn't accept the API key. Check it was copied in full, or create a new one.`;
-  }
-  if (status === 404) {
-    return `${provider} couldn't find that model. Choose another one in Assistant settings.${detail ? ` (${detail})` : ''}`;
-  }
-  if (status === 429) {
-    return `${provider} is limiting requests on this key (rate limit or credit). Wait a moment, or check your account.${detail ? ` (${detail})` : ''}`;
-  }
-  if (status >= 500) {
-    return `${provider} had a problem (${status}). Try again in a moment.`;
-  }
-  return `${provider} refused the request (${status})${detail ? `: ${detail}` : '.'}`;
-}
+export type { WorkflowStage };

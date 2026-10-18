@@ -5,8 +5,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, test } from 'node:test';
+import { GUID } from '../../src/shared/ids.ts';
 import {
-  GUID,
   MAX_FILE_BYTES,
   cleanDatasets,
   cleanReport,

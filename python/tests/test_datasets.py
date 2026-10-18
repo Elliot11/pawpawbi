@@ -71,10 +71,9 @@ def test_describe_tables_column_kinds(tmp_path):
 def test_preview_table_rows_are_json_safe(data_dir):
     result = datasets.preview_table({"data_dir": str(data_dir), "table": "monthly_sales", "limit": 10})
     assert result["row_count"] == 4
-    # The data columns come first (preview_table currently also returns dlt's _dlt_* columns).
-    assert [c["name"] for c in result["columns"]][:4] == ["order_id", "order_date", "region", "revenue"]
+    assert [c["name"] for c in result["columns"]] == ["order_id", "order_date", "region", "revenue"]
     # Missing values (NaN) become null.
-    assert result["rows"][-1][:4] == [1004, "2026-08-19", "West", None]
+    assert result["rows"][-1] == [1004, "2026-08-19", "West", None]
 
 
 def test_preview_table_limit(data_dir):
@@ -84,5 +83,5 @@ def test_preview_table_limit(data_dir):
 
 
 def test_preview_unknown_table(data_dir):
-    with pytest.raises(ValueError, match="No table named 'nope'"):
+    with pytest.raises(ValueError, match='No table called "nope"'):
         datasets.preview_table({"data_dir": str(data_dir), "table": "nope"})

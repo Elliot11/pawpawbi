@@ -16,12 +16,11 @@
 // No Electron imports, so this is tested with plain Node (tests/node/report-site.test.ts).
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { readJson, removePath, writeJson } from './fs-json';
+import { GUID, NAME } from './shared/ids';
 import type { ReportFile, ReportPage } from './shared/types';
 
-export const GUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-export const DATASET_NAME = /^[a-z][a-z0-9_]{0,62}$/;
-export const MAX_TITLE = 80;
+const MAX_TITLE = 80;
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
 
 /** The site's files, with the content types they're served as. Nothing else is served. */
@@ -51,11 +50,11 @@ export interface SiteTemplates {
   charts: string;
 }
 
-export const reportDir = (filesDir: string) => path.join(filesDir, 'report');
+const reportDir = (filesDir: string) => path.join(filesDir, 'report');
 const reportJsonPath = (filesDir: string) =>
   path.join(reportDir(filesDir), 'report.json');
 
-export const newGuid = () => crypto.randomUUID();
+const newGuid = () => crypto.randomUUID();
 
 const escapeHtml = (text: string) =>
   text.replace(
@@ -67,7 +66,7 @@ const escapeHtml = (text: string) =>
   );
 
 /** A title, tidied: one line, trimmed, at most MAX_TITLE characters. */
-export function cleanTitle(title: unknown): string {
+function cleanTitle(title: unknown): string {
   return typeof title === 'string'
     ? title.replace(/\s+/g, ' ').trim().slice(0, MAX_TITLE)
     : '';
@@ -98,23 +97,11 @@ export async function hasSite(filesDir: string): Promise<boolean> {
   }
 }
 
-export async function readReport(filesDir: string): Promise<ReportFile> {
-  try {
-    return cleanReport(
-      JSON.parse(await fs.readFile(reportJsonPath(filesDir), 'utf8')),
-    );
-  } catch {
-    return { title: 'Report', pages: [] };
-  }
-}
+export const readReport = (filesDir: string) =>
+  readJson(reportJsonPath(filesDir), cleanReport);
 
-async function writeReport(filesDir: string, report: ReportFile) {
-  await fs.mkdir(reportDir(filesDir), { recursive: true });
-  await fs.writeFile(
-    reportJsonPath(filesDir),
-    JSON.stringify(cleanReport(report), null, 2) + '\n',
-  );
-}
+const writeReport = (filesDir: string, report: ReportFile) =>
+  writeJson(reportJsonPath(filesDir), cleanReport(report));
 
 const fill = (template: string, values: Record<string, string>) =>
   template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
@@ -186,10 +173,7 @@ export async function deletePage(filesDir: string, id: string) {
     ...report,
     pages: report.pages.filter((p) => p.id !== id),
   });
-  await fs.rm(path.join(reportDir(filesDir), 'pages', `${id}.html`), {
-    force: true,
-    maxRetries: 5,
-  });
+  await removePath(path.join(reportDir(filesDir), 'pages', `${id}.html`));
 }
 
 /**
@@ -291,7 +275,7 @@ const datasetsPath = (filesDir: string) =>
   path.join(filesDir, 'model', 'datasets.json');
 
 export const datasetFile = (filesDir: string, name: string) => {
-  if (!DATASET_NAME.test(name)) throw new Error('Invalid dataset name.');
+  if (!NAME.test(name)) throw new Error('Invalid dataset name.');
   return path.join(reportDir(filesDir), 'data', `${name}.json`);
 };
 
@@ -301,7 +285,7 @@ export function cleanDatasets(value: unknown): DatasetsFile {
   if (raw && typeof raw === 'object') {
     for (const [name, entry] of Object.entries(raw)) {
       const e = entry as Record<string, unknown>;
-      if (!DATASET_NAME.test(name) || typeof e?.sql !== 'string') continue;
+      if (!NAME.test(name) || typeof e?.sql !== 'string') continue;
       datasets[name] = {
         sql: e.sql,
         updatedAt: typeof e.updatedAt === 'string' ? e.updatedAt : '',
@@ -316,20 +300,8 @@ export function cleanDatasets(value: unknown): DatasetsFile {
   return { datasets };
 }
 
-export async function readDatasets(filesDir: string): Promise<DatasetsFile> {
-  try {
-    return cleanDatasets(
-      JSON.parse(await fs.readFile(datasetsPath(filesDir), 'utf8')),
-    );
-  } catch {
-    return { datasets: {} };
-  }
-}
+export const readDatasets = (filesDir: string) =>
+  readJson(datasetsPath(filesDir), cleanDatasets);
 
-export async function writeDatasets(filesDir: string, file: DatasetsFile) {
-  await fs.mkdir(path.dirname(datasetsPath(filesDir)), { recursive: true });
-  await fs.writeFile(
-    datasetsPath(filesDir),
-    JSON.stringify(cleanDatasets(file), null, 2) + '\n',
-  );
-}
+export const writeDatasets = (filesDir: string, file: DatasetsFile) =>
+  writeJson(datasetsPath(filesDir), cleanDatasets(file));

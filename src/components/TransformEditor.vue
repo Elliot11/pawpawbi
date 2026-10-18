@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import { useUnsavedGuard } from '../composables/useUnsavedGuard';
 import { errorMessage } from '../errors';
+import { NAME, NAME_RULE } from '../shared/ids';
 import type { TableKind, TablePreview, TableSchema } from '../shared/types';
+import CodeEditor from './CodeEditor.vue';
 import DataGrid from './data/DataGrid.vue';
 
 const props = defineProps<{
@@ -14,7 +17,7 @@ const props = defineProps<{
   /** All tables, for the reference panel. */
   tables: TableSchema[];
 }>();
-const emit = defineEmits<{ back: []; changed: []; created: [name: string] }>();
+const emit = defineEmits<{ back: []; changed: [] }>();
 
 const isTransformed = props.kind === 'transformed';
 /** Set once a new transformed table has been created; later saves change that table. */
@@ -34,7 +37,7 @@ const preview = ref<TablePreview | null>(null);
 const error = ref('');
 const notice = ref('');
 const busy = ref<'' | 'preview' | 'apply' | 'remove'>('');
-const editor = ref<HTMLTextAreaElement | null>(null);
+const editor = ref<InstanceType<typeof CodeEditor> | null>(null);
 const expanded = ref<Set<string>>(
   new Set(props.table && !isTransformed ? [props.table] : []),
 );
@@ -42,6 +45,14 @@ const expanded = ref<Set<string>>(
 const hasUnappliedChanges = computed(
   () => sql.value.trim() !== (savedSql.value ?? defaultSql()).trim(),
 );
+const { confirmLeave } = useUnsavedGuard(
+  hasUnappliedChanges,
+  'Discard the changes to this query?',
+);
+
+function back() {
+  if (confirmLeave()) emit('back');
+}
 
 // In-place transforms read loaded tables' original data, so only those are listed. Transformed
 // tables can read any other table. The table being transformed comes first.
@@ -71,11 +82,8 @@ onMounted(async () => {
   runPreview();
 });
 
-/** Creates the transformed table, or saves changes to it. */
 // --- Naming a new transformed table -------------------------------------------------------------
 
-/** The rule the main process enforces: also how dlt names loaded tables. */
-const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
 const takenNames = computed(() => new Set(props.tables.map((t) => t.name)));
 
 /** "Comments & Posts!" → "comments_posts". Empty if nothing usable is left. */
@@ -122,14 +130,13 @@ watch(newName, () => (nameProblem.value = null));
 function checkName(raw: string): typeof nameProblem.value {
   if (!raw) {
     return {
-      message: 'Give the new table a name.',
+      message: 'Enter a name for the table.',
       suggestion: suggestedName.value,
     };
   }
-  if (!NAME_PATTERN.test(raw)) {
+  if (!NAME.test(raw)) {
     return {
-      message:
-        'Table names use lowercase letters, numbers and underscores, and start with a letter.',
+      message: NAME_RULE,
       suggestion: freeName(formatName(raw) || suggestedName.value),
     };
   }
@@ -147,6 +154,7 @@ function useName(name: string) {
   nameProblem.value = null;
 }
 
+/** Creates the transformed table, or saves changes to it. */
 async function saveTransformed() {
   if (busy.value) return;
   const isNew = tableName.value === null;
@@ -168,10 +176,7 @@ async function saveTransformed() {
       isNew,
     });
     savedSql.value = sql.value;
-    if (isNew) {
-      createdName.value = name;
-      emit('created', name);
-    }
+    if (isNew) createdName.value = name;
     emit('changed');
     preview.value = await window.api.data.previewTransform(
       sql.value,
@@ -271,29 +276,8 @@ async function undoRemove() {
   }
 }
 
-function onKeydown(event: KeyboardEvent) {
-  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-    event.preventDefault();
-    runPreview();
-  } else if (event.key === 'Tab' && !event.shiftKey) {
-    event.preventDefault();
-    insert('  ');
-  }
-}
-
-/** Inserts text at the cursor in the editor, as an edit Ctrl+Z can undo. */
-function insert(text: string) {
-  const el = editor.value;
-  if (!el) return;
-  // Focusing restores the cursor position the textarea had before the click.
-  el.focus();
-  // Setting the value directly would bypass the textarea's undo history, so insert the way
-  // typing does. (execCommand is deprecated but is still the only way to do this in Chromium.)
-  if (!document.execCommand('insertText', false, text)) {
-    el.setRangeText(text, el.selectionStart, el.selectionEnd, 'end');
-    el.dispatchEvent(new Event('input'));
-  }
-}
+/** Inserts a table or column name at the cursor. */
+const insert = (text: string) => editor.value?.insert(text);
 
 function toggle(table: string) {
   const next = new Set(expanded.value);
@@ -310,7 +294,7 @@ const sqlName = (name: string) =>
 <template>
   <div class="transform">
     <header class="head">
-      <button class="back" @click="$emit('back')">← Back to model</button>
+      <button class="btn-ghost" @click="back">← Back to model</button>
       <template v-if="!isTransformed">
         <h2>
           Transform <span class="table-name">{{ table }}</span>
@@ -368,14 +352,14 @@ const sqlName = (name: string) =>
 
       <section class="work">
         <div class="editor-wrap">
-          <textarea
+          <CodeEditor
             ref="editor"
             v-model="sql"
             class="editor"
-            spellcheck="false"
             aria-label="SQL query"
-            @keydown="onKeydown"
-          ></textarea>
+            min-height="160px"
+            @run="runPreview"
+          />
           <p v-if="isTransformed" class="editor-note">
             One SELECT query. It can read any other table by name, loaded or
             transformed, as shown in the model (so joins work). DuckDB SQL.
@@ -407,7 +391,7 @@ const sqlName = (name: string) =>
 
         <div class="actions">
           <button
-            class="ghost"
+            class="btn-ghost"
             :disabled="!!busy"
             title="Run (Ctrl+Enter)"
             @click="runPreview"
@@ -416,7 +400,7 @@ const sqlName = (name: string) =>
           </button>
           <button
             v-if="isTransformed"
-            class="primary"
+            class="btn-primary"
             :disabled="!!busy || (!hasUnappliedChanges && savedSql !== null)"
             @click="saveTransformed"
           >
@@ -430,7 +414,7 @@ const sqlName = (name: string) =>
           </button>
           <button
             v-else
-            class="primary"
+            class="btn-primary"
             :disabled="!!busy || (!hasUnappliedChanges && savedSql !== null)"
             @click="apply"
           >
@@ -438,7 +422,7 @@ const sqlName = (name: string) =>
           </button>
           <button
             v-if="!isTransformed && savedSql !== null"
-            class="link"
+            class="btn-link danger"
             :disabled="!!busy"
             @click="removeTransform"
           >
@@ -451,8 +435,8 @@ const sqlName = (name: string) =>
           >
         </div>
 
-        <p v-if="error" class="error" role="alert">{{ error }}</p>
-        <p v-else-if="notice" class="notice" role="status">
+        <p v-if="error" class="box-error error" role="alert">{{ error }}</p>
+        <p v-else-if="notice" class="box-notice notice" role="status">
           {{ notice }}
           <button
             v-if="removedSql !== null"
@@ -520,7 +504,7 @@ const sqlName = (name: string) =>
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
 }
 
@@ -546,7 +530,7 @@ const sqlName = (name: string) =>
   border-radius: var(--radius-sm);
   background: var(--transformed-soft);
   color: var(--transformed);
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
 }
@@ -554,24 +538,10 @@ const sqlName = (name: string) =>
 .active-badge {
   padding: 3px 10px;
   border-radius: 999px;
-  background: #eaf6ee;
-  color: #1d6b3a;
+  background: var(--success-soft);
+  color: var(--success);
   font-size: 12px;
   font-weight: 600;
-}
-
-.back,
-.ghost {
-  padding: 7px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  font-weight: 500;
-}
-
-.back:hover,
-.ghost:hover:not(:disabled) {
-  border-color: var(--ink-faint);
 }
 
 .body {
@@ -642,7 +612,7 @@ const sqlName = (name: string) =>
   padding: 3px 6px;
   border-radius: 6px;
   color: var(--ink-muted);
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -664,25 +634,7 @@ const sqlName = (name: string) =>
 }
 
 .editor {
-  display: block;
-  width: 100%;
-  min-height: 160px;
   height: 200px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: #1b1b20;
-  color: #f2f1ee;
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
-  font-size: 13px;
-  line-height: 1.6;
-  resize: vertical;
-  tab-size: 2;
-}
-
-.editor:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
 }
 
 .editor-note {
@@ -697,67 +649,30 @@ const sqlName = (name: string) =>
   gap: 8px;
 }
 
-.primary {
-  padding: 7px 16px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-}
-
-.primary:disabled,
-.ghost:disabled {
-  opacity: 0.5;
-}
-
-.link {
-  padding: 0 6px;
-  border: none;
-  background: none;
-  color: var(--danger);
-  font-size: 13px;
-  font-weight: 500;
-  text-decoration: underline;
-}
-
 .unapplied {
   color: var(--ink-muted);
   font-size: 12px;
 }
 
-.error,
-.notice {
-  margin: 0;
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 .error {
-  background: #fbeceb;
-  color: var(--danger);
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
+  white-space: pre-wrap;
 }
 
 .notice {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: #eaf6ee;
-  color: #1d6b3a;
-  white-space: normal;
 }
 
 .undo {
   margin-left: auto;
   padding: 4px 12px;
-  border: 1px solid #1d6b3a;
+  border: 1px solid var(--success);
   border-radius: var(--radius-sm);
   background: none;
-  color: #1d6b3a;
+  color: var(--success);
   font-weight: 600;
 }
 

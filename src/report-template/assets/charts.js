@@ -1,6 +1,7 @@
 // PawpawBI report charts: bar and line charts, headline numbers and tables, drawn as SVG and
 // HTML. Part of the report site, so it works anywhere the site is hosted (no dependencies, no
-// build step). Reference: the "Writing report pages" guide in the PawpawBI docs.
+// build step). Reference: the "Writing the report" guide in the PawpawBI docs
+// (docs/report-pages.md).
 //
 // Data comes from the site's datasets, data/<name>.json, written by PawpawBI. Every name and
 // value is inserted with textContent, never as HTML.
@@ -123,7 +124,8 @@
 
   /**
    * A value as text. format: 'number' (default), 'percent' (0.25 is 25%), 'currency', or a
-   * function. compact: shorten large numbers (12.9K).
+   * function. compact: shorten large numbers (12.9K); 'auto' does so from 10,000 (headline
+   * numbers and labels on the marks).
    */
   function formatValue(
     value,
@@ -133,6 +135,7 @@
     if (value === null || value === undefined || value === '') return '–';
     if (typeof format === 'function') return String(format(value));
     if (typeof value !== 'number') return String(value);
+    if (compact === 'auto') compact = Math.abs(value) >= 10000;
     const short = compact && Math.abs(value) >= 1000;
     if (format === 'percent') {
       return numberFormat({
@@ -422,7 +425,7 @@
     } catch (error) {
       node.replaceChildren();
       const box = el('div', 'pp-error', node);
-      el('strong', null, box, 'This visual couldn’t be shown. ');
+      el('strong', null, box, "This visual couldn't be shown. ");
       el(
         'span',
         null,
@@ -439,7 +442,7 @@
     if (options.subtitle) el('p', 'pp-subtitle', head, options.subtitle);
     const toggle = el('button', 'pp-toggle', node, 'Show table');
     toggle.type = 'button';
-    if (legend && legend.series.length > 1) {
+    if (legend.series.length > 1) {
       const box = el('div', 'pp-legend', node);
       for (const s of legend.series) {
         const item = el('span', 'pp-legend-item', box);
@@ -463,11 +466,27 @@
   function noData(node, options) {
     const head = el('div', 'pp-head', node);
     if (options.title) el('h3', 'pp-title', head, options.title);
-    el('p', 'pp-note', node, 'There’s no data to show.');
+    el('p', 'pp-note', node, "There's no data to show.");
   }
 
   function note(notes, text) {
     el('p', 'pp-note', notes, text);
+  }
+
+  /** Notes under a chart: series folded into "Other", and rows the dataset left out. */
+  function seriesNotes(frame, built, rows) {
+    if (built.folded) {
+      note(
+        frame.notes,
+        `${built.folded} smaller series are added together as "Other".`,
+      );
+    }
+    if (rows.truncated) {
+      note(
+        frame.notes,
+        "Only the first rows of the data are shown. Group or limit the data in the dataset's query.",
+      );
+    }
   }
 
   /** Draws into `plot` now and again whenever its width changes. */
@@ -482,6 +501,15 @@
     };
     redraw();
     new ResizeObserver(() => requestAnimationFrame(redraw)).observe(plot);
+  }
+
+  /** Tooltip rows for `series` at `key`: value first, named when there's more than one series. */
+  function tipRows(series, key, format, currency) {
+    return series.map((s) => ({
+      colour: s.colour,
+      value: formatValue(s.values.get(key), format, { currency }),
+      name: series.length > 1 ? s.name : '',
+    }));
   }
 
   /** A tooltip in `plot`: a heading, then one row per series, value first. */
@@ -603,6 +631,56 @@
     return node;
   }
 
+  /** The chart's SVG, labelled for screen readers. */
+  function chartSvg(plot, width, height, label) {
+    return svgEl(
+      'svg',
+      { width, height, class: 'pp-svg', role: 'img', 'aria-label': label },
+      plot,
+    );
+  }
+
+  /** The widest tick label on a value axis, to leave room for it. */
+  function tickWidth(scale, format, currency) {
+    return Math.max(
+      ...scale.ticks.map((t) =>
+        textWidth(formatValue(t, format, { compact: true, currency })),
+      ),
+    );
+  }
+
+  /**
+   * A value axis: a gridline and label at each tick. `axis` 'y' runs the lines across (labels to
+   * the left of `from`), 'x' runs them down (labels above `from`). With `zeroLine`, the tick at
+   * zero is drawn as the baseline.
+   */
+  function valueAxis(
+    svg,
+    { scale, place, axis, from, to, format, currency, zeroLine = false },
+  ) {
+    for (const t of scale.ticks) {
+      const at = place(t);
+      const cls = zeroLine && t === 0 ? 'pp-baseline' : 'pp-grid';
+      const text = formatValue(t, format, { compact: true, currency });
+      if (axis === 'y') {
+        svgEl('line', { x1: from, x2: to, y1: at, y2: at, class: cls }, svg);
+        axisText(
+          svg,
+          {
+            x: from - 8,
+            y: at,
+            'text-anchor': 'end',
+            'dominant-baseline': 'middle',
+          },
+          text,
+        );
+      } else {
+        svgEl('line', { x1: at, x2: at, y1: from, y2: to, class: cls }, svg);
+        axisText(svg, { x: at, y: from - 8, 'text-anchor': 'middle' }, text);
+      }
+    }
+  }
+
   /** A bar with a rounded data end and a square end at the baseline. */
   function barPath(horizontal, base, end, offset, thickness) {
     const length = Math.abs(end - base);
@@ -628,8 +706,19 @@
     return render(target, data, (node, rows) => {
       if (!rows.length) return noData(node, options);
       const built = buildSeries(rows, options);
+      const frame = chartFrame(node, options, {
+        series: built.series,
+        mark: 'bar',
+      });
       const total = built.keys.length;
-      if (total > MAX_BARS) built.keys = built.keys.slice(0, MAX_BARS);
+      if (total > MAX_BARS) {
+        built.keys = built.keys.slice(0, MAX_BARS);
+        note(
+          frame.notes,
+          `Showing the first ${MAX_BARS} of ${total} bars. Group or limit the data in the query to show fewer.`,
+        );
+      }
+      seriesNotes(frame, built, rows);
       const { format, currency } = options;
       const label = (key) => String(built.labels.get(key) ?? '(blank)');
       const longest = Math.max(0, ...built.keys.map((k) => label(k).length));
@@ -637,24 +726,7 @@
         options.orientation === 'horizontal' ||
         (options.orientation !== 'vertical' &&
           (longest > 12 || built.keys.length > 12));
-
-      const frame = chartFrame(node, options, {
-        series: built.series,
-        mark: 'bar',
-      });
       seriesTable(frame.table, built, label, format, currency);
-      if (total > MAX_BARS) {
-        note(
-          frame.notes,
-          `Showing the first ${MAX_BARS} of ${total} bars. Group or limit the data in the query to show fewer.`,
-        );
-      }
-      if (built.folded) {
-        note(
-          frame.notes,
-          `${built.folded} smaller series are added together as “Other”.`,
-        );
-      }
 
       const n = built.series.length;
       const values = built.series.flatMap((s) =>
@@ -668,15 +740,13 @@
       // Label each bar's value when there's one series and few enough bars.
       const tipLabels = n === 1 && built.keys.length <= 15;
       const valueText = (v) =>
-        formatValue(v, format, {
-          compact: Math.abs(v ?? 0) >= 10000,
-          currency,
-        });
+        formatValue(v, format, { compact: 'auto', currency });
 
       responsive(frame.plot, (width) => {
         const tip = tooltip(frame.plot);
         const thickness = n === 1 ? 20 : Math.max(6, Math.min(24, 48 / n));
         const group = n * thickness + (n - 1) * 2;
+        const ariaLabel = options.title || 'Bar chart';
 
         let svg, positions, bands, scaleValue, baseline, area;
         if (horizontal) {
@@ -692,27 +762,19 @@
           const height = top + step * built.keys.length + 4;
           const left = labelWidth;
           const right = width - valueWidth;
-          svg = svgEl(
-            'svg',
-            { width, height, class: 'pp-svg', role: 'img' },
-            frame.plot,
-          );
+          svg = chartSvg(frame.plot, width, height, ariaLabel);
           scaleValue = linear([scale.min, scale.max], [left, right]);
           baseline = scaleValue(0);
           if (!tipLabels) {
-            for (const t of scale.ticks) {
-              const x = scaleValue(t);
-              svgEl(
-                'line',
-                { x1: x, x2: x, y1: top, y2: height - 4, class: 'pp-grid' },
-                svg,
-              );
-              axisText(
-                svg,
-                { x, y: top - 8, 'text-anchor': 'middle' },
-                formatValue(t, format, { compact: true, currency }),
-              );
-            }
+            valueAxis(svg, {
+              scale,
+              place: scaleValue,
+              axis: 'x',
+              from: top,
+              to: height - 4,
+              format,
+              currency,
+            });
           }
           bands = built.keys.map((key, i) => ({
             key,
@@ -775,45 +837,27 @@
           area = { x: 0, y: top, width, height: height - top };
         } else {
           const height = options.height ?? 280;
-          const tickWidth = Math.max(
-            ...scale.ticks.map((t) =>
-              textWidth(formatValue(t, format, { compact: true, currency })),
-            ),
-          );
           // Values on the bars replace the value axis, if they fit.
           const roughStep = (width - 4) / built.keys.length;
           const showTip =
             tipLabels &&
             values.every((v) => textWidth(valueText(v)) <= roughStep - 4);
-          const left = showTip ? 4 : tickWidth + 12;
+          const left = showTip ? 4 : tickWidth(scale, format, currency) + 12;
           const top = 20;
           const bottom = height - 28;
-          svg = svgEl(
-            'svg',
-            { width, height, class: 'pp-svg', role: 'img' },
-            frame.plot,
-          );
+          svg = chartSvg(frame.plot, width, height, ariaLabel);
           scaleValue = linear([scale.min, scale.max], [bottom, top]);
           baseline = scaleValue(0);
           if (!showTip) {
-            for (const t of scale.ticks) {
-              const y = scaleValue(t);
-              svgEl(
-                'line',
-                { x1: left, x2: width, y1: y, y2: y, class: 'pp-grid' },
-                svg,
-              );
-              axisText(
-                svg,
-                {
-                  x: left - 8,
-                  y,
-                  'text-anchor': 'end',
-                  'dominant-baseline': 'middle',
-                },
-                formatValue(t, format, { compact: true, currency }),
-              );
-            }
+            valueAxis(svg, {
+              scale,
+              place: scaleValue,
+              axis: 'y',
+              from: left,
+              to: width,
+              format,
+              currency,
+            });
           }
           const step = (width - left) / built.keys.length;
           bands = built.keys.map((key, i) => ({
@@ -880,7 +924,6 @@
           area = { x: left, y: 0, width: width - left, height };
         }
 
-        svg.setAttribute('aria-label', options.title || 'Bar chart');
         const highlight = svgEl(
           'rect',
           { class: 'pp-band-highlight', visibility: 'hidden' },
@@ -905,11 +948,6 @@
           for (const [k, v] of Object.entries(attrs))
             highlight.setAttribute(k, v);
           highlight.setAttribute('visibility', 'visible');
-          const rowsOut = built.series.map((s) => ({
-            colour: s.colour,
-            value: formatValue(s.values.get(band.key), format, { currency }),
-            name: n > 1 ? s.name : '',
-          }));
           const [x, y] = horizontal
             ? [
                 Math.max(
@@ -929,7 +967,12 @@
                   ),
                 ),
               ];
-          tip.show(label(band.key), rowsOut, x, y);
+          tip.show(
+            label(band.key),
+            tipRows(built.series, band.key, format, currency),
+            x,
+            y,
+          );
         });
       });
     });
@@ -986,17 +1029,7 @@
         format,
         currency,
       );
-      if (built.folded) {
-        note(
-          frame.notes,
-          `${built.folded} smaller series are added together as “Other”.`,
-        );
-      }
-      if (rows.truncated)
-        note(
-          frame.notes,
-          'Only the first rows of the data are shown. Group or limit the data in the dataset’s query.',
-        );
+      seriesNotes(frame, built, rows);
 
       const values = built.series
         .flatMap((s) => points.map((p) => s.values.get(p.key)))
@@ -1008,14 +1041,18 @@
       const scale = niceTicks(lo, hi, 5);
       const n = built.series.length;
 
+      /** A series' last value, as the label at its line's end. */
+      const valueText = (s) => {
+        const last = [...points]
+          .reverse()
+          .map((p) => s.values.get(p.key))
+          .find((v) => v != null);
+        return formatValue(last, format, { compact: 'auto', currency });
+      };
+
       responsive(frame.plot, (width) => {
         const tip = tooltip(frame.plot);
         const height = options.height ?? 280;
-        const tickWidth = Math.max(
-          ...scale.ticks.map((t) =>
-            textWidth(formatValue(t, format, { compact: true, currency })),
-          ),
-        );
         // Direct labels at the line ends for up to four series, unless they'd collide.
         const endLabels = n <= 4;
         const endWidth = endLabels
@@ -1025,20 +1062,15 @@
               ),
             ) + 16
           : 12;
-        const left = tickWidth + 12;
+        const left = tickWidth(scale, format, currency) + 12;
         const right = width - Math.min(endWidth, width * 0.3);
         const top = 12;
         const bottom = height - 28;
-        const svg = svgEl(
-          'svg',
-          {
-            width,
-            height,
-            class: 'pp-svg',
-            role: 'img',
-            'aria-label': options.title || 'Line chart',
-          },
+        const svg = chartSvg(
           frame.plot,
+          width,
+          height,
+          options.title || 'Line chart',
         );
         const y = linear([scale.min, scale.max], [bottom, top]);
         const domain =
@@ -1050,29 +1082,16 @@
           [left, right],
         );
 
-        for (const t of scale.ticks) {
-          svgEl(
-            'line',
-            {
-              x1: left,
-              x2: right,
-              y1: y(t),
-              y2: y(t),
-              class: t === 0 ? 'pp-baseline' : 'pp-grid',
-            },
-            svg,
-          );
-          axisText(
-            svg,
-            {
-              x: left - 8,
-              y: y(t),
-              'text-anchor': 'end',
-              'dominant-baseline': 'middle',
-            },
-            formatValue(t, format, { compact: true, currency }),
-          );
-        }
+        valueAxis(svg, {
+          scale,
+          place: y,
+          axis: 'y',
+          from: left,
+          to: right,
+          format,
+          currency,
+          zeroLine: true,
+        });
         const maxTicks = Math.max(2, Math.floor((right - left) / 80));
         if (xType === 'time') {
           const { ticks, unit } = timeTicks(domain[0], domain[1], maxTicks);
@@ -1160,10 +1179,7 @@
               },
               n > 1
                 ? e.s.name
-                : formatValue(e.v, format, {
-                    compact: Math.abs(e.v) >= 10000,
-                    currency,
-                  }),
+                : formatValue(e.v, format, { compact: 'auto', currency }),
             );
           }
         }
@@ -1209,33 +1225,18 @@
               }
             });
             cross.setAttribute('visibility', 'visible');
-            const shown = built.series
-              .map((s) => ({ s, v: s.values.get(p.key) }))
-              .sort((a, b) => (b.v ?? -Infinity) - (a.v ?? -Infinity));
+            // Largest value first.
+            const value = (s) => s.values.get(p.key) ?? -Infinity;
+            const shown = [...built.series].sort((a, b) => value(b) - value(a));
             tip.show(
               xLabel(p.key),
-              shown.map(({ s, v }) => ({
-                colour: s.colour,
-                value: formatValue(v, format, { currency }),
-                name: n > 1 ? s.name : '',
-              })),
+              tipRows(shown, p.key, format, currency),
               positions[i],
               (top + bottom) / 2,
             );
           },
         );
       });
-
-      function valueText(s) {
-        const last = [...points]
-          .reverse()
-          .map((p) => s.values.get(p.key))
-          .find((v) => v != null);
-        return formatValue(last, format, {
-          compact: Math.abs(last ?? 0) >= 10000,
-          currency,
-        });
-      }
     });
   }
 
@@ -1262,7 +1263,7 @@
         'pp-stat-value',
         tile,
         formatValue(value, options.format, {
-          compact: Math.abs(value ?? 0) >= 10000,
+          compact: 'auto',
           currency: options.currency,
         }),
       );

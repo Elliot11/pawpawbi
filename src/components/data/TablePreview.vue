@@ -57,7 +57,7 @@ async function refresh() {
       preview.value = null;
     } else {
       notice.value = loaded.transformError
-        ? 'Refreshed, but this table’s SQL transform failed, so it shows the original data. Fix the transform in Model data.'
+        ? "Refreshed, but this table's SQL transform failed, so it shows the original data. Fix the transform in Model data."
         : `Refreshed from ${source.name}.`;
       await loadPreview();
     }
@@ -73,7 +73,7 @@ async function refresh() {
 <template>
   <div class="preview">
     <header class="head">
-      <button class="back" @click="$emit('back')">← Back</button>
+      <button class="btn-ghost" @click="$emit('back')">← Back</button>
       <h2>{{ table }}</h2>
       <span v-if="preview" class="meta">
         {{ preview.row_count.toLocaleString() }} rows ·
@@ -81,12 +81,13 @@ async function refresh() {
       </span>
       <div v-if="source" class="actions">
         <button
-          class="action"
+          class="btn-ghost action"
           :disabled="refreshing"
           :title="`Reload all tables from ${source.name}`"
           @click="refresh"
         >
           <svg
+            class="icon"
             viewBox="0 0 24 24"
             aria-hidden="true"
             :class="{ spinning: refreshing }"
@@ -96,12 +97,12 @@ async function refresh() {
           {{ refreshing ? 'Refreshing…' : 'Refresh' }}
         </button>
         <button
-          class="action"
+          class="btn-ghost action"
           :disabled="refreshing"
           :title="`Edit the ${source.name} data source`"
           @click="$emit('edit')"
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
           </svg>
           Edit source
@@ -110,8 +111,8 @@ async function refresh() {
     </header>
 
     <p v-if="refreshing" class="status" aria-live="polite">{{ progress }}</p>
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
-    <p v-else-if="notice" class="notice" role="status">{{ notice }}</p>
+    <p v-if="error" class="box-error" role="alert">{{ error }}</p>
+    <p v-else-if="notice" class="box-notice" role="status">{{ notice }}</p>
     <p v-if="!preview && !error" class="loading">Loading preview…</p>
     <DataGrid v-if="preview" class="data" :preview="preview" />
   </div>
@@ -149,20 +150,6 @@ async function refresh() {
   align-self: center;
 }
 
-.back,
-.action {
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  font-weight: 500;
-}
-
-.back:hover,
-.action:hover:not(:disabled) {
-  border-color: var(--ink-faint);
-}
-
 .action {
   display: flex;
   align-items: center;
@@ -170,28 +157,13 @@ async function refresh() {
   white-space: nowrap;
 }
 
-.action:disabled {
-  opacity: 0.6;
-}
-
-.action svg {
+.action .icon {
   width: 15px;
   height: 15px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 .spinning {
   animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .data {
@@ -202,22 +174,5 @@ async function refresh() {
 .loading {
   margin: 0;
   color: var(--ink-muted);
-}
-
-.error,
-.notice {
-  margin: 0;
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-}
-
-.error {
-  background: #fbeceb;
-  color: var(--danger);
-}
-
-.notice {
-  background: #eaf6ee;
-  color: #1d6b3a;
 }
 </style>

@@ -7,6 +7,7 @@ import type {
   ConnectorInfo,
   DataSource,
 } from '../../shared/types';
+import { timeAgo } from '../../time';
 import ConnectorGallery from './ConnectorGallery.vue';
 import SourceSetup from './SourceSetup.vue';
 import TablePreview from './TablePreview.vue';
@@ -43,7 +44,7 @@ onMounted(async () => {
       window.api.data.listSources(),
     ]);
   } catch (err) {
-    error.value = errorMessage(err);
+    error.value = `Couldn't load the connector list. ${errorMessage(err)}`;
   } finally {
     loading.value = false;
   }
@@ -57,23 +58,23 @@ const quickPicks = computed(() =>
   ),
 );
 
+/** Picks up the sources as saved. A failure shows at the top of the screen. */
 async function reloadSources() {
-  sources.value = await window.api.data.listSources();
+  try {
+    sources.value = await window.api.data.listSources();
+  } catch (err) {
+    error.value = `Couldn't load the data sources. ${errorMessage(err)}`;
+  }
 }
 
 // Tables can be deleted on the Model data screen, so reload when coming back to this one.
 onActivated(() => {
-  if (!loading.value)
-    reloadSources().catch((err) => (error.value = errorMessage(err)));
+  if (!loading.value) reloadSources();
 });
 
-async function finishSetup() {
-  await reloadSources();
-  view.value = { name: 'overview' };
-}
-
-async function cancelSetup() {
-  // Connecting saves the source even if the user then cancels, so pick that up too.
+/** Done or Cancel in the setup. Connecting saves the source even if the user then cancels, so
+ * the list is reloaded either way. */
+async function leaveSetup() {
   await reloadSources();
   view.value = { name: 'overview' };
 }
@@ -129,27 +130,14 @@ async function previewFromSetup(table: string) {
   await reloadSources();
   view.value = { name: 'preview', table, returnTo };
 }
-
-const relativeTime = new Intl.RelativeTimeFormat(undefined, {
-  numeric: 'auto',
-});
-function timeAgo(iso: string) {
-  const minutes = Math.round((Date.now() - Date.parse(iso)) / 60_000);
-  if (minutes < 60) return relativeTime.format(-minutes, 'minute');
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return relativeTime.format(-hours, 'hour');
-  return relativeTime.format(-Math.round(hours / 24), 'day');
-}
 </script>
 
 <template>
   <div class="get-data">
     <p v-if="loading" class="status">Loading connectors…</p>
-    <p v-else-if="error" class="error" role="alert">
-      Couldn't load the connector list: {{ error }}
-    </p>
+    <p v-if="error" class="box-error error" role="alert">{{ error }}</p>
 
-    <template v-else-if="catalog">
+    <template v-if="catalog">
       <ConnectorGallery
         v-if="view.name === 'gallery'"
         :catalog="catalog"
@@ -161,8 +149,8 @@ function timeAgo(iso: string) {
         v-else-if="view.name === 'setup'"
         :connector="view.connector"
         :source="view.source"
-        @done="finishSetup"
-        @cancel="cancelSetup"
+        @done="leaveSetup"
+        @cancel="leaveSetup"
         @preview="previewFromSetup($event)"
       />
 
@@ -188,7 +176,7 @@ function timeAgo(iso: string) {
           </div>
           <button
             v-if="sources.length"
-            class="primary"
+            class="btn-primary"
             @click="view = { name: 'gallery' }"
           >
             + Add data source
@@ -214,7 +202,7 @@ function timeAgo(iso: string) {
               {{ c.name }}
             </button>
           </div>
-          <button class="primary" @click="view = { name: 'gallery' }">
+          <button class="btn-primary" @click="view = { name: 'gallery' }">
             Browse all connectors
           </button>
         </div>
@@ -247,13 +235,13 @@ function timeAgo(iso: string) {
               >
                 <span>Remove this source and its tables?</span>
                 <button class="danger" @click="remove(s)">Remove</button>
-                <button class="ghost" @click="confirmingRemove = null">
+                <button class="btn-ghost" @click="confirmingRemove = null">
                   Keep
                 </button>
               </div>
               <div v-else class="source-actions">
                 <button
-                  class="ghost"
+                  class="btn-ghost"
                   :disabled="s.id in refreshing"
                   @click="refresh(s)"
                 >
@@ -266,14 +254,14 @@ function timeAgo(iso: string) {
                   }}
                 </button>
                 <button
-                  class="ghost"
+                  class="btn-ghost"
                   :disabled="s.id in refreshing"
                   @click="edit(s)"
                 >
                   Edit
                 </button>
                 <button
-                  class="ghost"
+                  class="btn-ghost"
                   :disabled="s.id in refreshing"
                   @click="confirmingRemove = s.id"
                 >
@@ -282,7 +270,7 @@ function timeAgo(iso: string) {
               </div>
             </div>
 
-            <p v-if="refreshErrors[s.id]" class="error" role="alert">
+            <p v-if="refreshErrors[s.id]" class="box-error error" role="alert">
               {{ refreshErrors[s.id] }}
             </p>
 
@@ -323,12 +311,7 @@ function timeAgo(iso: string) {
 
 .error {
   margin: 8px 0 0;
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  background: #fbeceb;
-  color: var(--danger);
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 
 .overview {
@@ -353,31 +336,12 @@ function timeAgo(iso: string) {
   color: var(--ink-muted);
 }
 
-.primary {
-  padding: 9px 18px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
+.btn-primary {
   white-space: nowrap;
 }
 
-.ghost {
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
+.source-actions .btn-ghost {
   font-size: 13px;
-  font-weight: 500;
-}
-
-.ghost:hover:not(:disabled) {
-  border-color: var(--ink-faint);
-}
-
-.ghost:disabled {
-  opacity: 0.5;
 }
 
 .danger {
@@ -517,7 +481,7 @@ function timeAgo(iso: string) {
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--bg);
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 

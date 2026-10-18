@@ -16,8 +16,6 @@ export interface Project {
   id: string;
   name: string;
   path: string;
-  createdAt: string;
-  modifiedAt: string;
   /** True when there are changes not yet saved to the .pawpaw file. */
   dirty: boolean;
   /** True while background work (loads, rebuilds) is running. Saving waits for it. */
@@ -210,7 +208,7 @@ export interface ModelDiagram {
 }
 
 export interface TablePreview {
-  columns: { name: string; dtype: string }[];
+  columns: { name: string; type: string }[];
   rows: unknown[][];
   row_count: number;
 }

@@ -4,8 +4,8 @@
 import { app, safeStorage } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-
-const SAFE_ID = /^[a-z0-9]{1,32}$/;
+import { removePath } from './fs-json';
+import { SAFE_ID } from './shared/ids';
 
 function credentialsPath(projectId: string, sourceId: string) {
   // Both IDs become part of a path, so refuse anything that isn't a plain ID.
@@ -29,7 +29,13 @@ export async function readSecrets(
   } catch {
     return {};
   }
-  return JSON.parse(safeStorage.decryptString(encrypted));
+  try {
+    return JSON.parse(safeStorage.decryptString(encrypted));
+  } catch {
+    throw new Error(
+      "The saved credentials for this source can't be read (they were saved by a different Windows account, or the file is damaged). Enter them again in the source's settings.",
+    );
+  }
 }
 
 export async function writeSecrets(
@@ -39,7 +45,7 @@ export async function writeSecrets(
 ) {
   const filePath = credentialsPath(projectId, sourceId);
   if (Object.keys(secrets).length === 0) {
-    await fs.rm(filePath, { force: true });
+    await removePath(filePath);
     return;
   }
   if (!safeStorage.isEncryptionAvailable()) {
@@ -55,5 +61,5 @@ export async function writeSecrets(
 }
 
 export async function deleteSecrets(projectId: string, sourceId: string) {
-  await fs.rm(credentialsPath(projectId, sourceId), { force: true });
+  await removePath(credentialsPath(projectId, sourceId));
 }

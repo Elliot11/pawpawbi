@@ -5,7 +5,6 @@
 // Each change it makes can be undone from here.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { PROVIDERS } from '../assistant/models';
-import { blocks } from '../chat-format';
 import { errorMessage } from '../errors';
 import type {
   ApprovalAnswer,
@@ -18,6 +17,7 @@ import type {
 import { pageToShow, projectChanged } from '../ui-signals';
 import { INTRO_MESSAGE } from '../workflow';
 import AssistantSettings from './AssistantSettings.vue';
+import ReplyText from './ReplyText.vue';
 
 // Shared with the workspace's step tracker in the top bar.
 const stage = defineModel<WorkflowStage>('stage', { required: true });
@@ -128,7 +128,7 @@ onBeforeUnmount(() => stopListening?.());
 
 const END_NOTES: Partial<Record<AssistantEnd, string>> = {
   steps:
-    'The assistant stopped after a lot of steps. Say “carry on” to let it continue.',
+    'The assistant stopped after a lot of steps. Say "carry on" to let it continue.',
   length: 'The reply was cut off because it got too long.',
   refused: 'The model declined to answer that.',
   stopped: 'Stopped.',
@@ -214,16 +214,6 @@ function onKeydown(event: KeyboardEvent) {
     send();
   }
 }
-
-const copied = ref('');
-async function copy(text: string, id: string) {
-  await navigator.clipboard.writeText(text);
-  copied.value = id;
-  setTimeout(
-    () => (copied.value = copied.value === id ? '' : copied.value),
-    1500,
-  );
-}
 </script>
 
 <template>
@@ -234,12 +224,12 @@ async function copy(text: string, id: string) {
         <small v-if="modelLabel" class="model">{{ modelLabel }}</small>
       </div>
       <button
-        class="icon"
+        class="settings"
         title="Assistant settings"
         aria-label="Assistant settings"
         @click="showSettings = true"
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="12" r="3" />
           <path
             d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68 1.65 1.65 0 0 0 10 3.17V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
@@ -252,7 +242,7 @@ async function copy(text: string, id: string) {
       <p>
         Get started by setting up an assistant from Anthropic, OpenAI or Ollama.
       </p>
-      <button class="setup-button" @click="showSettings = true">
+      <button class="btn-primary" @click="showSettings = true">
         Set up the assistant
       </button>
     </div>
@@ -279,7 +269,7 @@ async function copy(text: string, id: string) {
             m.isError ? '!' : m.declined ? '–' : '✓'
           }}</span>
           <span>
-            {{ m.summary ?? m.toolName }}{{ m.isError ? ': didn’t work' : '' }}
+            {{ m.summary ?? m.toolName }}{{ m.isError ? ": didn't work" : '' }}
           </span>
           <template v-if="m.changeId && changes[m.changeId]">
             <span v-if="changes[m.changeId].undone" class="undone-tag"
@@ -300,23 +290,12 @@ async function copy(text: string, id: string) {
             </button>
           </template>
         </div>
-        <div v-else-if="m.text" class="message assistant">
-          <template v-for="(b, i) in blocks(m.text)" :key="i">
-            <div v-if="b.kind === 'code'" class="code">
-              <button class="copy" @click="copy(b.text, `${m.id}-${i}`)">
-                {{ copied === `${m.id}-${i}` ? 'Copied' : 'Copy' }}
-              </button>
-              <pre><code>{{ b.text }}</code></pre>
-            </div>
-            <p v-else class="prose">
-              <template v-for="(p, j) in b.parts" :key="j">
-                <code v-if="p.kind === 'code'">{{ p.text }}</code>
-                <strong v-else-if="p.kind === 'bold'">{{ p.text }}</strong>
-                <template v-else>{{ p.text }}</template>
-              </template>
-            </p>
-          </template>
-        </div>
+        <ReplyText
+          v-else-if="m.text"
+          class="message assistant"
+          :text="m.text"
+          copyable
+        />
       </template>
 
       <div
@@ -343,24 +322,11 @@ async function copy(text: string, id: string) {
             Allow all changes
           </button>
           <button class="deny" @click="answer(a.id, 'deny')">
-            Don’t allow
+            Don't allow
           </button>
         </div>
       </div>
-      <div v-if="liveText" class="message assistant">
-        <template v-for="(b, i) in blocks(liveText)" :key="i">
-          <div v-if="b.kind === 'code'" class="code">
-            <pre><code>{{ b.text }}</code></pre>
-          </div>
-          <p v-else class="prose">
-            <template v-for="(p, j) in b.parts" :key="j">
-              <code v-if="p.kind === 'code'">{{ p.text }}</code>
-              <strong v-else-if="p.kind === 'bold'">{{ p.text }}</strong>
-              <template v-else>{{ p.text }}</template>
-            </template>
-          </p>
-        </template>
-      </div>
+      <ReplyText v-if="liveText" class="message assistant" :text="liveText" />
       <div
         v-else-if="
           replying &&
@@ -374,7 +340,7 @@ async function copy(text: string, id: string) {
       </div>
 
       <p v-if="endNote" class="note">{{ endNote }}</p>
-      <div v-if="error" class="chat-error" role="alert">
+      <div v-if="error" class="box-error chat-error" role="alert">
         {{ error }}
         <button v-if="canRetry" class="retry" @click="retry">Try again</button>
       </div>
@@ -417,12 +383,54 @@ async function copy(text: string, id: string) {
 }
 
 .chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 20px 20px 16px;
   border-bottom: 1px solid var(--border);
 }
 
 .chat-header h2 {
   font-size: 22px;
+}
+
+.title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.model {
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.settings {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink-muted);
+}
+
+.settings:hover {
+  border-color: var(--border);
+  color: var(--ink);
+}
+
+.settings .icon {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.75;
 }
 
 .messages {
@@ -446,6 +454,7 @@ async function copy(text: string, id: string) {
   align-self: flex-start;
   border-bottom-left-radius: 4px;
   background: var(--surface-muted);
+  white-space: normal;
 }
 
 .message.user {
@@ -539,113 +548,6 @@ async function copy(text: string, id: string) {
   color: var(--ink-faint);
 }
 
-.chat-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.title {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.model {
-  overflow: hidden;
-  color: var(--ink-muted);
-  font-size: 12px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.icon {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--ink-muted);
-}
-
-.icon:hover {
-  border-color: var(--border);
-  color: var(--ink);
-}
-
-.icon svg {
-  width: 18px;
-  height: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.75;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.message.assistant {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  white-space: normal;
-}
-
-.prose {
-  margin: 0;
-  white-space: pre-wrap;
-}
-
-.prose code,
-.code pre {
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
-  font-size: 12px;
-}
-
-.prose code {
-  padding: 1px 5px;
-  border-radius: 5px;
-  background: rgb(22 22 26 / 0.07);
-}
-
-.code {
-  position: relative;
-}
-
-.code pre {
-  margin: 0;
-  padding: 10px 12px;
-  overflow-x: auto;
-  border-radius: var(--radius-sm);
-  background: #1b1b20;
-  color: #f2f1ee;
-  line-height: 1.5;
-  white-space: pre;
-}
-
-.copy {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  padding: 2px 8px;
-  border: 1px solid rgb(255 255 255 / 0.2);
-  border-radius: 6px;
-  background: #2a2a31;
-  color: #f2f1ee;
-  font-size: 11px;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.code:hover .copy,
-.copy:focus-visible {
-  opacity: 1;
-}
-
 .activity {
   display: flex;
   align-items: center;
@@ -662,14 +564,14 @@ async function copy(text: string, id: string) {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #eaf6ee;
-  color: #1d6b3a;
+  background: var(--success-soft);
+  color: var(--success);
   font-size: 10px;
   font-weight: 700;
 }
 
 .activity.failed .mark {
-  background: #fbeceb;
+  background: var(--danger-soft);
   color: var(--danger);
 }
 
@@ -678,12 +580,6 @@ async function copy(text: string, id: string) {
   border-top-color: var(--accent);
   background: none;
   animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .note {
@@ -698,9 +594,6 @@ async function copy(text: string, id: string) {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: var(--radius-sm);
-  background: #fbeceb;
-  color: var(--danger);
   font-size: 13px;
 }
 
@@ -725,15 +618,6 @@ async function copy(text: string, id: string) {
 .setup p {
   margin: 0 0 10px;
   font-size: 13px;
-}
-
-.setup-button {
-  padding: 6px 14px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
 }
 
 .activity.change {

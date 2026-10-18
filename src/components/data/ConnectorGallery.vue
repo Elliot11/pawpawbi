@@ -46,11 +46,11 @@ const countFor = (name: string) =>
           business apps.
         </p>
       </div>
-      <button class="ghost" @click="$emit('cancel')">Cancel</button>
+      <button class="btn-ghost" @click="$emit('cancel')">Cancel</button>
     </header>
 
     <div class="search">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="11" cy="11" r="7" />
         <path d="M20 20l-3.5-3.5" />
       </svg>
@@ -138,14 +138,6 @@ const countFor = (name: string) =>
   color: var(--ink-muted);
 }
 
-.ghost {
-  padding: 7px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  font-weight: 500;
-}
-
 .search {
   display: flex;
   align-items: center;
@@ -161,14 +153,11 @@ const countFor = (name: string) =>
   border-color: var(--ink-faint);
 }
 
-.search svg {
+.search .icon {
   width: 18px;
   height: 18px;
   flex: none;
-  fill: none;
   stroke: var(--ink-faint);
-  stroke-width: 2;
-  stroke-linecap: round;
 }
 
 .search input {

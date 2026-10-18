@@ -5,11 +5,12 @@
 import { app, safeStorage } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { removePath, writeJson } from '../fs-json';
 import type { AssistantPermissions, AssistantSettings } from '../shared/types';
 import { DEFAULT_MODELS, PROVIDERS } from './models';
 import type { ProviderId } from './types';
 
-const PROVIDER_IDS: ProviderId[] = ['anthropic', 'openai', 'ollama'];
+const PROVIDER_IDS = Object.keys(PROVIDERS) as ProviderId[];
 
 const dir = () => path.join(app.getPath('userData'), 'assistant');
 const settingsPath = () => path.join(dir(), 'settings.json');
@@ -17,7 +18,7 @@ const settingsPath = () => path.join(dir(), 'settings.json');
 function keyPath(provider: ProviderId) {
   if (!PROVIDER_IDS.includes(provider)) throw new Error('Unknown provider.');
   if (!PROVIDERS[provider].needsKey)
-    throw new Error(`${PROVIDERS[provider].name} doesn’t use a key.`);
+    throw new Error(`${PROVIDERS[provider].name} doesn't use a key.`);
   return path.join(dir(), `${provider}.key`);
 }
 
@@ -58,11 +59,10 @@ const exists = (p: string) =>
 /** The settings the UI shows. Keys are never sent back, only whether one is saved. */
 export async function getSettings(): Promise<AssistantSettings> {
   const file = await readFile();
-  const hasKey = {
-    anthropic: await exists(keyPath('anthropic')),
-    openai: await exists(keyPath('openai')),
-    ollama: false,
-  };
+  const hasKey = { anthropic: false, openai: false, ollama: false };
+  for (const id of PROVIDER_IDS) {
+    if (PROVIDERS[id].needsKey) hasKey[id] = await exists(keyPath(id));
+  }
   return {
     provider: file.provider,
     models: file.models,
@@ -80,22 +80,20 @@ export async function saveSettings(provider: ProviderId, model: string) {
   file.provider = provider;
   if (typeof model === 'string' && model.trim())
     file.models[provider] = model.trim();
-  await fs.mkdir(dir(), { recursive: true });
-  await fs.writeFile(settingsPath(), JSON.stringify(file, null, 2) + '\n');
+  await writeJson(settingsPath(), file);
 }
 
 export async function setPermissions(permissions: AssistantPermissions) {
   const file = await readFile();
   file.permissions = permissions === 'allow' ? 'allow' : 'ask';
-  await fs.mkdir(dir(), { recursive: true });
-  await fs.writeFile(settingsPath(), JSON.stringify(file, null, 2) + '\n');
+  await writeJson(settingsPath(), file);
 }
 
 export async function setKey(provider: ProviderId, key: string) {
   const clean = typeof key === 'string' ? key.trim() : '';
   if (!clean) throw new Error('Paste an API key.');
   if (/\s/.test(clean))
-    throw new Error('That doesn’t look like an API key: it has spaces in it.');
+    throw new Error("That doesn't look like an API key: it has spaces in it.");
   if (!safeStorage.isEncryptionAvailable()) {
     throw new Error(
       "This computer's secure storage isn't available, so the key can't be saved.",
@@ -106,7 +104,7 @@ export async function setKey(provider: ProviderId, key: string) {
 }
 
 export async function removeKey(provider: ProviderId) {
-  await fs.rm(keyPath(provider), { force: true });
+  await removePath(keyPath(provider));
 }
 
 /** The saved key, or null. Only the main process ever sees it. */

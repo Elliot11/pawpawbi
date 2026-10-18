@@ -29,7 +29,7 @@ const ICONS: Record<WorkflowStage, string> = {
         :aria-current="i === currentIndex ? 'step' : undefined"
         @click="$emit('select', s.id)"
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
           <path :d="ICONS[s.id]" />
         </svg>
         {{ s.label }}
@@ -78,14 +78,7 @@ const ICONS: Record<WorkflowStage, string> = {
   color: var(--ink-muted);
 }
 
-svg {
-  width: 16px;
-  height: 16px;
+.icon {
   flex: none;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 </style>

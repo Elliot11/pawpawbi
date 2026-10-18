@@ -20,33 +20,24 @@ MAX_ROWS = 50_000
 MAX_BYTES = 10 * 1024 * 1024
 
 
-def _run(con, sql: str, limit: int, time_limit: float):
-    query = engine.select(con, sql)
-    with engine.time_limit(con, time_limit):
-        relation = con.sql(query)
-        rows = relation.fetchmany(limit + 1)
-    columns = [{"name": n, "type": str(t)} for n, t in zip(relation.columns, relation.types)]
-    return columns, rows
-
-
 def write_dataset(params):
     """Run a dataset's query and write its result to `path` (chosen and checked by the main
     process). The file is replaced only once the new one is complete."""
     name = params["name"]
     path = Path(params["path"])
-    limit = min(int(params.get("max_rows", MAX_ROWS)), MAX_ROWS)
+    query = engine.select(params["sql"])
     con = engine.connect(Path(params["data_dir"]))
     try:
-        columns, rows = _run(con, params["sql"], limit, float(params.get("time_limit", engine.TIME_LIMIT_SECONDS)))
+        relation, rows, truncated = engine.fetch(con, query, MAX_ROWS)
+        columns = engine.columns(relation)
     finally:
         con.close()
 
-    truncated = len(rows) > limit
     document = {
         "name": name,
         "generatedAt": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "columns": columns,
-        "rows": [[engine.json_value(v) for v in row] for row in rows[:limit]],
+        "rows": [[engine.json_value(v) for v in row] for row in rows],
         "truncated": truncated,
     }
     text = json.dumps(document, ensure_ascii=False, separators=(",", ":"))

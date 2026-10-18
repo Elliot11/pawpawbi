@@ -1,7 +1,11 @@
 // One reply from the assistant: call the model, run the tools it asks for, give it the
 // results, and repeat until it answers (or a step limit is reached). Provider-neutral, and no
 // Electron imports, so it's tested with a fake provider (tests/node/assistant-loop.test.ts).
+import type { AssistantEnd } from '../shared/types';
 import type { ModelRequest, Provider, ToolCall, ToolSpec, Turn } from './types';
+
+/** A turn the loop produces: the model's reply, or a tool's result. */
+export type ReplyTurn = Exclude<Turn, { role: 'user' }>;
 
 /** Tool results longer than this are cut, so one big result can't swamp the conversation. */
 export const MAX_RESULT_CHARS = 20_000;
@@ -26,10 +30,8 @@ export interface LoopOptions {
    */
   approve?: (call: ToolCall, summary: string) => Promise<boolean>;
   /** Each new turn (the model's replies and tool results), to save it. */
-  onTurn: (turn: Turn) => Promise<void> | void;
+  onTurn: (turn: ReplyTurn) => Promise<void> | void;
 }
-
-export type LoopEnd = 'end' | 'length' | 'refused' | 'steps' | 'stopped';
 
 /** The tool result when the user doesn't allow a change. */
 export const NOT_ALLOWED =
@@ -50,11 +52,13 @@ const isAbort = (error: unknown) =>
   (error as Error)?.name === 'AbortError' ||
   (error as Error)?.name === 'TimeoutError';
 
-export async function runAssistant(options: LoopOptions): Promise<LoopEnd> {
+export async function runAssistant(
+  options: LoopOptions,
+): Promise<AssistantEnd> {
   const { provider, signal, onTurn } = options;
   const tools = new Map(options.tools.map((t) => [t.name, t]));
-  const turns = [...options.history];
-  const save = async (turn: Turn) => {
+  const turns: Turn[] = [...options.history];
+  const save = async (turn: ReplyTurn) => {
     turns.push(turn);
     await onTurn(turn);
   };

@@ -12,6 +12,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { readJson, removePath, writeJson } from './fs-json';
 import {
   InvalidProjectFileError,
   extractArchive,
@@ -19,7 +20,7 @@ import {
   packArchive,
   readArchiveEntry,
 } from './pawpaw-archive';
-import { newId } from './shared/ids';
+import { SAFE_ID, newId } from './shared/ids';
 import type { ProjectManifest } from './shared/types';
 
 export const FORMAT_VERSION = 1;
@@ -75,20 +76,18 @@ export function workspacePaths(root: string, id: string, filePath: string) {
 }
 
 /** A working folder's state, or null if it has none or it's unreadable. */
-export async function readWorkspaceState(
+export function readWorkspaceState(
   statePath: string,
 ): Promise<WorkspaceState | null> {
-  try {
-    const state = JSON.parse(await fs.readFile(statePath, 'utf8'));
+  return readJson(statePath, (raw) => {
+    const state = raw as Partial<WorkspaceState> | null;
     if (typeof state?.dirty !== 'boolean') return null;
     return {
       filePath: String(state.filePath ?? ''),
       dirty: state.dirty,
       updatedAt: String(state.updatedAt ?? ''),
     };
-  } catch {
-    return null;
-  }
+  });
 }
 
 async function writeWorkspaceState(ws: Workspace) {
@@ -97,19 +96,8 @@ async function writeWorkspaceState(ws: Workspace) {
     dirty: ws.dirty,
     updatedAt: now(),
   };
-  await fs.writeFile(
-    path.join(ws.workspaceDir, 'state.json'),
-    JSON.stringify(state, null, 2),
-  );
+  await writeJson(path.join(ws.workspaceDir, 'state.json'), state);
 }
-
-export async function writeJson(filePath: string, value: unknown) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, JSON.stringify(value, null, 2) + '\n');
-}
-
-const removeFolder = (dir: string) =>
-  fs.rm(dir, { recursive: true, force: true, maxRetries: 5 });
 
 export function parseManifest(text: string): ProjectManifest {
   let manifest;
@@ -133,7 +121,7 @@ export function parseManifest(text: string): ProjectManifest {
   // The ID becomes part of a folder name, so only allow safe characters.
   if (
     typeof manifest.id !== 'string' ||
-    !/^[a-z0-9]{1,32}$/.test(manifest.id) ||
+    !SAFE_ID.test(manifest.id) ||
     typeof manifest.name !== 'string'
   ) {
     throw new InvalidProjectFileError(
@@ -200,7 +188,7 @@ export async function openWorkspace(
       );
     }
   } else {
-    await removeFolder(paths.workspaceDir);
+    await removePath(paths.workspaceDir);
     await fs.mkdir(paths.filesDir, { recursive: true });
     if (isZip) {
       await extractArchive(filePath, paths.filesDir);
@@ -236,7 +224,7 @@ export async function createWorkspace(
     modifiedWith: options.appLabel,
   };
   const paths = workspacePaths(options.root, manifest.id, filePath);
-  await removeFolder(paths.workspaceDir);
+  await removePath(paths.workspaceDir);
   await writeJson(path.join(paths.filesDir, 'manifest.json'), manifest);
   await options.populate?.(paths.filesDir, manifest.name);
   await packArchive(paths.filesDir, filePath);
@@ -265,5 +253,5 @@ export async function saveWorkspace(ws: Workspace, appLabel: string) {
 
 /** Deletes the working folder, when the project is closed (saved or not). */
 export async function removeWorkspace(ws: Workspace) {
-  await removeFolder(ws.workspaceDir);
+  await removePath(ws.workspaceDir);
 }

@@ -164,7 +164,7 @@ test('a journal opened after its store was deleted lists nothing', async () => {
   await fs.rm(path.join(tmp, 'undo'), { recursive: true, force: true });
   const reopened = new ChangeJournal(root, path.join(tmp, 'undo'));
   assert.deepEqual(await reopened.list(), []);
-  await assert.rejects(reopened.undoBackTo(record.id), /isn’t in the record/);
+  await assert.rejects(reopened.undoBackTo(record.id), /isn't in the record/);
   assert.equal(await read('report/report.json'), '1', 'nothing was touched');
 });
 

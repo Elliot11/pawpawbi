@@ -136,7 +136,7 @@ test('a failing or unknown tool is reported back to the model, not thrown', asyn
   );
   const { end, saved } = await run(provider, [
     tool('broken', async () => {
-      throw new Error('No table named "x"');
+      throw new Error('No table called "x".');
     }),
   ]);
   assert.equal(end, 'end');
@@ -145,7 +145,7 @@ test('a failing or unknown tool is reported back to the model, not thrown', asyn
       role: 'tool',
       toolCallId: 'a',
       name: 'broken',
-      content: 'No table named "x"',
+      content: 'No table called "x".',
       isError: true,
     },
     {

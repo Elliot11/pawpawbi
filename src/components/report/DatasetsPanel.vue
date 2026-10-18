@@ -2,8 +2,11 @@
 // The report's datasets: named queries whose results the report site reads from
 // data/<name>.json. Saving one runs its query and writes the file.
 import { computed, onMounted, ref } from 'vue';
+import { useUnsavedGuard } from '../../composables/useUnsavedGuard';
 import { errorMessage } from '../../errors';
+import { NAME, NAME_RULE } from '../../shared/ids';
 import type { Dataset, TablePreview } from '../../shared/types';
+import CodeEditor from '../CodeEditor.vue';
 import DataGrid from '../data/DataGrid.vue';
 
 const emit = defineEmits<{ changed: [] }>();
@@ -17,13 +20,23 @@ const preview = ref<TablePreview | null>(null);
 const busy = ref<'' | 'preview' | 'save' | 'delete'>('');
 const error = ref('');
 
-const NAME = /^[a-z][a-z0-9_]{0,62}$/;
 const nameProblem = computed(() =>
   isNew.value && name.value && !NAME.test(name.value)
-    ? 'Use lowercase letters, digits and underscores, starting with a letter.'
+    ? NAME_RULE
     : isNew.value && datasets.value.some((d) => d.name === name.value)
-      ? 'There’s already a dataset with this name.'
+      ? "There's already a dataset with this name."
       : '',
+);
+
+const dirty = computed(
+  () =>
+    (editing.value !== null || isNew.value) &&
+    (sql.value !== (editing.value?.sql ?? '') ||
+      name.value !== (editing.value?.name ?? '')),
+);
+const { confirmLeave } = useUnsavedGuard(
+  dirty,
+  'Discard your unsaved changes to this dataset?',
 );
 
 async function load() {
@@ -43,6 +56,13 @@ function open(dataset: Dataset | null) {
   sql.value = dataset?.sql ?? '';
   preview.value = null;
   error.value = '';
+}
+
+/** Back to the list. */
+function close() {
+  if (!confirmLeave()) return;
+  editing.value = null;
+  isNew.value = false;
 }
 
 const cleanError = (e: unknown) =>
@@ -91,7 +111,7 @@ async function remove() {
   if (!dataset) return;
   if (
     !window.confirm(
-      `Delete the dataset “${dataset.name}”? Charts that use it will show an error.`,
+      `Delete the dataset "${dataset.name}"? Charts that use it will show an error.`,
     )
   ) {
     return;
@@ -108,13 +128,6 @@ async function remove() {
     error.value = cleanError(e);
   } finally {
     busy.value = '';
-  }
-}
-
-function onKey(event: KeyboardEvent) {
-  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-    event.preventDefault();
-    runPreview();
   }
 }
 
@@ -147,13 +160,11 @@ defineExpose({ reload: load });
         </li>
       </ul>
       <p v-else class="none">No datasets yet.</p>
-      <button class="primary" @click="open(null)">New dataset</button>
+      <button class="btn-primary new" @click="open(null)">New dataset</button>
     </template>
 
     <template v-else>
-      <button class="back" @click="((editing = null), (isNew = false))">
-        ← All datasets
-      </button>
+      <button class="back" @click="close">← All datasets</button>
       <label v-if="isNew" class="field">
         Name
         <input
@@ -169,14 +180,14 @@ defineExpose({ reload: load });
         The last update failed: {{ editing.error }}
       </p>
 
-      <textarea
+      <CodeEditor
         v-model="sql"
         class="sql"
-        spellcheck="false"
         aria-label="Query"
+        min-height="140px"
         placeholder="SELECT region, sum(revenue) AS revenue FROM orders GROUP BY 1"
-        @keydown="onKey"
-      ></textarea>
+        @run="runPreview"
+      />
       <p class="note">
         One SELECT over any table, by name. Group the data here: only what it
         returns is published.
@@ -184,22 +195,27 @@ defineExpose({ reload: load });
 
       <div class="actions">
         <button
-          class="ghost"
+          class="btn-ghost"
           :disabled="!!busy"
           title="Run (Ctrl+Enter)"
           @click="runPreview"
         >
           {{ busy === 'preview' ? 'Running…' : 'Run preview' }}
         </button>
-        <button class="primary" :disabled="!!busy" @click="save">
+        <button class="btn-primary" :disabled="!!busy" @click="save">
           {{ busy === 'save' ? 'Saving…' : isNew ? 'Create dataset' : 'Save' }}
         </button>
-        <button v-if="!isNew" class="link" :disabled="!!busy" @click="remove">
+        <button
+          v-if="!isNew"
+          class="btn-link danger"
+          :disabled="!!busy"
+          @click="remove"
+        >
           Delete
         </button>
       </div>
 
-      <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <p v-if="error" class="box-error error" role="alert">{{ error }}</p>
       <DataGrid v-if="preview" class="grid" :preview="preview" />
     </template>
   </div>
@@ -253,7 +269,7 @@ defineExpose({ reload: load });
 
 .item-name {
   overflow: hidden;
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 600;
   text-overflow: ellipsis;
@@ -275,6 +291,10 @@ defineExpose({ reload: load });
   font-size: 13px;
 }
 
+.new {
+  align-self: flex-start;
+}
+
 .back {
   align-self: flex-start;
   padding: 0;
@@ -289,7 +309,7 @@ defineExpose({ reload: load });
 }
 
 .name {
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0;
@@ -307,27 +327,12 @@ defineExpose({ reload: load });
   padding: 7px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
 }
 
 .sql {
-  min-height: 140px;
   height: 180px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: #1b1b20;
-  color: #f2f1ee;
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
-  font-size: 12.5px;
-  line-height: 1.6;
-  resize: vertical;
-}
-
-.sql:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
 }
 
 .actions {
@@ -336,48 +341,11 @@ defineExpose({ reload: load });
   gap: 8px;
 }
 
-.primary {
-  align-self: flex-start;
-  padding: 7px 16px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-}
-
-.ghost {
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  font-weight: 500;
-}
-
-.primary:disabled,
-.ghost:disabled {
-  opacity: 0.5;
-}
-
-.link {
-  padding: 0 6px;
-  border: none;
-  background: none;
-  color: var(--danger);
-  font-size: 13px;
-  text-decoration: underline;
-}
-
 .error {
-  margin: 0;
   padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  background: #fbeceb;
-  color: var(--danger);
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 
 .grid {

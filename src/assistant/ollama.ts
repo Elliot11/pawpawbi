@@ -4,8 +4,12 @@
 // The native API (not Ollama's OpenAI-compatible one) is used because it can set the context
 // window: Ollama's default is small, and the instructions, tools and tool results would be
 // silently cut off.
+import { ensureOk } from './http';
+import { lines } from './sse';
 import {
+  NOT_RUN,
   ProviderError,
+  parseToolInput,
   type ModelRequest,
   type ModelResponse,
   type Provider,
@@ -69,9 +73,7 @@ export function toMessages(
         messages.push({
           role: 'tool',
           tool_name: call.name,
-          content:
-            results.get(call.id)?.content ??
-            'This tool call was not run (the reply was stopped).',
+          content: results.get(call.id)?.content ?? NOT_RUN,
         });
       }
     }
@@ -109,23 +111,13 @@ export function buildBody(request: ModelRequest, info: ModelInfo) {
   };
 }
 
-/** Splits a byte stream into lines (Ollama streams one JSON object per line). */
+/** The non-empty lines of a byte stream (Ollama streams one JSON object per line). */
 export async function* readLines(
   body: AsyncIterable<Uint8Array>,
 ): AsyncGenerator<string> {
-  const decoder = new TextDecoder();
-  let buffer = '';
-  for await (const chunk of body) {
-    buffer += decoder.decode(chunk, { stream: true });
-    let newline;
-    while ((newline = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, newline).trim();
-      buffer = buffer.slice(newline + 1);
-      if (line) yield line;
-    }
+  for await (const line of lines(body)) {
+    if (line.trim()) yield line.trim();
   }
-  buffer += decoder.decode();
-  if (buffer.trim()) yield buffer.trim();
 }
 
 /** Collects a streamed response. */
@@ -149,17 +141,11 @@ export async function readResponse(
       onText(message.content);
     }
     for (const call of message.tool_calls ?? []) {
-      const args = call.function?.arguments;
       toolCalls.push({
         id:
           call.id || `call_${toolCalls.length + 1}_${Date.now().toString(36)}`,
         name: String(call.function?.name ?? ''),
-        input:
-          typeof args === 'string'
-            ? safeParse(args)
-            : args && typeof args === 'object'
-              ? args
-              : {},
+        input: parseToolInput(call.function?.arguments),
       });
     }
     if (chunk.done) {
@@ -179,15 +165,6 @@ export async function readResponse(
         : 'end',
     usage,
   };
-}
-
-function safeParse(json: string): Record<string, unknown> {
-  try {
-    const value = JSON.parse(json);
-    return value && typeof value === 'object' ? value : {};
-  } catch {
-    return {};
-  }
 }
 
 /** A user-facing message for an error from Ollama. */
@@ -229,14 +206,6 @@ export function ollama(
     }
   }
 
-  async function errorDetail(response: Response) {
-    try {
-      return String((await response.json())?.error ?? '');
-    } catch {
-      return '';
-    }
-  }
-
   function modelInfo(model: string, signal?: AbortSignal): Promise<ModelInfo> {
     if (!info.has(model)) {
       const request = (async () => {
@@ -269,21 +238,14 @@ export function ollama(
     id: 'ollama',
     async complete(request, onText, signal) {
       const details = await modelInfo(request.model, signal);
-      const response = await call('/api/chat', {
-        method: 'POST',
-        body: JSON.stringify(buildBody(request, details)),
-        signal,
-      });
-      if (!response.ok || !response.body) {
-        throw new ProviderError(
-          describeOllamaError(
-            response.status,
-            await errorDetail(response),
-            request.model,
-          ),
-          response.status,
-        );
-      }
+      const response = await ensureOk(
+        await call('/api/chat', {
+          method: 'POST',
+          body: JSON.stringify(buildBody(request, details)),
+          signal,
+        }),
+        (status, detail) => describeOllamaError(status, detail, request.model),
+      );
       return readResponse(
         readLines(response.body as AsyncIterable<Uint8Array>),
         onText,
@@ -291,12 +253,10 @@ export function ollama(
     },
     /** Installed models that can use tools, most recently downloaded first. */
     async listModels(signal) {
-      const response = await call('/api/tags', { signal });
-      if (!response.ok) {
-        throw new ProviderError(
-          describeOllamaError(response.status, await errorDetail(response)),
-        );
-      }
+      const response = await ensureOk(
+        await call('/api/tags', { signal }),
+        describeOllamaError,
+      );
       const names: string[] = ((await response.json())?.models ?? []).map(
         (m: { name: string }) => m.name,
       );

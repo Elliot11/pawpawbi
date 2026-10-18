@@ -194,7 +194,7 @@ const formatNumber = (n: number) => n.toLocaleString();
       </li>
     </ol>
 
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
+    <p v-if="error" class="box-error error" role="alert">{{ error }}</p>
 
     <!-- 1. Settings -->
     <form v-if="step === 'settings'" class="form" @submit.prevent="connect">
@@ -219,7 +219,7 @@ const formatNumber = (n: number) => n.toLocaleString();
       <template v-if="advancedFields.length">
         <button
           type="button"
-          class="toggle"
+          class="btn-link toggle"
           @click="showAdvanced = !showAdvanced"
         >
           {{ showAdvanced ? 'Hide' : 'Show' }} advanced settings
@@ -245,13 +245,13 @@ const formatNumber = (n: number) => n.toLocaleString();
       <div class="actions">
         <button
           type="button"
-          class="ghost"
+          class="btn-ghost"
           :disabled="busy"
           @click="$emit('cancel')"
         >
           Cancel
         </button>
-        <button type="submit" class="primary" :disabled="busy">
+        <button type="submit" class="btn-primary" :disabled="busy">
           {{ busy ? progress || 'Connecting…' : 'Connect' }}
         </button>
       </div>
@@ -271,8 +271,8 @@ const formatNumber = (n: number) => n.toLocaleString();
             type="search"
             placeholder="Filter tables…"
           />
-          <button class="link" @click="selectAll(true)">Select all</button>
-          <button class="link" @click="selectAll(false)">None</button>
+          <button class="btn-link" @click="selectAll(true)">Select all</button>
+          <button class="btn-link" @click="selectAll(false)">None</button>
         </div>
       </div>
       <ul class="resource-list">
@@ -288,8 +288,8 @@ const formatNumber = (n: number) => n.toLocaleString();
         </li>
       </ul>
       <div class="actions">
-        <button class="ghost" @click="step = 'settings'">Back</button>
-        <button class="primary" :disabled="chosen.size === 0" @click="load">
+        <button class="btn-ghost" @click="step = 'settings'">Back</button>
+        <button class="btn-primary" :disabled="chosen.size === 0" @click="load">
           Load {{ chosen.size }} {{ chosen.size === 1 ? 'table' : 'tables' }}
         </button>
       </div>
@@ -328,7 +328,7 @@ const formatNumber = (n: number) => n.toLocaleString();
         </li>
       </ul>
       <div class="actions">
-        <button class="primary" @click="$emit('done')">Done</button>
+        <button class="btn-primary" @click="$emit('done')">Done</button>
       </div>
     </div>
   </div>
@@ -415,13 +415,7 @@ const formatNumber = (n: number) => n.toLocaleString();
 }
 
 .error {
-  margin: 0;
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  background: #fbeceb;
-  color: var(--danger);
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 
 .form {
@@ -448,16 +442,8 @@ const formatNumber = (n: number) => n.toLocaleString();
   font: inherit;
 }
 
-.toggle,
-.link {
+.toggle {
   align-self: flex-start;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--ink-muted);
-  font-size: 13px;
-  font-weight: 500;
-  text-decoration: underline;
 }
 
 .note {
@@ -470,28 +456,6 @@ const formatNumber = (n: number) => n.toLocaleString();
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.primary,
-.ghost {
-  padding: 8px 18px;
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-}
-
-.primary {
-  border: none;
-  background: var(--accent);
-  color: #fff;
-}
-
-.primary:disabled {
-  opacity: 0.6;
-}
-
-.ghost {
-  border: 1px solid var(--border);
-  background: var(--surface);
 }
 
 .tables {
@@ -584,12 +548,6 @@ const formatNumber = (n: number) => n.toLocaleString();
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .finished {
   display: flex;
   flex-direction: column;
@@ -599,8 +557,8 @@ const formatNumber = (n: number) => n.toLocaleString();
 .success {
   padding: 14px 16px;
   border-radius: var(--radius);
-  background: #eaf6ee;
-  color: #1d6b3a;
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .success p {

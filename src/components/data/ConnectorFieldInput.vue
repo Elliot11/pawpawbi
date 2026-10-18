@@ -96,12 +96,16 @@ function removePath(path: string) {
         <ul v-if="paths.length" class="path-list">
           <li v-for="path in paths" :key="path">
             <span :title="path">{{ path }}</span>
-            <button type="button" class="link" @click="removePath(path)">
+            <button
+              type="button"
+              class="btn-link remove"
+              @click="removePath(path)"
+            >
               Remove
             </button>
           </li>
         </ul>
-        <button :id="id" type="button" class="browse" @click="browse">
+        <button :id="id" type="button" class="btn-ghost" @click="browse">
           {{
             paths.length && field.type === 'files'
               ? 'Add more…'
@@ -196,7 +200,7 @@ textarea {
 }
 
 textarea.mono {
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
@@ -253,24 +257,7 @@ textarea.mono {
   text-align: left;
 }
 
-.browse {
-  padding: 7px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  font-weight: 500;
-}
-
-.browse:hover {
-  border-color: var(--ink-faint);
-}
-
-.link {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--ink-muted);
+.remove {
   font-size: 12px;
-  text-decoration: underline;
 }
 </style>

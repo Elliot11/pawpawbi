@@ -1,9 +1,11 @@
 // ChatGPT, through OpenAI's Chat Completions API with streaming and function calling.
 // https://platform.openai.com/docs/api-reference/chat
+import { describeHttpError, ensureOk } from './http';
 import { readEvents, type ServerEvent } from './sse';
 import {
+  NOT_RUN,
   ProviderError,
-  describeHttpError,
+  parseToolInput,
   type ModelRequest,
   type ModelResponse,
   type Provider,
@@ -68,9 +70,7 @@ export function toMessages(
         messages.push({
           role: 'tool',
           tool_call_id: call.id,
-          content: result
-            ? result.content
-            : 'This tool call was not run (the reply was stopped).',
+          content: result ? result.content : NOT_RUN,
         });
       }
     }
@@ -153,15 +153,7 @@ export async function readResponse(
   }
   const toolCalls = [...calls.entries()]
     .sort(([a], [b]) => a - b)
-    .map(([, { json, ...call }]) => {
-      let input = {};
-      try {
-        input = json ? JSON.parse(json) : {};
-      } catch {
-        // Leave it empty; the tool will report the missing input.
-      }
-      return { ...call, input };
-    });
+    .map(([, { json, ...call }]) => ({ ...call, input: parseToolInput(json) }));
   return {
     text,
     toolCalls,
@@ -190,15 +182,6 @@ export function chatModels(ids: string[]): string[] {
     .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
 }
 
-async function errorDetail(response: Response) {
-  try {
-    const body = await response.json();
-    return String(body?.error?.message ?? '');
-  } catch {
-    return '';
-  }
-}
-
 export function openai(
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
@@ -208,34 +191,30 @@ export function openai(
     authorization: `Bearer ${apiKey}`,
     'content-type': 'application/json',
   };
+  const explain = (status: number, detail: string) =>
+    describeHttpError(NAME, status, detail);
   return {
     id: 'openai',
     async complete(request, onText, signal) {
-      const response = await fetchImpl(`${api}/chat/completions`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(buildBody(request)),
-        signal,
-      });
-      if (!response.ok || !response.body) {
-        throw new ProviderError(
-          describeHttpError(NAME, response.status, await errorDetail(response)),
-          response.status,
-        );
-      }
+      const response = await ensureOk(
+        await fetchImpl(`${api}/chat/completions`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(buildBody(request)),
+          signal,
+        }),
+        explain,
+      );
       return readResponse(
         readEvents(response.body as AsyncIterable<Uint8Array>),
         onText,
       );
     },
     async listModels(signal) {
-      const response = await fetchImpl(`${api}/models`, { headers, signal });
-      if (!response.ok) {
-        throw new ProviderError(
-          describeHttpError(NAME, response.status, await errorDetail(response)),
-          response.status,
-        );
-      }
+      const response = await ensureOk(
+        await fetchImpl(`${api}/models`, { headers, signal }),
+        explain,
+      );
       const body = await response.json();
       return chatModels((body?.data ?? []).map((m: { id: string }) => m.id));
     },

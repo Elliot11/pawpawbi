@@ -1,9 +1,11 @@
 // Claude, through Anthropic's Messages API with streaming and tool use.
 // https://docs.anthropic.com/en/api/messages
+import { describeHttpError, ensureOk } from './http';
 import { readEvents, type ServerEvent } from './sse';
 import {
+  NOT_RUN,
   ProviderError,
-  describeHttpError,
+  parseToolInput,
   type ModelRequest,
   type ModelResponse,
   type Provider,
@@ -66,7 +68,7 @@ export function toMessages(turns: Turn[]): Message[] {
         missing.map((c) => ({
           type: 'tool_result' as const,
           tool_use_id: c.id,
-          content: 'This tool call was not run (the reply was stopped).',
+          content: NOT_RUN,
           is_error: true,
         })),
       );
@@ -174,15 +176,10 @@ export async function readResponse(
     }
   }
 
-  const toolCalls = calls.map(({ json, ...call }) => {
-    let input = {};
-    try {
-      input = json ? JSON.parse(json) : {};
-    } catch {
-      // Leave it empty; the tool will report the missing input.
-    }
-    return { ...call, input };
-  });
+  const toolCalls = calls.map(({ json, ...call }) => ({
+    ...call,
+    input: parseToolInput(json),
+  }));
   return {
     text,
     toolCalls,
@@ -198,15 +195,6 @@ export async function readResponse(
   };
 }
 
-async function errorDetail(response: Response) {
-  try {
-    const body = await response.json();
-    return String(body?.error?.message ?? '');
-  } catch {
-    return '';
-  }
-}
-
 export function anthropic(
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
@@ -217,37 +205,30 @@ export function anthropic(
     'anthropic-version': VERSION,
     'content-type': 'application/json',
   };
+  const explain = (status: number, detail: string) =>
+    describeHttpError(NAME, status, detail);
   return {
     id: 'anthropic',
     async complete(request, onText, signal) {
-      const response = await fetchImpl(`${api}/messages`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(buildBody(request)),
-        signal,
-      });
-      if (!response.ok || !response.body) {
-        throw new ProviderError(
-          describeHttpError(NAME, response.status, await errorDetail(response)),
-          response.status,
-        );
-      }
+      const response = await ensureOk(
+        await fetchImpl(`${api}/messages`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(buildBody(request)),
+          signal,
+        }),
+        explain,
+      );
       return readResponse(
         readEvents(response.body as AsyncIterable<Uint8Array>),
         onText,
       );
     },
     async listModels(signal) {
-      const response = await fetchImpl(`${api}/models?limit=100`, {
-        headers,
-        signal,
-      });
-      if (!response.ok) {
-        throw new ProviderError(
-          describeHttpError(NAME, response.status, await errorDetail(response)),
-          response.status,
-        );
-      }
+      const response = await ensureOk(
+        await fetchImpl(`${api}/models?limit=100`, { headers, signal }),
+        explain,
+      );
       const body = await response.json();
       return (body?.data ?? []).map((m: { id: string }) => m.id);
     },

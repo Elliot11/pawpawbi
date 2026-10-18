@@ -131,7 +131,7 @@ anyone who can reach it, so private reports need access control on the host.
   are saved).
 - **What the tools can do.** Read tools can't change anything. Change tools can only change the
   report (its files, pages and datasets) through the same checked functions as the app's own
-  screens (`sitePath`, `DATASET_NAME`, `engine.select()`): nothing outside the project, no
+  screens (`sitePath`, `NAME`, `engine.select()`): nothing outside the project, no
   network, files in `data/` can't be written, and a file is at most 2 MB. Queries go through the
   locked-down engine like every other query, with its time limit, so a slow query from the
   assistant can't tie up the sidecar.

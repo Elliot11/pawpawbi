@@ -7,10 +7,6 @@ from pathlib import Path
 
 import engine
 
-# Re-exported for older imports.
-RAW_DATASET = engine.RAW_DATASET
-MODEL_DATASET = engine.MODEL_DATASET
-
 
 def list_tables(params):
     return engine.table_names(Path(params["data_dir"]))
@@ -24,15 +20,11 @@ def describe_tables(params):
     if not folders:
         return []
     loaded = set(engine.table_names(data_dir))
-    con = engine.connect(data_dir)
+    con = engine.connect(data_dir, folders=folders)
     try:
         tables = []
         for name in folders:
             relation = con.sql(f"SELECT * FROM {engine.quote(name)}")
-            columns = [
-                {"name": column, "type": str(type_), "kind": engine.column_kind(str(type_))}
-                for column, type_ in zip(relation.columns, relation.types)
-            ]
             # count(*) over Parquet comes from file metadata, so it's quick.
             rows = con.sql(f"SELECT count(*) FROM {engine.quote(name)}").fetchone()[0]
             tables.append(
@@ -40,7 +32,7 @@ def describe_tables(params):
                     "name": name,
                     "kind": "loaded" if name in loaded else "transformed",
                     "rows": rows,
-                    "columns": columns,
+                    "columns": engine.columns(relation, kinds=True),
                     "transformed": engine.is_transformed(data_dir, name),
                 }
             )
@@ -53,9 +45,10 @@ def preview_table(params):
     """A table's columns, first rows and total row count, reading only the rows shown."""
     data_dir = Path(params["data_dir"])
     table = params["table"]
-    if table not in engine.table_folders(data_dir):
-        raise ValueError(f"No table named {table!r}")
-    con = engine.connect(data_dir)
+    folders = engine.table_folders(data_dir)
+    if table not in folders:
+        raise ValueError(f'No table called "{table}".')
+    con = engine.connect(data_dir, folders=folders)
     try:
         return engine.preview(con, f"SELECT * FROM {engine.quote(table)}", int(params.get("limit", 50)))
     finally:

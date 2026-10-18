@@ -11,10 +11,12 @@ import {
   ref,
   watch,
 } from 'vue';
+import { useUnsavedGuard } from '../composables/useUnsavedGuard';
 import { errorMessage } from '../errors';
 import type { ReportFile } from '../shared/types';
 import { REPORT_ORIGIN } from '../shared/types';
 import { pageToShow, projectChanged } from '../ui-signals';
+import CodeEditor from './CodeEditor.vue';
 import DatasetsPanel from './report/DatasetsPanel.vue';
 
 const report = ref<ReportFile | null>(null);
@@ -86,7 +88,7 @@ watch(
     if (!id) return;
     pageToShow.value = null;
     await load();
-    if (report.value?.pages.some((p) => p.id === id) && confirmLeaveEditor()) {
+    if (report.value?.pages.some((p) => p.id === id) && confirmLeave()) {
       show(id);
       if (panel.value === 'html') openFile(pagePath());
     }
@@ -117,13 +119,13 @@ function freeTitle() {
 }
 
 function select(id: string) {
-  if (id === currentId.value || !confirmLeaveEditor()) return;
+  if (id === currentId.value || !confirmLeave()) return;
   show(id);
   if (panel.value === 'html') openFile(pagePath());
 }
 
 async function newPage() {
-  if (!confirmLeaveEditor()) return;
+  if (!confirmLeave()) return;
   busy.value = 'page';
   try {
     const page = await window.api.report.createPage(freeTitle());
@@ -162,7 +164,11 @@ async function finishRename() {
 }
 
 async function deletePage(id: string, title: string) {
-  if (!window.confirm(`Delete the page “${title}”? This can’t be undone.`)) {
+  // Deleting closes the editor panel, so unsaved edits in it would be lost.
+  if (
+    !confirmLeave() ||
+    !window.confirm(`Delete the page "${title}"? This can't be undone.`)
+  ) {
     return;
   }
   try {
@@ -233,12 +239,10 @@ const files = computed(() => [
   { path: 'index.html', label: 'Landing page: index.html' },
 ]);
 
-function confirmLeaveEditor() {
-  return (
-    !editorDirty.value ||
-    window.confirm('Discard your unsaved changes to this file?')
-  );
-}
+const { confirmLeave } = useUnsavedGuard(
+  editorDirty,
+  'Discard your unsaved changes to this file?',
+);
 
 async function openFile(path: string) {
   if (!path) return;
@@ -254,7 +258,7 @@ async function openFile(path: string) {
 }
 
 function togglePanel(which: 'html' | 'datasets') {
-  if (!confirmLeaveEditor()) return;
+  if (!confirmLeave()) return;
   if (panel.value === which) panel.value = '';
   else if (which === 'html') openFile(pagePath() || 'index.html');
   else panel.value = which;
@@ -262,7 +266,7 @@ function togglePanel(which: 'html' | 'datasets') {
 
 function chooseFile(event: Event) {
   const select = event.target as HTMLSelectElement;
-  if (confirmLeaveEditor()) openFile(select.value);
+  if (confirmLeave()) openFile(select.value);
   else select.value = filePath.value;
 }
 
@@ -282,30 +286,26 @@ async function saveFile() {
   }
 }
 
+/** Ctrl+S in the editor saves the file first, then the project (the project's own Ctrl+S
+ * would miss the file). Ctrl+Enter and Tab are the editor's own. */
 function onEditorKey(event: KeyboardEvent) {
-  const mod = event.ctrlKey || event.metaKey;
-  if (mod && event.key === 'Enter') {
-    event.preventDefault();
-    saveFile();
-  } else if (mod && event.key.toLowerCase() === 's') {
-    // Save the file first, then the project (the project's own Ctrl+S would miss the file).
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
     event.preventDefault();
     event.stopPropagation();
     saveFile()
       .then(() => window.api.projects.save())
-      .catch((e) => (editorError.value = errorMessage(e)));
-  } else if (event.key === 'Tab' && !event.shiftKey) {
-    // Indent rather than leave the editor. execCommand keeps Ctrl+Z working.
-    event.preventDefault();
-    document.execCommand('insertText', false, '  ');
+      .catch(
+        (e) =>
+          (editorError.value = `Couldn't save the project. ${errorMessage(e)}`),
+      );
   }
 }
 </script>
 
 <template>
   <main class="report">
-    <p v-if="error" class="banner error" role="alert">{{ error }}</p>
-    <p v-else-if="notice" class="banner notice" role="status">
+    <p v-if="error" class="banner box-error" role="alert">{{ error }}</p>
+    <p v-else-if="notice" class="banner box-notice" role="status">
       {{ notice }}
       <button class="dismiss" aria-label="Dismiss" @click="notice = ''">
         ×
@@ -324,7 +324,7 @@ function onEditorKey(event: KeyboardEvent) {
         A report is a small website of charts built from your tables. You can
         view it here and host it anywhere.
       </p>
-      <button class="primary" :disabled="!!busy" @click="createSite">
+      <button class="btn-primary" :disabled="!!busy" @click="createSite">
         {{ busy === 'create' ? 'Adding…' : 'Add a report' }}
       </button>
     </div>
@@ -373,7 +373,7 @@ function onEditorKey(event: KeyboardEvent) {
             :disabled="!!busy"
             @click="newPage"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 5v14M5 12h14" />
             </svg>
           </button>
@@ -381,23 +381,23 @@ function onEditorKey(event: KeyboardEvent) {
 
         <div class="actions">
           <button
-            class="ghost"
+            class="btn-ghost"
             :disabled="!!busy"
             title="Update the report's data from the tables and show it again"
             @click="refresh"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" />
             </svg>
             {{ busy === 'refresh' ? 'Refreshing…' : 'Refresh' }}
           </button>
           <button
-            class="ghost"
+            class="btn-ghost"
             :class="{ on: panel === 'datasets' }"
             :aria-pressed="panel === 'datasets'"
             @click="togglePanel('datasets')"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
               <ellipse cx="12" cy="6" rx="7" ry="3" />
               <path
                 d="M5 6v12c0 1.66 3.13 3 7 3s7-1.34 7-3V6M5 12c0 1.66 3.13 3 7 3s7-1.34 7-3"
@@ -406,23 +406,23 @@ function onEditorKey(event: KeyboardEvent) {
             Datasets
           </button>
           <button
-            class="ghost"
+            class="btn-ghost"
             :class="{ on: panel === 'html' }"
             :aria-pressed="panel === 'html'"
             @click="togglePanel('html')"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M8 7l-5 5 5 5M16 7l5 5-5 5" />
             </svg>
             Edit HTML
           </button>
           <button
-            class="ghost"
+            class="btn-ghost"
             :disabled="!!busy"
             title="Save the report as a folder of files to host on a website"
             @click="exportSite"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
             </svg>
             {{ busy === 'export' ? 'Exporting…' : 'Export' }}
@@ -445,7 +445,7 @@ function onEditorKey(event: KeyboardEvent) {
         ></iframe>
         <div v-else class="no-pages">
           <p>This report has no pages.</p>
-          <button class="primary" :disabled="!!busy" @click="newPage">
+          <button class="btn-primary" :disabled="!!busy" @click="newPage">
             Add a page
           </button>
         </div>
@@ -465,31 +465,32 @@ function onEditorKey(event: KeyboardEvent) {
               </select>
               <span v-if="editorDirty" class="unsaved">Not saved yet</span>
             </div>
-            <textarea
+            <CodeEditor
               v-model="html"
               class="editor"
-              spellcheck="false"
               :aria-label="filePath"
+              min-height="200px"
+              @run="saveFile"
               @keydown="onEditorKey"
-            ></textarea>
+            />
             <p class="side-note">
               Plain HTML, CSS and JavaScript. Charts come from pawpaw.barChart,
               pawpaw.lineChart, pawpaw.stat and pawpaw.table, each reading a
               dataset by name.
             </p>
-            <p v-if="editorError" class="side-error" role="alert">
+            <p v-if="editorError" class="box-error side-error" role="alert">
               {{ editorError }}
             </p>
             <div class="side-actions">
               <button
-                class="ghost"
+                class="btn-ghost"
                 :disabled="!editorDirty || saving"
                 @click="html = savedHtml"
               >
                 Undo changes
               </button>
               <button
-                class="primary"
+                class="btn-primary"
                 :disabled="!editorDirty || saving"
                 title="Save and show (Ctrl+Enter)"
                 @click="saveFile"
@@ -523,19 +524,6 @@ function onEditorKey(event: KeyboardEvent) {
   align-items: center;
   gap: 12px;
   margin: 12px 16px 0;
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  overflow-wrap: anywhere;
-}
-
-.banner.error {
-  background: #fbeceb;
-  color: var(--danger);
-}
-
-.banner.notice {
-  background: #eaf6ee;
-  color: #1d6b3a;
 }
 
 .dismiss {
@@ -571,25 +559,7 @@ function onEditorKey(event: KeyboardEvent) {
 }
 
 .empty-icon {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
   margin-bottom: 16px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.empty-icon svg {
-  width: 26px;
-  height: 26px;
-  fill: none;
-  stroke: var(--ink-muted);
-  stroke-width: 1.75;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 .empty h2 {
@@ -673,7 +643,7 @@ function onEditorKey(event: KeyboardEvent) {
 }
 
 .tab-delete:hover {
-  background: #fbeceb;
+  background: var(--danger-soft);
   color: var(--danger);
 }
 
@@ -704,55 +674,21 @@ function onEditorKey(event: KeyboardEvent) {
   color: var(--accent);
 }
 
-.add svg,
-.ghost svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 .actions {
   display: flex;
   flex: none;
   gap: 6px;
 }
 
-.ghost {
+.actions .btn-ghost {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  font-weight: 500;
 }
 
-.ghost:hover:not(:disabled) {
-  border-color: var(--ink-faint);
-}
-
-.ghost.on {
+.btn-ghost.on {
   border-color: var(--accent);
   background: var(--accent-soft);
-}
-
-.ghost:disabled,
-.primary:disabled {
-  opacity: 0.5;
-}
-
-.primary {
-  padding: 7px 16px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
 }
 
 /* Page and side panel */
@@ -811,23 +747,8 @@ function onEditorKey(event: KeyboardEvent) {
 
 .editor {
   flex: 1;
-  min-height: 200px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: #1b1b20;
-  color: #f2f1ee;
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
-  font-size: 12.5px;
-  line-height: 1.6;
   white-space: pre;
   resize: none;
-  tab-size: 2;
-}
-
-.editor:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
 }
 
 .side-note {
@@ -837,11 +758,7 @@ function onEditorKey(event: KeyboardEvent) {
 }
 
 .side-error {
-  margin: 0;
   padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  background: #fbeceb;
-  color: var(--danger);
   font-size: 13px;
 }
 

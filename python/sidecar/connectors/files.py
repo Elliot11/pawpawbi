@@ -179,7 +179,10 @@ def file_reader(fmt: str):
 
     if fmt == "csv":
         return read_csv_duckdb(chunk_size=CSV_CHUNK_ROWS, use_pyarrow=True)
-    return {"jsonl": read_jsonl, "parquet": read_parquet}[fmt]()
+    readers = {"jsonl": read_jsonl, "parquet": read_parquet}
+    if fmt not in readers:
+        raise ValueError(f"Unsupported format: {fmt}")
+    return readers[fmt]()
 
 
 def _build_url(settings: dict):

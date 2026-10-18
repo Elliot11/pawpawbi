@@ -8,7 +8,6 @@ import {
   saveDataset,
 } from '../report';
 import {
-  DATASET_NAME,
   createPage,
   createSite,
   deletePage,
@@ -20,7 +19,10 @@ import {
 } from '../report-site';
 import { SITE_TEMPLATES } from '../report-templates';
 import { openProject } from '../projects';
+import { NAME, NAME_RULE } from '../shared/ids';
+import type { WorkflowStage } from '../shared/types';
 import type { Target } from './changes';
+import { optionalText, text } from './input';
 import type { ToolCall, ToolSpec } from './types';
 
 export interface ToolContext {
@@ -32,7 +34,7 @@ export interface ToolContext {
     operation: () => Promise<T>,
   ) => Promise<T>;
   /** Shows a step of the workflow, and a report page, in the app. */
-  show: (stage: 'data' | 'model' | 'visuals', pageId?: string) => void;
+  show: (stage: WorkflowStage, pageId?: string) => void;
 }
 
 /** The report's own files (not its data), which page and file changes touch. */
@@ -43,19 +45,6 @@ const datasetTargets = (name: string): Target[] => [
 ];
 
 const filesDir = () => openProject().filesDir;
-
-function text(
-  input: Record<string, unknown>,
-  key: string,
-  optional = false,
-): string {
-  const value = input[key];
-  if (value === undefined && optional) return '';
-  if (typeof value !== 'string' || (!optional && !value.trim())) {
-    throw new Error(`"${key}" is required.`);
-  }
-  return value;
-}
 
 async function requireSite() {
   if (!(await hasSite(filesDir()))) {
@@ -78,14 +67,17 @@ async function fileLabel(file: unknown): Promise<string> {
 }
 
 /** A page ID from the model, which may also give it as "pages/<id>.html" or "<id>.html". */
-function pageId(input: Record<string, unknown>) {
-  return text(input, 'page_id')
+const normalisePageId = (value: unknown) =>
+  String(value ?? '')
     .trim()
     .replace(/^pages\//, '')
     .replace(/\.html$/, '');
-}
+
+const pageId = (input: Record<string, unknown>) =>
+  normalisePageId(text(input, 'page_id'));
 
 async function pageTitle(id: string) {
+  await requireSite();
   const page = (await readReport(filesDir())).pages.find((p) => p.id === id);
   if (!page)
     throw new Error(
@@ -96,16 +88,15 @@ async function pageTitle(id: string) {
 
 function datasetName(input: Record<string, unknown>) {
   const name = text(input, 'name');
-  if (!DATASET_NAME.test(name)) {
+  if (!NAME.test(name)) {
     throw new Error(
-      'Dataset names use lowercase letters, digits and underscores, starting with a letter, e.g. revenue_by_month.',
+      `Dataset names: ${NAME_RULE} For example revenue_by_month.`,
     );
   }
   return name;
 }
 
 export function reportTools(ctx: ToolContext): ToolSpec[] {
-  const step = 'visuals' as const;
   return [
     {
       name: 'create_report',
@@ -117,7 +108,6 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
         additionalProperties: false,
       },
       change: true,
-      step,
       describe: () => 'Add a report to the project',
       run: async (_input, call) => {
         if (await hasSite(filesDir()))
@@ -148,12 +138,11 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
         additionalProperties: false,
       },
       change: true,
-      step,
       describe: (input) => `Add a page "${String(input.title ?? '')}"`,
       run: async (input, call) => {
         await requireSite();
         const title = text(input, 'title');
-        const html = text(input, 'html', true);
+        const html = optionalText(input, 'html');
         // Models (small ones especially) tend to add a new page rather than edit the one asked
         // for; two pages with one name would confuse the user too.
         const existing = (await readReport(filesDir())).pages.find(
@@ -189,7 +178,6 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
         additionalProperties: false,
       },
       change: true,
-      step,
       describe: (input) => `Rename a page to "${String(input.title ?? '')}"`,
       run: async (input, call) => {
         const id = pageId(input);
@@ -211,9 +199,8 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
         additionalProperties: false,
       },
       change: true,
-      step,
       describe: async (input) =>
-        `Delete ${await fileLabel(`pages/${String(input.page_id)}.html`)}`,
+        `Delete ${await fileLabel(`pages/${normalisePageId(input.page_id)}.html`)}`,
       run: async (input, call) => {
         const id = pageId(input);
         const title = await pageTitle(id);
@@ -237,12 +224,11 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
         additionalProperties: false,
       },
       change: true,
-      step,
       describe: async (input) => `Write ${await fileLabel(input.path)}`,
       run: async (input, call) => {
         await requireSite();
         const file = text(input, 'path');
-        const content = text(input, 'content', true);
+        const content = optionalText(input, 'content');
         await ctx.change(call, `Wrote ${await fileLabel(file)}`, [SITE], () =>
           writeSiteFile(filesDir(), file, content),
         );
@@ -267,13 +253,12 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
         additionalProperties: false,
       },
       change: true,
-      step,
       describe: async (input) => `Edit ${await fileLabel(input.path)}`,
       run: async (input, call) => {
         await requireSite();
         const file = text(input, 'path');
         const find = text(input, 'find');
-        const replace = text(input, 'replace', true);
+        const replace = optionalText(input, 'replace');
         const current = await readSiteFile(filesDir(), file);
         const count = current.split(find).length - 1;
         if (count === 0) {
@@ -317,7 +302,6 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
         additionalProperties: false,
       },
       change: true,
-      step,
       describe: (input) => `Save the dataset ${String(input.name ?? '')}`,
       run: async (input, call) => {
         await requireSite();
@@ -348,7 +332,6 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
         additionalProperties: false,
       },
       change: true,
-      step,
       describe: (input) => `Delete the dataset ${String(input.name ?? '')}`,
       run: async (input, call) => {
         const name = datasetName(input);
@@ -374,7 +357,6 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
         additionalProperties: false,
       },
       change: true,
-      step,
       describe: () => "Update the report's data",
       run: async (_input, call) => {
         await requireSite();
@@ -401,7 +383,6 @@ export function reportTools(ctx: ToolContext): ToolSpec[] {
         required: ['page_id'],
         additionalProperties: false,
       },
-      step,
       describe: () => 'Showing the page',
       run: async (input) => {
         const id = pageId(input);

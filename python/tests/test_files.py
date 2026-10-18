@@ -181,3 +181,10 @@ def test_read_excel_formulas_give_values(tmp_path):
     # reads as empty; files saved by Excel carry the calculated value.
     assert _all(_read_excel(path)) == [{"a": 2, "b": None}]
     assert load_workbook(path).active["B2"].value == "=A2*2"
+
+
+def test_file_reader_rejects_unknown_format():
+    from connectors.files import file_reader
+
+    with pytest.raises(ValueError, match="Unsupported format: xml"):
+        file_reader("xml")

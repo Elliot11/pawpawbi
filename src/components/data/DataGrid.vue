@@ -19,7 +19,7 @@ const format = (value: unknown) =>
           <tr>
             <th v-for="c in preview.columns" :key="c.name">
               {{ c.name }}
-              <small>{{ c.dtype }}</small>
+              <small>{{ c.type }}</small>
             </th>
           </tr>
         </thead>

@@ -1,5 +1,27 @@
-// Server-sent events, as both providers stream responses: "event:" and "data:" lines, with a
-// blank line ending each event. https://html.spec.whatwg.org/multipage/server-sent-events.html
+// Reading streamed responses: lines, and server-sent events ("event:" and "data:" lines, with a
+// blank line ending each event; https://html.spec.whatwg.org/multipage/server-sent-events.html).
+
+/** Splits a byte stream into lines (without their line breaks), as they arrive. */
+export async function* lines(
+  body: AsyncIterable<Uint8Array>,
+): AsyncGenerator<string> {
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for await (const chunk of body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let newline;
+    while ((newline = buffer.search(/\r\n|\r|\n/)) !== -1) {
+      // A "\r" at the end may be the first half of "\r\n": wait for the next chunk.
+      if (newline === buffer.length - 1 && buffer.endsWith('\r')) break;
+      yield buffer.slice(0, newline);
+      buffer = buffer.slice(
+        newline + (buffer.startsWith('\r\n', newline) ? 2 : 1),
+      );
+    }
+  }
+  buffer += decoder.decode();
+  if (buffer) yield buffer;
+}
 
 export interface ServerEvent {
   event: string;
@@ -10,8 +32,6 @@ export interface ServerEvent {
 export async function* readEvents(
   body: AsyncIterable<Uint8Array>,
 ): AsyncGenerator<ServerEvent> {
-  const decoder = new TextDecoder();
-  let buffer = '';
   let event = '';
   let data: string[] = [];
 
@@ -31,20 +51,6 @@ export async function* readEvents(
     }
   }
 
-  for await (const chunk of body) {
-    buffer += decoder.decode(chunk, { stream: true });
-    let newline;
-    while ((newline = buffer.search(/\r\n|\r|\n/)) !== -1) {
-      // A "\r" at the end may be the first half of "\r\n": wait for the next chunk.
-      if (newline === buffer.length - 1 && buffer.endsWith('\r')) break;
-      const line = buffer.slice(0, newline);
-      buffer = buffer.slice(
-        newline + (buffer.startsWith('\r\n', newline) ? 2 : 1),
-      );
-      yield* flushLine(line);
-    }
-  }
-  buffer += decoder.decode();
-  if (buffer) yield* flushLine(buffer);
+  for await (const line of lines(body)) yield* flushLine(line);
   yield* flushLine('');
 }

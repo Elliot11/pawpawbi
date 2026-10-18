@@ -9,6 +9,7 @@ import {
 } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { readJson, writeJson } from './fs-json';
 import { InvalidProjectFileError } from './pawpaw-archive';
 import { work } from './background';
 import { stopPython } from './python';
@@ -28,18 +29,18 @@ import {
   openWorkspace,
   removeWorkspace,
   saveWorkspace,
-  writeJson,
   type Workspace,
   type WorkspaceOptions,
   type WorkspaceState,
 } from './workspace';
+import { STAGES } from './workflow';
 
 const PROJECT_EXTENSION = 'pawpaw';
 const PROJECT_FILTERS = [
   { name: 'PawpawBI project', extensions: [PROJECT_EXTENSION] },
 ];
 const MAX_RECENTS = 10;
-const WORKFLOW_STAGES: WorkflowStage[] = ['data', 'model', 'visuals'];
+const WORKFLOW_STAGES = STAGES.map((s) => s.id);
 
 // ---------------------------------------------------------------------------------------------
 // Recent projects
@@ -47,17 +48,17 @@ const WORKFLOW_STAGES: WorkflowStage[] = ['data', 'model', 'visuals'];
 const recentsPath = () =>
   path.join(app.getPath('userData'), 'recent-projects.json');
 
-async function readRecents(): Promise<RecentProject[]> {
-  try {
-    return JSON.parse(await fs.readFile(recentsPath(), 'utf8'));
-  } catch {
-    return [];
-  }
-}
+const readRecents = () =>
+  readJson(recentsPath(), (raw): RecentProject[] =>
+    Array.isArray(raw)
+      ? raw.filter(
+          (r) => typeof r?.path === 'string' && typeof r?.name === 'string',
+        )
+      : [],
+  );
 
-async function writeRecents(recents: RecentProject[]) {
-  await fs.writeFile(recentsPath(), JSON.stringify(recents, null, 2));
-}
+const writeRecents = (recents: RecentProject[]) =>
+  writeJson(recentsPath(), recents);
 
 async function addRecent(name: string, filePath: string) {
   const recents = (await readRecents()).filter((r) => r.path !== filePath);
@@ -73,9 +74,7 @@ async function removeRecent(filePath: string) {
 // The open project. Its working folder and crash recovery are in workspace.ts; this module adds
 // the dialogs, the recent list, window updates and IPC.
 
-type Session = Workspace;
-
-let session: Session | null = null;
+let session: Workspace | null = null;
 
 const appLabel = () => `PawpawBI ${app.getVersion()}`;
 
@@ -84,18 +83,16 @@ const workspaceOptions = (): WorkspaceOptions => ({
   appLabel: appLabel(),
 });
 
-function requireSession(): Session {
+function requireSession(): Workspace {
   if (!session) throw new Error('No project is open.');
   return session;
 }
 
-function toProject(s: Session): Project {
+function toProject(s: Workspace): Project {
   return {
     id: s.manifest.id,
     name: s.manifest.name,
     path: s.filePath,
-    createdAt: s.manifest.createdAt,
-    modifiedAt: s.manifest.modifiedAt,
     dirty: s.dirty,
     busy: work.running(s.manifest.id).length > 0,
   };
@@ -118,9 +115,17 @@ function notifyChanged() {
   }
 }
 
-async function markDirty() {
+/** Records that the open project has changed since it was last saved. */
+export async function markProjectChanged() {
   if (await markWorkspaceDirty(requireSession())) notifyChanged();
 }
+
+/**
+ * Runs an operation that changes the open project as tracked background work, so saving waits
+ * for it and closing waits for it or stops it (see background.ts).
+ */
+export const tracked = <R>(label: string, operation: () => Promise<R>) =>
+  work.run(openProject().id, label, operation);
 
 async function askToRecover(
   win: BrowserWindow,
@@ -230,7 +235,17 @@ async function finishBackgroundWork(win: BrowserWindow, projectId: string) {
 }
 
 /** Closes the open project, asking to save unsaved changes first. False if the user cancels. */
-export async function closeProject(win: BrowserWindow): Promise<boolean> {
+// The window's close event and the Projects button can both ask to close; one close at a time.
+let closing: Promise<boolean> | null = null;
+
+export function closeProject(win: BrowserWindow): Promise<boolean> {
+  closing ??= closeOpenProject(win).finally(() => {
+    closing = null;
+  });
+  return closing;
+}
+
+async function closeOpenProject(win: BrowserWindow): Promise<boolean> {
   if (!session) return true;
   if (!(await finishBackgroundWork(win, session.manifest.id))) return false;
   if (!session) return true;
@@ -247,9 +262,9 @@ export async function closeProject(win: BrowserWindow): Promise<boolean> {
     if (response === 2) return false;
     if (response === 0) await saveProject();
   }
-  const closing = session;
+  const closed = session;
   session = null;
-  await removeWorkspace(closing);
+  await removeWorkspace(closed);
   notifyChanged();
   return true;
 }
@@ -261,9 +276,6 @@ export function openProject(): { id: string; name: string; filesDir: string } {
   const s = requireSession();
   return { id: s.manifest.id, name: s.manifest.name, filesDir: s.filesDir };
 }
-
-/** Records that the open project has changed since it was last saved. */
-export const markProjectChanged = () => markDirty();
 
 // ---------------------------------------------------------------------------------------------
 // Chat (chat/session.json and chat/messages.jsonl)
@@ -307,7 +319,7 @@ async function setStage(stage: WorkflowStage) {
     path.join(requireSession().filesDir, 'chat', 'session.json'),
     { stage },
   );
-  await markDirty();
+  await markProjectChanged();
 }
 
 /** Adds messages to the end of the conversation. */
@@ -318,7 +330,7 @@ export async function appendChatMessages(messages: ChatMessage[]) {
     path.join(chatDir, 'messages.jsonl'),
     messages.map((m) => JSON.stringify(m) + '\n').join(''),
   );
-  await markDirty();
+  await markProjectChanged();
 }
 
 async function appendChat(messages: ChatMessage[], stage: WorkflowStage) {
