@@ -148,10 +148,12 @@ export function startStubServer(port = 0) {
         return {};
       }
     };
+    // Like S3's CORS rule for the viewer: anyone may read a report's files.
     const serveObject = (object) =>
       send(200, object.body, {
         'Content-Type': object.contentType,
         'Content-Encoding': 'gzip',
+        'Access-Control-Allow-Origin': '*',
       });
 
     try {
@@ -232,6 +234,7 @@ export function startStubServer(port = 0) {
       // Anyone with the ID can read a report.
       if (req.method === 'GET' && reportRoute) {
         const entry = reports.get(reportRoute[1]);
+        res.setHeader('Access-Control-Allow-Origin', '*');
         if (!entry || entry.current < 0)
           return fail(404, 'There’s no published report with that ID.');
         return send(200, {

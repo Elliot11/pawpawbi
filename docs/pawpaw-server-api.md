@@ -108,3 +108,13 @@ its own signature. So `url` is a viewer page on the PawpawBI website, such as
 The viewer only serves the report's files to the page, with a Content Security Policy like the
 app's (`SITE_CSP` in `src/report.ts`): the report's own scripts run, but it can't load anything
 from elsewhere.
+
+The viewer is part of the PawpawServer project (`src/viewer/`, with its own README). What it
+needs from the hosting:
+
+- **Routing: a Cloudflare rule** rewrites every `/r/…` address the website has no file for to
+  `/r/index.html`, the viewer's first page, so links to any report or page work on a first visit.
+- **CORS:** the reports bucket allows `GET` from the viewer's host, and the API allows
+  `GET /reports/<id>` from it.
+- **Its own host** (such as `reports.pawpawbi.com`), not the main website's: report pages run
+  their author's JavaScript, which must not run where the website keeps anything.
