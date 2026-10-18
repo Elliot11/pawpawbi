@@ -1,9 +1,9 @@
 <script setup lang="ts">
-// Signing in to PawpawBI (email and password, or Google or Microsoft in the browser), or who's
-// signed in. Used where publishing needs an account.
+// Signing in to PawpawBI with an email and password, or who's signed in. Used where publishing
+// needs an account.
 import { onMounted, ref } from 'vue';
 import { errorMessage } from '../errors';
-import type { AccountState, SignInProvider } from '../shared/types';
+import type { AccountState } from '../shared/types';
 
 const emit = defineEmits<{ changed: [state: AccountState] }>();
 
@@ -11,7 +11,7 @@ const state = ref<AccountState | null>(null);
 const mode = ref<'sign-in' | 'sign-up'>('sign-in');
 const email = ref('');
 const password = ref('');
-const busy = ref<'' | 'email' | SignInProvider | 'sign-out'>('');
+const busy = ref<'' | 'email' | 'sign-out'>('');
 const error = ref('');
 
 function update(next: AccountState) {
@@ -52,8 +52,6 @@ const submit = () =>
       ? window.api.account.signIn(email.value, password.value)
       : window.api.account.signUp(email.value, password.value),
   );
-const withProvider = (provider: SignInProvider) =>
-  run(provider, () => window.api.account.signInWith(provider));
 const signOut = () => run('sign-out', () => window.api.account.signOut());
 </script>
 
@@ -85,31 +83,6 @@ const signOut = () => run('sign-out', () => window.api.account.signOut());
             : 'Create a free PawpawBI account to publish your reports.'
         }}
       </p>
-      <div class="providers">
-        <button
-          class="btn-ghost provider"
-          :disabled="!!busy"
-          @click="withProvider('google')"
-        >
-          {{
-            busy === 'google'
-              ? 'Finish in your browser…'
-              : 'Continue with Google'
-          }}
-        </button>
-        <button
-          class="btn-ghost provider"
-          :disabled="!!busy"
-          @click="withProvider('microsoft')"
-        >
-          {{
-            busy === 'microsoft'
-              ? 'Finish in your browser…'
-              : 'Continue with Microsoft'
-          }}
-        </button>
-      </div>
-      <p class="or"><span>or with your email</span></p>
       <form class="form" @submit.prevent="submit">
         <label>
           Email
@@ -198,32 +171,6 @@ const signOut = () => run('sign-out', () => window.api.account.signOut());
   flex-direction: column;
   gap: 12px;
   max-width: 380px;
-}
-
-.providers {
-  display: grid;
-  gap: 8px;
-}
-
-.provider {
-  padding: 9px 14px;
-}
-
-.or {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 2px 0;
-  color: var(--ink-faint);
-  font-size: 13px;
-}
-
-.or::before,
-.or::after {
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-  content: '';
 }
 
 .form {

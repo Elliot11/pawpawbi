@@ -9,7 +9,13 @@ import path from 'node:path';
 import { forgetIfSignedOut, signedInServer } from './account';
 import { refreshAll } from './data';
 import { readJson, removePath, writeJson } from './fs-json';
-import { readArchiveEntry, zipFolder } from './pawpaw-archive';
+import { listFiles, readArchiveEntry } from './pawpaw-archive';
+import {
+  MissingFilesError,
+  packFile,
+  type PawpawServer,
+  type ServerReport,
+} from './pawpaw-server';
 import {
   closeProjectQuietly,
   hasOpenProject,
@@ -28,7 +34,7 @@ import {
   withEntry,
 } from './published-files';
 import { refreshDatasets } from './report';
-import { exportSite, hasSite, readReport } from './report-site';
+import { exportSite, hasSite, readReport, SITE_TYPES } from './report-site';
 import { parseManifest } from './workspace';
 import type { PublishedProject, PublishedReport } from './shared/types';
 
@@ -140,23 +146,76 @@ async function withTempDir<T>(use: (dir: string) => Promise<T>): Promise<T> {
   }
 }
 
-/** The site as Publish to a folder writes it, zipped. */
-const siteZip = (filesDir: string) =>
+type Packed = ReturnType<typeof packFile>;
+
+/** The files of a folder that the site serves (or those `include` picks), gzipped to upload. */
+async function packFolder(
+  dir: string,
+  include: (file: string) => boolean = () => true,
+): Promise<Packed[]> {
+  const packed: Packed[] = [];
+  for (const file of await listFiles(dir)) {
+    const type = SITE_TYPES[path.extname(file).toLowerCase()];
+    if (!type || !include(file)) continue;
+    packed.push(
+      packFile(
+        file,
+        await fs.readFile(path.join(dir, ...file.split('/'))),
+        type,
+      ),
+    );
+  }
+  return packed;
+}
+
+/** The site as Publish to a folder writes it (with the menu in every page), gzipped. */
+const packSite = (filesDir: string) =>
   withTempDir(async (dir) => {
     const site = path.join(dir, 'site');
     await exportSite(filesDir, site);
-    return zipFolder(site);
+    return packFolder(site);
   });
 
-/** The report's data files, zipped. */
-const dataZip = (filesDir: string) =>
-  zipFolder(path.join(filesDir, 'report'), (file) =>
+/** The report's data files, gzipped. */
+const packData = (filesDir: string) =>
+  packFolder(path.join(filesDir, 'report'), (file) =>
     /^data\/[^/]+\.json$/.test(file),
   );
 
 /**
+ * Uploads a new version of a report straight to S3, a few files at a time, then tells the
+ * server, which checks they're all there and makes it the current version. Files the server
+ * says are missing are uploaded once more.
+ */
+async function uploadVersion(
+  server: PawpawServer,
+  packed: Packed[],
+  start: (files: Packed['file'][]) => ReturnType<PawpawServer['updateReport']>,
+): Promise<ServerReport> {
+  const { report, version, uploads } = await start(packed.map((p) => p.file));
+  const put = async (todo: typeof uploads) => {
+    const queue = [...todo];
+    const worker = async () => {
+      for (let upload = queue.shift(); upload; upload = queue.shift()) {
+        const body = packed.find((p) => p.file.path === upload.path)!.body;
+        await server.putFile(upload, body);
+      }
+    };
+    await Promise.all(Array.from({ length: 4 }, worker));
+  };
+  await put(uploads);
+  try {
+    return await server.completeUpload(report.id, version);
+  } catch (error) {
+    if (!(error instanceof MissingFilesError)) throw error;
+    await put(uploads.filter((u) => error.missing.includes(u.path)));
+    return server.completeUpload(report.id, version);
+  }
+}
+
+/**
  * Publishes the open project's report to PawpawBI: the first time, a new report; after that,
- * the same report again, so its address doesn't change.
+ * a new version of the same report, so its address doesn't change.
  */
 async function publishToPawpawBI(): Promise<PublishedReport> {
   const { filesDir } = openProject();
@@ -179,12 +238,15 @@ async function publishToPawpawBI(): Promise<PublishedReport> {
         );
       }
       await refreshDatasets();
-      const zip = await siteZip(filesDir);
-      let id = previous?.reportId;
-      if (!id) {
-        id = (await server.createReport((await readReport(filesDir)).title)).id;
-      }
-      const hosted = await server.uploadSite(id, zip);
+      const title = (await readReport(filesDir)).title;
+      const hosted = await uploadVersion(
+        server,
+        await packSite(filesDir),
+        (files) =>
+          previous
+            ? server.updateReport(previous.reportId, 'site', files)
+            : server.createReport(title, files),
+      );
       const report: PublishedReport = {
         reportId: hosted.id,
         url: hosted.url,
@@ -236,9 +298,11 @@ async function refresh(projectPath: string): Promise<PublishedProject> {
       'Refreshing the published report',
       async () => {
         const result = await refreshAll();
-        const hosted = await server
-          .uploadData(report.reportId, await dataZip(filesDir))
-          .catch(forgetIfSignedOut);
+        const hosted = await uploadVersion(
+          server,
+          await packData(filesDir),
+          (files) => server.updateReport(report.reportId, 'data', files),
+        ).catch(forgetIfSignedOut);
         const updated = { ...report, refreshedAt: hosted.refreshedAt };
         await writePublished(updated);
         const problems = [

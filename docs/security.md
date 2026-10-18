@@ -182,13 +182,11 @@ must be a `secret=True` field, not a regular one.
 - The account's sign-in token is stored encrypted with `safeStorage` (`account.bin` in userData,
   `src/account.ts`), never in a project, and sent only to the PawpawBI server, over HTTPS.
   Passwords aren't stored at all: they're sent once, to sign in.
-- Google and Microsoft sign-in happens in the user's browser, never in the app's windows. The
-  server sends the browser back to a one-off `http://127.0.0.1:<port>/callback` with a code,
-  checked against a random `state`, and swapped for a token (RFC 8252,
-  [pawpaw-server-api.md](pawpaw-server-api.md)).
 - Publishing uploads the report site (pages, styles, scripts, `data/*.json`): never the
-  project's tables, sources or credentials. Anyone with a published report's link can read its
-  data files, as for any hosted report.
+  project's tables, sources or credentials. Each file goes straight to S3 with a presigned URL
+  from the server, gzipped, and signed with its SHA-256, so S3 refuses any other file; the sign-in
+  token never goes to S3. Anyone with a published report's link can read its data files, as for
+  any hosted report ([pawpaw-server-api.md](pawpaw-server-api.md)).
 - `published.json` comes from the project file, so it's untrusted: report IDs are checked before
   use in a URL and only `https:` links are shown or opened. The server only lets the account
   that owns a report change it, so a project naming someone else's report can't update it.

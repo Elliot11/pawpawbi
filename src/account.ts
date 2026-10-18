@@ -1,10 +1,8 @@
-// The user's PawpawBI account: signing in (email and password, or Google or Microsoft in the
-// browser), and the sign-in token, stored encrypted on this computer (like the assistant's API
-// keys), never in a project. Server API: docs/pawpaw-server-api.md
-import { app, ipcMain, safeStorage, shell } from 'electron';
-import { randomBytes } from 'node:crypto';
+// The user's PawpawBI account: signing in with an email and password, and the sign-in token,
+// stored encrypted on this computer (like the assistant's API keys), never in a project.
+// Google and Microsoft sign-in are planned (TODO.md). Server API: docs/pawpaw-server-api.md
+import { app, ipcMain, safeStorage } from 'electron';
 import fs from 'node:fs/promises';
-import http from 'node:http';
 import path from 'node:path';
 import { removePath } from './fs-json';
 import {
@@ -12,7 +10,7 @@ import {
   SignedOutError,
   type ServerAccount,
 } from './pawpaw-server';
-import type { AccountState, SignInProvider } from './shared/types';
+import type { AccountState } from './shared/types';
 
 /**
  * The PawpawBI server. There's none yet, so publishing to PawpawBI is unavailable in packaged
@@ -103,69 +101,6 @@ function checkDetails(email: unknown, password: unknown) {
   return email.trim();
 }
 
-/**
- * Signs in with Google or Microsoft: the browser goes to the server, which signs the user in
- * with the provider and sends the browser back to a one-off address on this computer with a
- * code, which is swapped for a token (RFC 8252).
- */
-async function signInWith(provider: SignInProvider): Promise<AccountState> {
-  if (provider !== 'google' && provider !== 'microsoft') {
-    throw new Error('Unknown sign-in provider.');
-  }
-  const server = pawpawServer(requireServerUrl());
-  const state = randomBytes(16).toString('hex');
-  const listener = http.createServer();
-  await new Promise<void>((resolve) =>
-    listener.listen(0, '127.0.0.1', resolve),
-  );
-  const port = (listener.address() as { port: number }).port;
-  const redirectUri = `http://127.0.0.1:${port}/callback`;
-  try {
-    const code = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error('Signing in took too long. Try again.')),
-        5 * 60_000,
-      );
-      listener.on('request', (req, res) => {
-        const url = new URL(req.url ?? '/', redirectUri);
-        if (url.pathname !== '/callback') {
-          res.writeHead(404).end();
-          return;
-        }
-        const done = (message: string) => {
-          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end(
-            `<!doctype html><meta charset="utf-8"><title>PawpawBI</title><body style="font-family:system-ui;padding:48px"><h1>${message}</h1><p>You can close this tab and go back to PawpawBI.</p>`,
-          );
-        };
-        if (url.searchParams.get('state') !== state) {
-          done('That sign-in link has expired');
-          return;
-        }
-        clearTimeout(timer);
-        const received = url.searchParams.get('code');
-        if (received) {
-          done('Signed in');
-          resolve(received);
-        } else {
-          done('Signing in didn’t work');
-          reject(
-            new Error(
-              url.searchParams.get('error') || 'Signing in was cancelled.',
-            ),
-          );
-        }
-      });
-      shell
-        .openExternal(server.providerStartUrl(provider, redirectUri, state))
-        .catch(reject);
-    });
-    return save(await server.providerToken(provider, code, redirectUri));
-  } finally {
-    listener.close();
-  }
-}
-
 export function registerAccountHandlers() {
   ipcMain.handle('account:get', () => state());
   ipcMain.handle('account:sign-up', async (_event, email, password) => {
@@ -176,9 +111,6 @@ export function registerAccountHandlers() {
     const clean = checkDetails(email, password);
     return save(await pawpawServer(requireServerUrl()).signIn(clean, password));
   });
-  ipcMain.handle('account:sign-in-with', (_event, provider: SignInProvider) =>
-    signInWith(provider),
-  );
   ipcMain.handle('account:sign-out', async () => {
     const saved = await readSaved();
     const url = serverUrl();

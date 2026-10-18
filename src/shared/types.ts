@@ -303,8 +303,6 @@ export interface PublishedProject extends PublishedReport {
   lastError?: string;
 }
 
-export type SignInProvider = 'google' | 'microsoft';
-
 export interface AccountState {
   /** False when this version has no PawpawBI server to talk to. */
   available: boolean;
@@ -316,8 +314,6 @@ export interface AccountApi {
   get: () => Promise<AccountState>;
   signUp: (email: string, password: string) => Promise<AccountState>;
   signIn: (email: string, password: string) => Promise<AccountState>;
-  /** Signs in with Google or Microsoft in the user's browser. */
-  signInWith: (provider: SignInProvider) => Promise<AccountState>;
   signOut: () => Promise<AccountState>;
 }
 

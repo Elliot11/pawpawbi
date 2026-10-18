@@ -131,8 +131,6 @@ const account: AccountApi = {
     ipcRenderer.invoke('account:sign-up', email, password),
   signIn: (email, password) =>
     ipcRenderer.invoke('account:sign-in', email, password),
-  signInWith: (provider) =>
-    ipcRenderer.invoke('account:sign-in-with', provider),
   signOut: () => ipcRenderer.invoke('account:sign-out'),
 };
 
