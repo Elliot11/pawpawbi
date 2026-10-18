@@ -317,6 +317,15 @@ export interface AccountApi {
   signOut: () => Promise<AccountState>;
 }
 
+/** How an upload to PawpawBI is going, for a progress bar. */
+export interface PublishProgress {
+  /** preparing: asking for upload URLs; uploading: sending parts; finishing: completing. */
+  stage: 'preparing' | 'uploading' | 'finishing';
+  /** Bytes (gzipped) sent so far, of `total`. */
+  sent: number;
+  total: number;
+}
+
 export interface PublishApi {
   /** The open project's published report, or null if it hasn't been published. */
   get: () => Promise<PublishedReport | null>;
@@ -331,6 +340,8 @@ export interface PublishApi {
   refresh: (projectPath: string) => Promise<PublishedProject>;
   /** Adds published projects to the list from .pawpaw files the user picks. */
   addFiles: () => Promise<PublishedProject[]>;
+  /** Called as an upload to PawpawBI goes. Returns an unsubscribe function. */
+  onProgress: (callback: (progress: PublishProgress) => void) => () => void;
 }
 
 export interface ProjectsApi {

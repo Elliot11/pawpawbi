@@ -3,6 +3,7 @@
 // folder to host anywhere. Design: docs/pawpaw-server-api.md and docs/report-pages.md
 import { onMounted, ref } from 'vue';
 import AccountPanel from '../components/AccountPanel.vue';
+import UploadProgress from '../components/UploadProgress.vue';
 import { errorMessage } from '../errors';
 import type { AccountState, Project, PublishedReport } from '../shared/types';
 import { timeAgo } from '../time';
@@ -118,6 +119,7 @@ async function toFolder() {
           }}
         </button>
       </template>
+      <UploadProgress v-if="busy === 'pawpawbi'" />
       <p v-if="notice" class="box-notice" role="status">{{ notice }}</p>
       <p v-if="error" class="box-error" role="alert">{{ error }}</p>
     </section>

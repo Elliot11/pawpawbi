@@ -293,3 +293,30 @@ export function pawpawServer(
 }
 
 export type PawpawServer = ReturnType<typeof pawpawServer>;
+
+/**
+ * PUTs every file of `uploads` (the files in `packed`) to its presigned URL, a few at a time,
+ * reporting the bytes sent so far as each file finishes.
+ */
+export async function uploadFiles(
+  server: PawpawServer,
+  packed: { file: UploadFile; body: Uint8Array }[],
+  uploads: Upload[],
+  onProgress: (sent: number, total: number) => void = () => {},
+  concurrency = 4,
+) {
+  const bodies = new Map(packed.map((p) => [p.file.path, p.body]));
+  const queue = [...uploads];
+  const total = queue.reduce((sum, u) => sum + bodies.get(u.path)!.length, 0);
+  let sent = 0;
+  onProgress(0, total);
+  const worker = async () => {
+    for (let upload = queue.shift(); upload; upload = queue.shift()) {
+      const body = bodies.get(upload.path)!;
+      await server.putFile(upload, body);
+      sent += body.length;
+      onProgress(sent, total);
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, worker));
+}

@@ -11,6 +11,7 @@ import {
   packFile,
   pawpawServer,
   SignedOutError,
+  uploadFiles,
   type PawpawServer,
 } from '../../src/pawpaw-server.ts';
 import {
@@ -296,4 +297,30 @@ test('published records from project files are checked', () => {
   const moved = { ...entry, projectPath: 'D:\\Sales.pawpaw' };
   const other = { ...entry, reportId: 'zzz', projectName: 'Atlas' };
   assert.deepEqual(withEntry(withEntry([entry], other), moved), [other, moved]);
+});
+
+test('uploading reports progress as each file finishes', async () => {
+  const { token } = await pawpawServer(stub.url).signUp(
+    'gu@example.com',
+    'password5',
+  );
+  const server = pawpawServer(stub.url, token);
+  const packed = pack({
+    'index.html': '<h1>A</h1>',
+    'pages/a.html': '<p>a</p>',
+    'data/a.json': '{"rows":[]}',
+  });
+  const { report, version, uploads } = await server.createReport(
+    'Progress',
+    packed.map((p) => p.file),
+  );
+  const seen: [number, number][] = [];
+  await uploadFiles(server, packed, uploads, (sent, total) =>
+    seen.push([sent, total]),
+  );
+  const total = packed.reduce((sum, p) => sum + p.body.length, 0);
+  assert.deepEqual(seen[0], [0, total]);
+  assert.deepEqual(seen.at(-1), [total, total]);
+  assert.equal(seen.length, 4, 'a step per file');
+  assert.ok((await server.completeUpload(report.id, version)).publishedAt);
 });

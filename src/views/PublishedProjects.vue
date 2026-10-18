@@ -5,6 +5,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import AccountPanel from '../components/AccountPanel.vue';
 import RunningTimer from '../components/RunningTimer.vue';
+import UploadProgress from '../components/UploadProgress.vue';
 import { errorMessage } from '../errors';
 import type { AccountState, PublishedProject } from '../shared/types';
 import { ALL_SOURCES } from '../shared/types';
@@ -124,6 +125,7 @@ async function addFiles() {
               <RunningTimer :can-stop="false" />
             </p>
             <p v-else-if="p.lastError" class="item-error">{{ p.lastError }}</p>
+            <UploadProgress v-if="refreshing === p.projectPath" />
           </div>
           <button
             class="btn-primary"

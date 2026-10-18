@@ -12,6 +12,7 @@ import { readJson, removePath, writeJson } from './fs-json';
 import { listFiles, readArchiveEntry } from './pawpaw-archive';
 import {
   MissingFilesError,
+  uploadFiles,
   packFile,
   type PawpawServer,
   type ServerReport,
@@ -36,7 +37,11 @@ import {
 import { refreshDatasets } from './report';
 import { exportSite, hasSite, readReport, SITE_TYPES } from './report-site';
 import { parseManifest } from './workspace';
-import type { PublishedProject, PublishedReport } from './shared/types';
+import type {
+  PublishedProject,
+  PublishedReport,
+  PublishProgress,
+} from './shared/types';
 
 // --- The project's record (published.json) -----------------------------------------------------
 
@@ -182,33 +187,39 @@ const packData = (filesDir: string) =>
     /^data\/[^/]+\.json$/.test(file),
   );
 
+/** Tells every window how the upload is going (a progress bar). */
+function sendProgress(progress: PublishProgress) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('publish:progress', progress);
+  }
+}
+
 /**
- * Uploads a new version of a report straight to S3, a few files at a time, then tells the
- * server, which checks they're all there and makes it the current version. Files the server
- * says are missing are uploaded once more.
+ * Uploads a new version of a report straight to S3 (a few files at a time, with progress),
+ * then tells the server, which checks they're all there and makes it the current version.
+ * Files it says are missing are uploaded once more.
  */
 async function uploadVersion(
   server: PawpawServer,
   packed: Packed[],
   start: (files: Packed['file'][]) => ReturnType<PawpawServer['updateReport']>,
 ): Promise<ServerReport> {
+  sendProgress({ stage: 'preparing', sent: 0, total: 0 });
   const { report, version, uploads } = await start(packed.map((p) => p.file));
-  const put = async (todo: typeof uploads) => {
-    const queue = [...todo];
-    const worker = async () => {
-      for (let upload = queue.shift(); upload; upload = queue.shift()) {
-        const body = packed.find((p) => p.file.path === upload.path)!.body;
-        await server.putFile(upload, body);
-      }
-    };
-    await Promise.all(Array.from({ length: 4 }, worker));
-  };
-  await put(uploads);
+  const progress = (sent: number, total: number) =>
+    sendProgress({ stage: 'uploading', sent, total });
+  await uploadFiles(server, packed, uploads, progress);
+  sendProgress({ stage: 'finishing', sent: 1, total: 1 });
   try {
     return await server.completeUpload(report.id, version);
   } catch (error) {
     if (!(error instanceof MissingFilesError)) throw error;
-    await put(uploads.filter((u) => error.missing.includes(u.path)));
+    await uploadFiles(
+      server,
+      packed,
+      uploads.filter((u) => error.missing.includes(u.path)),
+      progress,
+    );
     return server.completeUpload(report.id, version);
   }
 }

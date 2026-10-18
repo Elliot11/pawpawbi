@@ -10,6 +10,7 @@ import type {
   Project,
   ProjectsApi,
   PublishApi,
+  PublishProgress,
   PythonApi,
   ReportApi,
 } from './shared/types';
@@ -140,6 +141,12 @@ const publish: PublishApi = {
   list: () => ipcRenderer.invoke('publish:list'),
   refresh: (projectPath) => ipcRenderer.invoke('publish:refresh', projectPath),
   addFiles: () => ipcRenderer.invoke('publish:add-files'),
+  onProgress: (callback) => {
+    const listener = (_event: IpcRendererEvent, progress: PublishProgress) =>
+      callback(progress);
+    ipcRenderer.on('publish:progress', listener);
+    return () => ipcRenderer.removeListener('publish:progress', listener);
+  },
 };
 
 // Expose a small, explicit API to the renderer (available as window.api).
