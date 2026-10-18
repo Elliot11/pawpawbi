@@ -9,10 +9,11 @@ import {
   connector,
   dependentsOf,
   discover,
-  load,
+  loadStoppable,
   readSource,
   removeSource,
   saveSource,
+  stopLoad,
   toDataSource,
 } from '../data';
 import { newId } from '../shared/ids';
@@ -311,7 +312,7 @@ export function sourceTools(ctx: ToolContext): ToolSpec[] {
           : source.resources;
         return `Load data from "${source.name}"${tables.length ? ` (${tables.join(', ')})` : ''}`;
       },
-      run: async (input) => {
+      run: async (input, _call, signal) => {
         const source = await sourceOf(input);
         const tables = Array.isArray(input.tables)
           ? input.tables.filter((t): t is string => typeof t === 'string')
@@ -321,13 +322,17 @@ export function sourceTools(ctx: ToolContext): ToolSpec[] {
             'Say which tables to load: discover_tables lists them.',
           );
         }
+        // Stop in the chat stops the load too, until its data has arrived.
+        const stop = () => stopLoad(source.id);
+        signal?.addEventListener('abort', stop);
         try {
-          return (await load(source.id, tables)).map((t) => ({
+          return (await loadStoppable(source.id, tables)).map((t) => ({
             table: t.name,
             rows: t.rows,
             ...(t.transformError ? { transform_error: t.transformError } : {}),
           }));
         } finally {
+          signal?.removeEventListener('abort', stop);
           // Even a failed load may have changed some tables.
           await ctx.changed(['sources', 'model', 'report']);
           ctx.show('data');

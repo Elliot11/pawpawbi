@@ -55,7 +55,12 @@ export interface ToolSpec {
     additionalProperties?: boolean;
   };
   /** Runs the tool. The result goes back to the model as JSON (or text, if a string). */
-  run: (input: Record<string, unknown>, call: ToolCall) => Promise<unknown>;
+  run: (
+    input: Record<string, unknown>,
+    call: ToolCall,
+    /** Aborted when the user presses Stop: a long-running tool can stop its work. */
+    signal?: AbortSignal,
+  ) => Promise<unknown>;
   /** A few words for the chat while it runs, e.g. "Looking at orders". */
   describe: (input: Record<string, unknown>) => string | Promise<string>;
   /**

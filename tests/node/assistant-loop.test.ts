@@ -494,3 +494,32 @@ test("a change whose input is wrong isn't asked about: the model gets the error"
   });
   assert.equal(requests.length, 2);
 });
+
+test('Stop reaches a running tool through its signal', async () => {
+  const controller = new AbortController();
+  const { provider } = scripted({
+    toolCalls: [{ id: 'a', name: 'load', input: {} }],
+    stop: 'tools',
+  });
+  let stoppedInside = false;
+  const { end, saved } = await run(
+    provider,
+    [
+      tool('load', (_input, _call, signal) => {
+        controller.abort(); // the user presses Stop while it runs
+        stoppedInside = signal?.aborted === true;
+        return Promise.reject(new Error('Stopped.'));
+      }),
+    ],
+    { signal: controller.signal },
+  );
+  assert.equal(stoppedInside, true);
+  assert.equal(end, 'stopped');
+  assert.deepEqual(saved.at(-1), {
+    role: 'tool',
+    toolCallId: 'a',
+    name: 'load',
+    content: 'Stopped.',
+    isError: true,
+  });
+});

@@ -1,12 +1,16 @@
 <script setup lang="ts">
 // How long something has been running, in seconds, and after a few seconds a Stop button.
-// Shown while connecting to or loading from a data source. `canStop` false hides Stop (a load
-// whose data has arrived is processed to the end).
+// Shown while connecting to or loading from a data source, and on the assistant's running
+// steps. `canStop` false hides Stop (a load whose data has arrived is processed to the end, and
+// the chat has its own Stop); `showAfter` hides the count for quick steps.
 import { onBeforeUnmount, ref } from 'vue';
 
 const STOP_AFTER_SECONDS = 5;
 
-withDefaults(defineProps<{ canStop?: boolean }>(), { canStop: true });
+withDefaults(defineProps<{ canStop?: boolean; showAfter?: number }>(), {
+  canStop: true,
+  showAfter: 0,
+});
 defineEmits<{ stop: [] }>();
 
 const started = Date.now();
@@ -24,7 +28,7 @@ const elapsed = (s: number) =>
 </script>
 
 <template>
-  <span class="running-timer">
+  <span v-if="seconds >= showAfter" class="running-timer">
     <span class="elapsed" aria-live="off">{{ elapsed(seconds) }}</span>
     <button
       v-if="canStop && seconds >= STOP_AFTER_SECONDS"

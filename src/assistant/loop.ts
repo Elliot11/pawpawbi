@@ -160,7 +160,7 @@ export async function runAssistant(
       let ok = true;
       try {
         if (!tool) throw new Error(`There's no tool called ${call.name}.`);
-        content = resultText(await tool.run(call.input, call));
+        content = resultText(await tool.run(call.input, call, signal));
       } catch (error) {
         ok = false;
         content = (error as Error)?.message || String(error);

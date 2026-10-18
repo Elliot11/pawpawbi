@@ -30,7 +30,10 @@ flowchart LR
 
 A reply runs as tracked background work ([architecture.md](architecture.md)), so saving waits
 for it, and closing the project offers to wait or stop it. **Stop** in the chat aborts the
-request; text written so far is kept.
+request; text written so far is kept. Tools get the reply's abort signal: a data load that's
+running is stopped (unless its data has already arrived, when it finishes processing). Other
+tools are quick and finish first. A step that runs for more than 3 seconds shows a seconds count
+in the chat.
 
 ## Providers
 

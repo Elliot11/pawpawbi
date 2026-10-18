@@ -384,6 +384,17 @@ function sendProgress(progress: DataProgress) {
     win.webContents.send('data:progress', progress);
 }
 
+/** Ways to stop each source's running connector process, by source ID (see stopLoad). */
+const jobStoppers = new Map<string, () => void>();
+
+/**
+ * Stops a source's load from outside its background task (the assistant's Stop), unless its
+ * data has already arrived. The load then fails with "Stopped.".
+ */
+export function stopLoad(id: string) {
+  if (!processing.has(id)) jobStoppers.get(id)?.();
+}
+
 /** Runs a load, tracking whether it can still be stopped. */
 async function stopUntilReceived<T>(id: string, operation: () => Promise<T>) {
   processing.delete(id);
@@ -398,6 +409,7 @@ function runJob<T>(
   python: string,
   job: Record<string, unknown>,
   onProgress: (message: string, received?: boolean) => void,
+  stopKey?: string,
 ) {
   const project = openProject();
   return new Promise<T>((resolve, reject) => {
@@ -411,6 +423,12 @@ function runJob<T>(
       },
     );
     const { state, release } = stoppable(proc);
+    if (stopKey) {
+      jobStoppers.set(stopKey, () => {
+        state.stopped = true;
+        killTree(proc);
+      });
+    }
     let outcome: { ok: true; value: T } | { ok: false; error: Error } | null =
       null;
     const stderr: string[] = [];
@@ -441,6 +459,7 @@ function runJob<T>(
     proc.on('error', reject);
     proc.on('close', (code) => {
       release();
+      if (stopKey) jobStoppers.delete(stopKey);
       if (state.stopped) reject(new CancelledError());
       else if (outcome?.ok) resolve(outcome.value);
       else if (outcome) reject(outcome.error);
@@ -477,6 +496,7 @@ async function runSourceJob<T>(
       python,
       { ...job, connector: info.id, settings },
       onProgress,
+      id,
     );
   } finally {
     runningJobs.delete(id);
@@ -522,6 +542,10 @@ async function loadSource(
 /** Finds the tables a source can load. */
 export const discover = (id: string) =>
   runSourceJob<DiscoveredResource[]>(id, { action: 'discover' });
+
+/** load, tracking whether it can still be stopped (data:stop, stopLoad). */
+export const loadStoppable = (id: string, resources: string[]) =>
+  stopUntilReceived(id, () => load(id, resources));
 
 /** Loads one source, then re-applies transforms and rebuilds transformed tables. */
 export async function load(
@@ -1036,11 +1060,7 @@ export function registerDataHandlers() {
     tracked('Connecting to a data source', () => discover(id), id),
   );
   ipcMain.handle('data:load', (_event, id: string, resources: string[]) =>
-    tracked(
-      'Loading data',
-      () => stopUntilReceived(id, () => load(id, resources)),
-      id,
-    ),
+    tracked('Loading data', () => loadStoppable(id, resources), id),
   );
   ipcMain.handle('data:stop', (_event, id: string) => {
     if (!processing.has(String(id))) work.stop(openProject().id, String(id));

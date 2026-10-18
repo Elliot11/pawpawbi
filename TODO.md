@@ -68,8 +68,8 @@ PawpawBI targets Windows. Before shipping Linux builds:
 - **Undo across a load.** Loads aren't recorded, so undoing an assistant change made before a
   load (e.g. a source's settings) puts the source's file back but can leave its tables out of
   step with it until it's loaded again. Undo warns first, because the load changed that file.
-- **Stop doesn't interrupt a tool that's running**, such as a long load; the reply stops after
-  it.
+- **Stop in the chat only interrupts data loads.** Other running tools (a long query, a
+  rebuild after a table change) finish before the reply stops.
 
 - **Every load is a full reload.** Large sources reload everything on each refresh.
 - **Deleted tables come back** when their source is refreshed, unless they're unticked in that

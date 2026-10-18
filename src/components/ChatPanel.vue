@@ -18,6 +18,7 @@ import { pageToShow, projectChanged } from '../ui-signals';
 import { INTRO_MESSAGE } from '../workflow';
 import AssistantSettings from './AssistantSettings.vue';
 import ReplyText from './ReplyText.vue';
+import RunningTimer from './RunningTimer.vue';
 
 // Shared with the workspace's step tracker in the top bar.
 const stage = defineModel<WorkflowStage>('stage', { required: true });
@@ -318,6 +319,11 @@ function onKeydown(event: KeyboardEvent) {
           t.status === 'running' ? '' : t.status === 'failed' ? '!' : '✓'
         }}</span>
         {{ t.summary }}…
+        <RunningTimer
+          v-if="t.status === 'running'"
+          :can-stop="false"
+          :show-after="3"
+        />
       </div>
       <div v-for="a in approvals" :key="a.id" class="approval" role="group">
         <p class="approval-text">
