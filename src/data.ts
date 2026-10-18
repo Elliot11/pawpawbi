@@ -75,7 +75,7 @@ export function catalog(): Promise<ConnectorCatalog> {
   return catalogRequest;
 }
 
-async function connector(id: string): Promise<ConnectorInfo> {
+export async function connector(id: string): Promise<ConnectorInfo> {
   const found = (await catalog()).connectors.find((c) => c.id === id);
   if (!found) throw new Error(`Unknown connector: ${id}`);
   return found;
@@ -100,7 +100,7 @@ function sourcePath(id: string) {
   return path.join(sourcesDir(), `${id}.json`);
 }
 
-async function readSource(id: string): Promise<SourceFile> {
+export async function readSource(id: string): Promise<SourceFile> {
   const source = JSON.parse(await fs.readFile(sourcePath(id), 'utf8'));
   return {
     id,
@@ -145,10 +145,14 @@ export async function toDataSource(source: SourceFile): Promise<DataSource> {
   return { ...source, savedSecrets: Object.keys(secrets) };
 }
 
-async function saveSource(input: SaveSourceInput): Promise<DataSource> {
+/** Saves a source's settings. A new one gets `newSourceId`, so a caller can know it first. */
+export async function saveSource(
+  input: SaveSourceInput,
+  newSourceId = newId(),
+): Promise<DataSource> {
   const existing = input.id ? await readSource(input.id) : null;
   const info = await connector(existing?.type ?? input.type);
-  const id = existing?.id ?? newId();
+  const id = existing?.id ?? newSourceId;
   const projectId = openProject().id;
 
   // Split the form into settings saved in the project and secrets kept on this computer.
@@ -491,8 +495,15 @@ async function loadSource(
   return result.tables;
 }
 
+/** Finds the tables a source can load. */
+export const discover = (id: string) =>
+  runSourceJob<DiscoveredResource[]>(id, { action: 'discover' });
+
 /** Loads one source, then re-applies transforms and rebuilds transformed tables. */
-async function load(id: string, resources: string[]): Promise<LoadedTable[]> {
+export async function load(
+  id: string,
+  resources: string[],
+): Promise<LoadedTable[]> {
   const loaded = await loadSource(id, resources);
   const { inPlaceErrors } = await rebuildDerived((message) =>
     sendProgress({ sourceId: id, message }),
@@ -605,7 +616,7 @@ async function writeTransforms(transforms: TransformsFile) {
   await markProjectChanged();
 }
 
-async function applyTransform(table: string, sql: string) {
+export async function applyTransform(table: string, sql: string) {
   if (!SAFE_TABLE.test(table)) throw new Error('Invalid table name.');
   // Run it first, so a failing query is never saved.
   const result = await callPython<{ rows: number }>('apply_transform', {
@@ -620,7 +631,7 @@ async function applyTransform(table: string, sql: string) {
   return result;
 }
 
-async function removeTransform(table: string) {
+export async function removeTransform(table: string) {
   if (!SAFE_TABLE.test(table)) throw new Error('Invalid table name.');
   await callPython('remove_transform', { data_dir: dataDir(), table });
   const transforms = await readTransforms();
@@ -748,7 +759,7 @@ async function rebuildTransformed(
 }
 
 /** Re-applies every in-place transform, then rebuilds every transformed table in order. */
-async function rebuildDerived(onProgress?: (message: string) => void) {
+export async function rebuildDerived(onProgress?: (message: string) => void) {
   onProgress?.('Applying transforms…');
   const inPlaceErrors = await reapplyTransforms();
 
@@ -781,7 +792,7 @@ async function rebuildDownstream(changed: string[]) {
   return errors;
 }
 
-async function saveTransformed(
+export async function saveTransformed(
   input: SaveTransformedInput,
 ): Promise<{ rows: number }> {
   const name = input.name.trim();
@@ -856,20 +867,29 @@ async function dependentsOf(tables: string[]): Promise<string[]> {
 }
 
 /**
- * Deletes a table, with its transform and layout. A loaded table's nested child tables
- * (parent__child) go too. Refused while other tables read it.
+ * What deleting a table removes: the table, and for a loaded table its nested child tables
+ * (parent__child) too, and the source that loaded it (whose list of tables changes).
  */
-async function deleteTable(table: string) {
+export async function deletion(table: string) {
   if (!SAFE_TABLE.test(table)) throw new Error('Invalid table name.');
   const transformed = await readTransformed();
+  if (table in transformed.tables) {
+    return { doomed: [table], transformed, owner: undefined };
+  }
   const owner = (await readAllSources()).find((s) => s.tables.includes(table));
-  const doomed =
-    table in transformed.tables
-      ? [table]
-      : [
-          table,
-          ...(owner?.tables ?? []).filter((t) => t.startsWith(`${table}__`)),
-        ];
+  const doomed = [
+    table,
+    ...(owner?.tables ?? []).filter((t) => t.startsWith(`${table}__`)),
+  ];
+  return { doomed, transformed, owner };
+}
+
+/**
+ * Deletes a table, with its transform and (unless `keepLayout`) its place on the Model data
+ * canvas. A loaded table's nested child tables go too. Refused while other tables read it.
+ */
+export async function deleteTable(table: string, { keepLayout = false } = {}) {
+  const { doomed, transformed, owner } = await deletion(table);
 
   const users = await dependentsOf(doomed);
   if (users.length) {
@@ -894,9 +914,58 @@ async function deleteTable(table: string) {
     for (const t of doomed) delete transforms.tables[t];
     await writeTransforms(transforms);
   }
+  if (keepLayout) return;
   const diagram = await loadDiagram();
   for (const t of doomed) delete diagram.tables[t];
   await saveDiagram(diagram);
+}
+
+// --- Matching data to the project's files ----------------------------------------------------
+
+/** Each source's loaded tables, by source ID. */
+export async function sourceTables(): Promise<Record<string, string[]>> {
+  return Object.fromEntries(
+    (await readAllSources()).map((s) => [s.id, s.tables]),
+  );
+}
+
+async function folderNames(dir: string): Promise<string[]> {
+  try {
+    return (await fs.readdir(dir, { withFileTypes: true }))
+      .filter((e) => e.isDirectory() && SAFE_TABLE.test(e.name))
+      .map((e) => e.name);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * After the project's files were put back as they were (undoing the assistant's changes), removes
+ * the data nothing accounts for any more: tables of sources that are gone or no longer list them
+ * (`before` is sourceTables() from before), gone sources' saved secrets, in-place results whose
+ * transform is gone, and transformed tables no longer defined. The caller then rebuilds.
+ */
+export async function removeUnaccountedData(before: Record<string, string[]>) {
+  const after = await sourceTables();
+  const owned = new Set(Object.values(after).flat());
+  await removeTables(
+    Object.values(before)
+      .flat()
+      .filter((t) => !owned.has(t)),
+  );
+  for (const id of Object.keys(before)) {
+    if (!(id in after)) await deleteSecrets(openProject().id, id);
+  }
+  const transforms = (await readTransforms()).tables;
+  for (const table of await folderNames(path.join(dataDir(), 'model'))) {
+    if (!(table in transforms))
+      await removePath(path.join(dataDir(), 'model', table));
+  }
+  const transformed = (await readTransformed()).tables;
+  for (const table of await folderNames(path.join(dataDir(), 'transformed'))) {
+    if (!(table in transformed))
+      await removePath(path.join(dataDir(), 'transformed', table));
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -932,9 +1001,7 @@ export function registerDataHandlers() {
     tracked('Removing a data source', () => removeSource(id)),
   );
   ipcMain.handle('data:discover', (_event, id: string) =>
-    tracked('Connecting to a data source', () =>
-      runSourceJob<DiscoveredResource[]>(id, { action: 'discover' }),
-    ),
+    tracked('Connecting to a data source', () => discover(id)),
   );
   ipcMain.handle('data:load', (_event, id: string, resources: string[]) =>
     tracked('Loading data', () => load(id, resources)),

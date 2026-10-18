@@ -24,14 +24,6 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
   `model/relationships.json`. The canvas has an SVG layer and column anchors ready for this.
 - **Column types and descriptions** in the model (`model/tables/<table>.json`), e.g. marking a
   text column as a date.
-- **The assistant's editing tools for tables and sources (phases 3b and 3c).** The assistant can
-  change the report; it can't change tables or sources:
-  - **3b, modelling:** in-place transforms, transformed tables, deleting tables; undo must also
-    clear and rebuild derived data.
-  - **3c, sources:** add and edit sources (passwords only through the source's form), discover
-    tables and load data (loads can't be undone, so they must say so). Decide whether changing
-    where a source with a saved password connects should always ask, even with "make changes
-    without asking", so a shared project can't redirect saved credentials.
 - **A structured `add_chart` tool** (page, chart type, dataset, columns, title) that writes the
   chart's HTML and script itself. Needed before local models can build reports. In live tests
   ("add a bar chart of revenue by region, then a line chart of monthly revenue below it"), Claude
@@ -44,9 +36,6 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
   SQL alongside the report guide, a tuned system prompt, and sample tasks run against both
   providers.
 - **Publish to S3 and CloudFront** from the app. Export writes the site to a folder.
-- **Screens other than Build visuals don't react to the assistant's changes.** Only
-  `ReportCanvas.vue` watches `projectChanged`; Add data and Model data need to as well before
-  the phase 3b and 3c tools exist (the `changed` event already names the areas).
 - **Update a report's copy of `charts.js`** when the app's version improves; each project keeps
   its own copy.
 - **More for the report:** stacked bars, area and scatter charts, filters within a page, dark
@@ -70,6 +59,17 @@ PawpawBI targets Windows. Before shipping Linux builds:
   the user to set up a password store.
 
 ## Known issues and limitations
+
+- **A changed copy of your own project can redirect a saved password.** Secrets are stored by
+  project and source ID, not tied to the settings they were entered with. If someone edits a copy
+  of your project (e.g. a database host) and you open it, loading that source sends your saved
+  password to their host. Fix: store a hash of the connection settings with the secrets, and ask
+  for the password again when they differ.
+- **Undo across a load.** Loads aren't recorded, so undoing an assistant change made before a
+  load (e.g. a source's settings) puts the source's file back but can leave its tables out of
+  step with it until it's loaded again. Undo warns first, because the load changed that file.
+- **Stop doesn't interrupt a tool that's running**, such as a long load; the reply stops after
+  it.
 
 - **Every load is a full reload.** Large sources reload everything on each refresh.
 - **Deleted tables come back** when their source is refreshed, unless they're unticked in that

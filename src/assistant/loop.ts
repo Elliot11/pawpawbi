@@ -25,10 +25,15 @@ export interface LoopOptions {
   onToolStart?: (call: ToolCall, summary: string) => void;
   onToolEnd?: (call: ToolCall, ok: boolean) => void;
   /**
-   * Asked before a tool that changes the project runs. Resolves true to go ahead. Without it,
-   * changes run without asking.
+   * Asked before a tool that changes the project runs. Resolves true to go ahead. `always` is
+   * true when the user must be asked even if they've chosen not to be (the tool's `alwaysAsk`).
+   * Without it, changes run without asking.
    */
-  approve?: (call: ToolCall, summary: string) => Promise<boolean>;
+  approve?: (
+    call: ToolCall,
+    summary: string,
+    always: boolean,
+  ) => Promise<boolean>;
   /** Each new turn (the model's replies and tool results), to save it. */
   onTurn: (turn: ReplyTurn) => Promise<void> | void;
 }
@@ -111,11 +116,28 @@ export async function runAssistant(
       let summary = call.name;
       try {
         summary = (await tool?.describe(call.input)) ?? call.name;
-      } catch {
-        // Keep the tool's name.
+      } catch (error) {
+        // A change that can't even be described (its input is wrong) isn't asked about: the
+        // model gets the error to fix. Anything else keeps the tool's name.
+        if (tool?.change) {
+          await save({
+            role: 'tool',
+            toolCallId: call.id,
+            name: call.name,
+            content: (error as Error)?.message || String(error),
+            isError: true,
+          });
+          continue;
+        }
       }
       if (tool?.change && options.approve) {
-        const allowed = await options.approve(call, summary);
+        let always = false;
+        try {
+          always = Boolean(await tool.alwaysAsk?.(call.input));
+        } catch {
+          always = true; // If it can't tell, ask.
+        }
+        const allowed = await options.approve(call, summary, always);
         if (signal.aborted) return 'stopped';
         if (!allowed) {
           await save({

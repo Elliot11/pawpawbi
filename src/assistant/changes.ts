@@ -58,18 +58,28 @@ async function readOrNull(file: string): Promise<Buffer | null> {
   }
 }
 
+export interface JournalOptions {
+  /**
+   * Files the app rewrites from others (e.g. the report's data, after tables change). They
+   * change without anyone editing them, so they're never reported as conflicts.
+   */
+  rebuilt?: (relative: string) => boolean;
+}
+
 export class ChangeJournal {
   private readonly store: string;
   private readonly root: string;
+  private readonly rebuilt: (relative: string) => boolean;
   private changes: StoredChange[] | null = null;
 
   /**
    * @param root the project folder (the working folder's project/)
    * @param store where undo copies are kept, outside the project folder
    */
-  constructor(root: string, store: string) {
+  constructor(root: string, store: string, options: JournalOptions = {}) {
     this.root = root;
     this.store = store;
+    this.rebuilt = options.rebuilt ?? (() => false);
   }
 
   private abs(relative: string) {
@@ -258,6 +268,15 @@ export class ChangeJournal {
     return changes.slice(index).filter((c) => !c.undone);
   }
 
+  /** Every file undoing back to `id` would put back, project-relative. */
+  async files(id: string): Promise<string[]> {
+    const files = new Set<string>();
+    for (const change of await this.from(id)) {
+      for (const relative of Object.keys(change.files)) files.add(relative);
+    }
+    return [...files].sort();
+  }
+
   /**
    * Files changed since the assistant's last change to them, which undoing back to `id` would
    * overwrite (e.g. the user edited a page the assistant wrote).
@@ -271,6 +290,7 @@ export class ChangeJournal {
     }
     const changed: string[] = [];
     for (const [relative, after] of latest) {
+      if (this.rebuilt(relative)) continue;
       const content = await readOrNull(this.abs(relative));
       if ((content ? hash(content) : null) !== after) changed.push(relative);
     }

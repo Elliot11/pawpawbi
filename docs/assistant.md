@@ -123,6 +123,31 @@ The assistant can look at everything in the project (`tools.ts`):
 | `read_report_file` | A page, stylesheet or script of the report                                   |
 | `read_guide`       | A guide                                                                      |
 
+It can change data sources (`source-tools.ts`):
+
+| Tool              | Does                                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------------- |
+| `add_source`      | Adds a source: a connector and its non-secret settings. Always asked about               |
+| `edit_source`     | Renames a source or changes non-secret settings. Changing settings is always asked about |
+| `discover_tables` | Connects and lists the tables a source can load (doesn't change anything)                |
+| `load_source`     | Loads data, then rebuilds what's built from it. Can't be undone, and says so             |
+
+Secret settings (passwords, keys, tokens) are refused: the assistant adds the source without them
+and tells the user to enter them in the source's form. Settings are checked against the
+connector's fields (`source-input.ts`).
+
+It can change tables (`model-tools.ts`):
+
+| Tool               | Does                                                                     |
+| ------------------ | ------------------------------------------------------------------------ |
+| `set_transform`    | Gives a loaded table an in-place transform, or changes it                |
+| `remove_transform` | Removes a loaded table's in-place transform                              |
+| `save_table`       | Creates a transformed table, or changes its query                        |
+| `delete_table`     | Deletes a table, as the Delete button does; refused while others read it |
+
+Each rebuilds the tables and report data built from what it changed, as the same actions in the
+app do (`data.ts`).
+
 It can change the report (`report-tools.ts`):
 
 | Tool                | Does                                                                 |
@@ -138,21 +163,23 @@ It can change the report (`report-tools.ts`):
 | `refresh_datasets`  | Rewrites every dataset's data                                        |
 | `show_page`         | Shows a page in Build visuals (doesn't change anything)              |
 
-There are no tools for data sources or tables; the assistant explains how to make those changes
-by hand.
-
 Results are JSON, cut at 20,000 characters with a note asking for less. A tool that fails returns
 its error message to the model instead of stopping the reply.
 
 Claude and ChatGPT get every tool. Small local models (Ollama) get the read tools and only the
-tools for the workflow step the user is on (each tool's `step`, including `show_page`), so they
-have fewer to choose from.
+change tools for the workflow step the user is on (source tools on Add data, table tools on Model
+data, report tools on Build visuals), so they have fewer to choose from (`toolsFor` in
+`reply.ts`).
 
 **Adding a tool:** add a `ToolSpec` with a clear description (the model chooses tools by it), a
 JSON Schema for its input, `describe` (the few words the chat and approval card show, e.g.
 "Previewing orders" or `Save the dataset revenue_by_month`) and `run`. A tool that changes the
-project sets `change: true` and `step`, and makes its change through `ctx.change(...)` with the
-files it may touch (see below). Validate input: it comes from the model. Never return secrets.
+project sets `change: true` and makes its change through `ctx.change(...)` with the files it may
+touch and the areas (`sources`, `model`, `report`) whose screens should update (see below); one
+that can't be undone calls `ctx.changed(areas)` afterwards instead, and says so in `describe`.
+Add the tool to `toolsFor` under its workflow step. Validate input: it comes from the model. A
+`describe` that throws (because the input is wrong) sends the error to the model without asking
+the user. Never return secrets.
 
 ## Changes: asking first, and Undo
 
@@ -164,10 +191,21 @@ switches between that and asking (`permissions` in `settings.json`: `ask`, the d
 `allow`). A declined change isn't made; the model is told so and asked not to retry it. Stop
 counts as declining.
 
+**Always asked.** A tool's `alwaysAsk` makes the user be asked even when they've chosen not to
+be, and the card says why and has no **Allow all changes**. Adding a data source and changing a
+source's settings are always asked about: a source's settings say where the app connects and
+what it reads, so content written to steer the model mustn't be able to point a saved password,
+or a request carrying the user's data, somewhere else without the user seeing it. Renaming a
+source isn't.
+
 **Recording.** Every change runs through `ChangeJournal.record` (`changes.ts`) with its targets:
 the files and folders it may create, change or delete (e.g. `report/` without `data/` for page
 changes; `model/datasets.json` and the dataset's data file for a dataset). Before it runs, they're
 copied to the undo store; if it fails, they're put back at once, so a change is never half-done.
+Table changes record only the SQL files (`model/transforms.json`, `model/transformed.json`), not
+the data built from them; deleting a loaded table also records its original data
+(`data/raw/<table>`) and its source's file, since those can't be rebuilt. Adding or editing a
+source records `sources/<id>.json`. Loads aren't recorded.
 The store is `assistant-changes/` in the working folder, beside the project files: it survives a
 crash but isn't saved in the `.pawpaw` file, and goes when the project is closed.
 
@@ -177,9 +215,17 @@ first, so the project is always as it was at that point. If any of those files w
 conversation, so the model knows those changes are gone. Undo waits until the assistant isn't
 replying.
 
-**Screens follow along.** After a change or undo, the main process sends `changed`; Build visuals
-reloads the report (and the file open in its editor, unless that has unsaved edits).
-`show_page` sends `show`, which switches to Build visuals and opens the page (`ui-signals.ts`).
+When the files put back include sources, SQL or data, Undo then brings the data in line with them
+(`undo.ts`): it removes data nothing accounts for any more (tables of sources that are gone or no
+longer list them, with gone sources' saved secrets; in-place results without a transform;
+transformed tables no longer defined) and rebuilds everything built by SQL, then the report's
+data. The report's data files are rewritten by every rebuild, so they're never reported as edited
+since. A table change that fails part-way removes data its restored files don't account for.
+
+**Screens follow along.** After a change or undo, the main process sends `changed`; Add data
+reloads its sources, Model data its tables, and Build visuals the report (and the file open in
+its editor, unless that has unsaved edits). Source and table tools switch to their step, and
+`show_page` switches to Build visuals and opens the page (the `show` event; `ui-signals.ts`).
 
 ## The chat
 

@@ -1,7 +1,12 @@
 // The assistant's provider-neutral pieces: the conversation, tools, and what a provider streams
 // back. Each provider (anthropic.ts, openai.ts, ollama.ts) translates these to and from its own
 // API. Design: docs/assistant.md. No Electron imports, so all of this is tested with plain Node.
-import type { AssistantProvider, WorkflowStage } from '../shared/types';
+import type {
+  AssistantProvider,
+  ChangeArea,
+  WorkflowStage,
+} from '../shared/types';
+import type { Target } from './changes';
 
 export type ProviderId = AssistantProvider;
 
@@ -53,8 +58,16 @@ export interface ToolSpec {
   run: (input: Record<string, unknown>, call: ToolCall) => Promise<unknown>;
   /** A few words for the chat while it runs, e.g. "Looking at orders". */
   describe: (input: Record<string, unknown>) => string | Promise<string>;
-  /** True if it changes the project: it needs the user's approval and can be undone. */
+  /**
+   * True if it changes the project: it needs the user's approval and (unless it says it can't
+   * be) can be undone.
+   */
   change?: boolean;
+  /**
+   * For a change: true if the user must be asked even when they've chosen to allow changes
+   * without asking (e.g. a change to where a data source connects).
+   */
+  alwaysAsk?: (input: Record<string, unknown>) => boolean | Promise<boolean>;
 }
 
 export interface ModelRequest {
@@ -97,4 +110,21 @@ export class ProviderError extends Error {
   }
 }
 
-export type { WorkflowStage };
+/** What tools that change the project are given (reply.ts makes it). */
+export interface ToolContext {
+  /**
+   * Runs a change: recorded for Undo (`targets` must cover every file it may touch), linked to
+   * the tool call, and the screens showing `areas` told to update (default: the report).
+   */
+  change: <T>(
+    call: ToolCall,
+    summary: string,
+    targets: Target[],
+    operation: () => Promise<T>,
+    areas?: ChangeArea[],
+  ) => Promise<T>;
+  /** After a change that can't be undone (a data load): tells the screens to update. */
+  changed: (areas: ChangeArea[]) => Promise<void>;
+  /** Shows a step of the workflow, and a report page, in the app. */
+  show: (stage: WorkflowStage, pageId?: string) => void;
+}

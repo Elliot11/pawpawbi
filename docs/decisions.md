@@ -331,3 +331,27 @@ to decide for themselves); undoing each change on its own (can leave the project
 it runs. Undo history lasts while the project is open (it survives a crash, but isn't saved in
 the project file). Changes that can't be undone, such as loading data, must say so before they
 run.
+
+## 18. Data source settings are always asked about; undo rebuilds data rather than copying it
+
+**Decision:** Adding a data source, or changing a source's settings, is always asked about, even
+when the user has chosen to let the assistant make changes without asking; renaming isn't. The
+assistant never handles passwords, keys or tokens: they're typed into the source's form. Undoing
+a change to tables puts back the SQL files and rebuilds the data from them, rather than keeping
+copies of the data built from SQL; only data that can't be rebuilt (a deleted loaded table's
+original data) is copied. Loading data can't be undone.
+
+**Why:** A source's settings decide where the app connects and what it reads. Content written to
+steer the model (in data, pages or a shared project) could otherwise send a saved password, or a
+request carrying the user's data, to someone else's server without the user seeing it. Data built
+by SQL can be large and is fully determined by the SQL files and the loaded data, so rebuilding
+keeps the undo store small and the data always consistent with the files.
+
+**Alternatives considered:** asking only when a source with a saved password changes where it
+connects (a source without one can still send data out, e.g. a web address with data in it);
+copying every table's data before each change (large, and still needs rebuilding of what reads
+it); recording loads for undo (copies all of a source's data on every load).
+
+**Consequences:** Undoing a table change can take as long as a refresh of the derived tables.
+Undo across a load can leave a source's tables out of step with its restored settings until it's
+loaded again (TODO.md).

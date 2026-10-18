@@ -17,9 +17,9 @@ transforms of loaded tables, transformed tables built from other tables, refresh
 everything in dependency order, and the report: a static website of charts (bars, lines, headline
 numbers, tables) that every new project starts with, fed by datasets and exportable for hosting
 anywhere, e.g. S3 ([docs/report-pages.md](docs/report-pages.md)). The assistant chats with Claude or ChatGPT using your own API key, or a local model in Ollama; it
-can look at everything in the project and build the report (pages, files and datasets), asking
-before each change, with Undo ([docs/assistant.md](docs/assistant.md)). Not built yet: the
-assistant's tools for data sources and tables, and relationships between tables. Known issues and
+can look at everything in the project, add and load data sources, shape tables with SQL and
+build the report (pages, files and datasets), asking before each change, with Undo
+([docs/assistant.md](docs/assistant.md)). Not built yet: relationships between tables. Known issues and
 the backlog are in [TODO.md](TODO.md).
 
 ## Getting started

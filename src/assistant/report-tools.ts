@@ -1,6 +1,6 @@
 // The assistant's tools for changing the report: pages, files and datasets. Every change runs
-// through `change` (index.ts), which asks the user first if they want that, records it so it
-// can be undone, and tells the screens to update. Design: docs/assistant.md
+// through `ctx.change` (reply.ts), which records it so it can be undone and tells the screens to
+// update; the loop asks the user first if they want that. Design: docs/assistant.md
 import {
   deleteDataset,
   listDatasets,
@@ -20,22 +20,9 @@ import {
 import { SITE_TEMPLATES } from '../report-templates';
 import { openProject } from '../projects';
 import { NAME, NAME_RULE } from '../shared/ids';
-import type { WorkflowStage } from '../shared/types';
 import type { Target } from './changes';
 import { optionalText, text } from './input';
-import type { ToolCall, ToolSpec } from './types';
-
-export interface ToolContext {
-  /** Runs a change: recorded for Undo, linked to the tool call, screens told to update. */
-  change: <T>(
-    call: ToolCall,
-    summary: string,
-    targets: Target[],
-    operation: () => Promise<T>,
-  ) => Promise<T>;
-  /** Shows a step of the workflow, and a report page, in the app. */
-  show: (stage: WorkflowStage, pageId?: string) => void;
-}
+import type { ToolContext, ToolSpec } from './types';
 
 /** The report's own files (not its data), which page and file changes touch. */
 const SITE: Target = { dir: 'report', exclude: ['data'] };

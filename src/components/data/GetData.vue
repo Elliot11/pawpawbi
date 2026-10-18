@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, onActivated, onBeforeUnmount, onMounted, ref } from 'vue';
+import {
+  computed,
+  onActivated,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from 'vue';
 import { errorMessage } from '../../errors';
 import { plain } from '../../plain';
 import type {
@@ -8,6 +15,7 @@ import type {
   DataSource,
 } from '../../shared/types';
 import { timeAgo } from '../../time';
+import { projectChanged } from '../../ui-signals';
 import ConnectorGallery from './ConnectorGallery.vue';
 import SourceSetup from './SourceSetup.vue';
 import TablePreview from './TablePreview.vue';
@@ -67,10 +75,12 @@ async function reloadSources() {
   }
 }
 
-// Tables can be deleted on the Model data screen, so reload when coming back to this one.
+// Tables can be deleted on the Model data screen, so reload when coming back to this one, and
+// when the assistant changes the project (or a change is undone).
 onActivated(() => {
   if (!loading.value) reloadSources();
 });
+watch(projectChanged, reloadSources);
 
 /** Done or Cancel in the setup. Connecting saves the source even if the user then cancels, so
  * the list is reloaded either way. */

@@ -412,3 +412,85 @@ test('stopping while waiting for approval stops the reply', async () => {
   assert.equal(end, 'stopped');
   assert.equal(edited, false);
 });
+
+test('a tool can insist on being asked, and the loop says so', async () => {
+  const { provider } = scripted(
+    {
+      toolCalls: [
+        { id: 'a', name: 'rename', input: {} },
+        { id: 'b', name: 'reconnect', input: { host: 'x' } },
+        { id: 'c', name: 'unsure', input: {} },
+      ],
+      stop: 'tools',
+    },
+    { text: 'Done.' },
+  );
+  const asked: string[] = [];
+  await run(
+    provider,
+    [
+      { ...tool('rename', async () => 'ok'), change: true },
+      {
+        ...tool('reconnect', async () => 'ok'),
+        change: true,
+        alwaysAsk: (input) => 'host' in input,
+      },
+      {
+        ...tool('unsure', async () => 'ok'),
+        change: true,
+        alwaysAsk: async () => {
+          throw new Error('no such source');
+        },
+      },
+    ],
+    {
+      approve: async (call, _summary, always) => {
+        asked.push(`${call.name}: ${always}`);
+        return true;
+      },
+    },
+  );
+  assert.deepEqual(asked, ['rename: false', 'reconnect: true', 'unsure: true']);
+});
+
+test("a change whose input is wrong isn't asked about: the model gets the error", async () => {
+  const { provider, requests } = scripted(
+    {
+      toolCalls: [{ id: 'a', name: 'add', input: { password: 'x' } }],
+      stop: 'tools',
+    },
+    { text: 'Sorry.' },
+  );
+  let asked = false;
+  let ran = false;
+  const { saved } = await run(
+    provider,
+    [
+      {
+        ...tool('add', async () => {
+          ran = true;
+        }),
+        change: true,
+        describe: () => {
+          throw new Error('Passwords go in the form.');
+        },
+      },
+    ],
+    {
+      approve: async () => {
+        asked = true;
+        return true;
+      },
+    },
+  );
+  assert.equal(asked, false);
+  assert.equal(ran, false);
+  assert.deepEqual(saved[1], {
+    role: 'tool',
+    toolCallId: 'a',
+    name: 'add',
+    content: 'Passwords go in the form.',
+    isError: true,
+  });
+  assert.equal(requests.length, 2);
+});

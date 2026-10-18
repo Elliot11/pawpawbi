@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, onBeforeUnmount, ref } from 'vue';
+import { computed, onActivated, onBeforeUnmount, ref, watch } from 'vue';
 import { errorMessage } from '../errors';
 import { plain } from '../plain';
 import {
@@ -10,6 +10,7 @@ import {
   type TableSchema,
   type TransformedTable,
 } from '../shared/types';
+import { projectChanged } from '../ui-signals';
 import TransformEditor from './TransformEditor.vue';
 
 defineEmits<{ addData: [] }>();
@@ -82,6 +83,8 @@ async function load() {
 // been added or refreshed in the meantime.
 // onActivated also fires on the first show, so this loads once, not twice.
 onActivated(load);
+// The assistant changed the project (or a change was undone).
+watch(projectChanged, load);
 
 // --- Refreshing every data source ---------------------------------------------------------------
 

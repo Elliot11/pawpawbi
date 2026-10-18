@@ -29,11 +29,14 @@ import { INTRO_MESSAGE, STAGES } from '../workflow';
 import { claim, emitter, message } from './chat';
 import { toTurns } from './history';
 import { NOT_ALLOWED, runAssistant } from './loop';
+import { modelTools } from './model-tools';
 import { SYSTEM_PROMPT, projectContext } from './prompt';
 import { providerFor } from './providers';
-import { reportTools, type ToolContext } from './report-tools';
+import { reportTools } from './report-tools';
 import { getSettings, setPermissions } from './settings';
+import { sourceTools } from './source-tools';
 import { READ_TOOLS } from './tools';
+import type { ToolContext, ToolSpec } from './types';
 import { journal } from './undo';
 
 /** The project as it is now, for the request's context. Anything unavailable is left out. */
@@ -73,16 +76,27 @@ async function snapshot(stage: WorkflowStage) {
 
 /**
  * The tools offered: everything for Claude and ChatGPT. Small local models (Ollama) get the
- * report tools only on the Build visuals step, so they have fewer to choose from elsewhere.
+ * read tools and only the change tools for the step the user is on, so they have fewer to
+ * choose from.
  */
 export function toolsFor(
   provider: AssistantProvider,
   stage: WorkflowStage,
   ctx: ToolContext,
-) {
-  if (provider === 'ollama' && stage !== 'visuals') return READ_TOOLS;
-  return [...READ_TOOLS, ...reportTools(ctx)];
+): ToolSpec[] {
+  const byStage: Record<WorkflowStage, ToolSpec[]> = {
+    data: sourceTools(ctx),
+    model: modelTools(ctx),
+    visuals: reportTools(ctx),
+  };
+  return provider === 'ollama'
+    ? [...READ_TOOLS, ...byStage[stage]]
+    : [...READ_TOOLS, ...Object.values(byStage).flat()];
 }
+
+/** A tool's name as a fallback label, e.g. "Add source" for add_source. */
+const toolLabel = (name: string) =>
+  name.charAt(0).toUpperCase() + name.slice(1).replace(/_/g, ' ');
 
 /** Approval requests waiting for the user's answer, by tool call ID. */
 const waiting = new Map<string, (answer: ApprovalAnswer) => void>();
@@ -139,7 +153,13 @@ export async function reply(
         const summaries = new Map<string, string>();
         const made = new Map<string, AssistantChange>();
         const ctx: ToolContext = {
-          change: async (call, summary, targets, operation) => {
+          change: async (
+            call,
+            summary,
+            targets,
+            operation,
+            areas = ['report'],
+          ) => {
             const { result, record } = await journal().record(
               summary,
               targets,
@@ -147,23 +167,38 @@ export async function reply(
             );
             made.set(call.id, record);
             await markProjectChanged();
-            emit({ type: 'changed', areas: ['report'] });
+            emit({ type: 'changed', areas });
             return result;
+          },
+          changed: async (areas) => {
+            await markProjectChanged();
+            emit({ type: 'changed', areas });
           },
           show: (stage, pageId) => emit({ type: 'show', stage, pageId }),
         };
-        const approve = async (call: { id: string }, summary: string) => {
+        const approve = async (
+          call: { id: string },
+          summary: string,
+          always: boolean,
+        ) => {
           summaries.set(call.id, summary);
-          if ((await getSettings()).permissions === 'allow') return true;
+          if (!always && (await getSettings()).permissions === 'allow')
+            return true;
           const onAbort = () => answer(call.id, 'deny');
           const choice = await new Promise<ApprovalAnswer>((resolve) => {
             waiting.set(call.id, resolve);
             controller.signal.addEventListener('abort', onAbort);
-            emit({ type: 'approval', id: call.id, summary });
+            emit({
+              type: 'approval',
+              id: call.id,
+              summary,
+              ...(always ? { always: true } : {}),
+            });
           });
           controller.signal.removeEventListener('abort', onAbort);
           waiting.delete(call.id);
-          if (choice === 'allow-all') await setPermissions('allow');
+          // "Allow all" doesn't cover changes that are always asked about.
+          if (choice === 'allow-all' && !always) await setPermissions('allow');
           return choice !== 'deny';
         };
 
@@ -198,10 +233,10 @@ export async function reply(
                     toolName: turn.name,
                     summary:
                       turn.content === NOT_ALLOWED
-                        ? `Not allowed: ${summaries.get(turn.toolCallId) ?? turn.name}`
+                        ? `Not allowed: ${summaries.get(turn.toolCallId) ?? toolLabel(turn.name)}`
                         : (made.get(turn.toolCallId)?.summary ??
                           summaries.get(turn.toolCallId) ??
-                          turn.name),
+                          toolLabel(turn.name)),
                     ...(turn.content === NOT_ALLOWED ? { declined: true } : {}),
                     ...(made.has(turn.toolCallId)
                       ? { changeId: made.get(turn.toolCallId)!.id }

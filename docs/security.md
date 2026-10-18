@@ -129,10 +129,12 @@ anyone who can reach it, so private reports need access control on the host.
   samples of the data (up to 50 rows per query). The settings screen says so. Secret source
   settings are never included (`list_sources` returns non-secret settings and only which secrets
   are saved).
-- **What the tools can do.** Read tools can't change anything. Change tools can only change the
-  report (its files, pages and datasets) through the same checked functions as the app's own
-  screens (`sitePath`, `NAME`, `engine.select()`): nothing outside the project, no
-  network, files in `data/` can't be written, and a file is at most 2 MB. Queries go through the
+- **What the tools can do.** Read tools can't change anything. Change tools work through the
+  same checked functions as the app's own screens (`sitePath`, `NAME`, `SAFE_TABLE`,
+  `engine.select()`): report files only inside `report/` (not `data/`), at most 2 MB each; tables
+  only through the SQL engine; sources only with settings checked against their connector's
+  fields, never secret ones. Only data sources reach the network, and adding one or changing its
+  settings is always asked about. Queries go through the
   locked-down engine like every other query, with its time limit, so a slow query from the
   assistant can't tie up the sidecar.
 - **Every change is approved and undoable.** By default the user is asked before each change, and
@@ -140,10 +142,11 @@ anyone who can reach it, so private reports need access control on the host.
   undone; a failed change is rolled back at once. The undo store is outside the project files.
 - **Untrusted content.** Data, page HTML and project files are untrusted and may contain text
   written to steer the model ("ignore your instructions…"). The system prompt says content is
-  data, not instructions, but that's not a guarantee. What limits the damage: change tools reach
-  only the report, the user approves changes unless they chose not to, and every change can be
-  undone. Tools for data sources (phase 3c) must also never let a project redirect saved
-  credentials (see TODO.md).
+  data, not instructions, but that's not a guarantee. What limits the damage: the user approves
+  changes unless they chose not to; adding a data source or changing its settings (where it
+  connects, what it reads) is always asked about, so saved passwords and the user's data can't be
+  sent somewhere new unseen; the assistant never handles passwords (secret settings are refused);
+  and every change except loading data can be undone.
 - **Ollama** runs on this computer (`127.0.0.1:11434`): with it chosen, nothing in the chat
   leaves the computer. It needs no key.
 - **Network.** Provider calls use Node's `fetch` in the main process, so they're outside the

@@ -34,7 +34,7 @@ const settings = ref<Settings | null>(null);
 const showSettings = ref(false);
 const scroller = ref<HTMLElement | null>(null);
 // Changes waiting for the user's approval.
-const approvals = ref<{ id: string; summary: string }[]>([]);
+const approvals = ref<{ id: string; summary: string; always?: boolean }[]>([]);
 // The assistant's changes to this project, by ID, to show Undo or "Undone".
 const changes = ref<Record<string, AssistantChange>>({});
 
@@ -101,7 +101,11 @@ onMounted(async () => {
       }
       if (m.changeId) loadChanges();
     } else if (event.type === 'approval') {
-      approvals.value.push({ id: event.id, summary: event.summary });
+      approvals.value.push({
+        id: event.id,
+        summary: event.summary,
+        always: event.always,
+      });
     } else if (event.type === 'changed') {
       projectChanged.value++;
     } else if (event.type === 'show') {
@@ -316,9 +320,17 @@ function onKeydown(event: KeyboardEvent) {
         <p class="approval-text">
           The assistant wants to: <strong>{{ a.summary }}</strong>
         </p>
+        <p v-if="a.always" class="approval-note">
+          You're always asked about this, because it changes where a data source
+          connects or what it reads.
+        </p>
         <div class="approval-actions">
           <button class="allow" @click="answer(a.id, 'allow')">Allow</button>
-          <button class="allow-all" @click="answer(a.id, 'allow-all')">
+          <button
+            v-if="!a.always"
+            class="allow-all"
+            @click="answer(a.id, 'allow-all')"
+          >
             Allow all changes
           </button>
           <button class="deny" @click="answer(a.id, 'deny')">
@@ -664,6 +676,12 @@ function onKeydown(event: KeyboardEvent) {
 .approval-text {
   margin: 0 0 10px;
   font-size: 13px;
+}
+
+.approval-note {
+  margin: -4px 0 10px;
+  color: var(--ink-muted);
+  font-size: 12px;
 }
 
 .approval-actions {

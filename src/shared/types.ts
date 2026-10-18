@@ -370,6 +370,9 @@ export interface AssistantChange {
 export type ApprovalAnswer = 'allow' | 'allow-all' | 'deny';
 
 /** Sent while the assistant replies. */
+/** The parts of a project a change can touch, matching the workflow's steps. */
+export type ChangeArea = 'sources' | 'model' | 'report';
+
 export type AssistantEvent =
   | { type: 'text'; text: string }
   | {
@@ -379,10 +382,13 @@ export type AssistantEvent =
       status: 'running' | 'done' | 'failed';
     }
   | { type: 'message'; message: ChatMessage }
-  /** The assistant wants to make a change and is waiting for the user's answer. */
-  | { type: 'approval'; id: string; summary: string }
+  /**
+   * The assistant wants to make a change and is waiting for the user's answer. `always`: this
+   * kind of change is always asked about, so "allow all" doesn't apply to it.
+   */
+  | { type: 'approval'; id: string; summary: string; always?: boolean }
   /** The project changed (a change or undo): screens showing these areas should reload. */
-  | { type: 'changed'; areas: ('sources' | 'model' | 'report')[] }
+  | { type: 'changed'; areas: ChangeArea[] }
   /** Show a step of the workflow, and optionally a report page. */
   | { type: 'show'; stage: WorkflowStage; pageId?: string };
 

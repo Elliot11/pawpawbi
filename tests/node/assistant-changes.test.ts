@@ -206,3 +206,37 @@ test('undoing several changes records each one as it is done', async () => {
   assert.equal(await read('model/datasets.json'), null);
   assert.equal(await read('report/report.json'), '1');
 });
+
+test('files lists everything undoing back to a change would put back', async () => {
+  const first = await journal.record('Wrote a', [site], () =>
+    write('report/pages/a.html', 'A'),
+  );
+  await journal.record('Wrote b and data', [{ dir: 'report' }], async () => {
+    await write('report/pages/b.html', 'B');
+    await write('report/data/big.json', 'rebuilt');
+  });
+  assert.deepEqual(await journal.files(first.record.id), [
+    'report/data/big.json',
+    'report/pages/a.html',
+    'report/pages/b.html',
+  ]);
+});
+
+test('files the app rebuilds are never reported as edited since', async () => {
+  const rebuilding = new ChangeJournal(root, path.join(tmp, 'undo'), {
+    rebuilt: (file) => file.startsWith('report/data/'),
+  });
+  const { record } = await rebuilding.record(
+    'Saved a dataset',
+    [{ file: 'report/data/big.json' }, { file: 'model/datasets.json' }],
+    async () => {
+      await write('report/data/big.json', 'by the assistant');
+      await write('model/datasets.json', '{}');
+    },
+  );
+  await write('report/data/big.json', 'rewritten by a refresh');
+  await write('model/datasets.json', '{"edited": true}');
+  assert.deepEqual(await rebuilding.conflicts(record.id), [
+    'model/datasets.json',
+  ]);
+});
