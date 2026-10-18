@@ -7,15 +7,14 @@ import { timeAgo } from '../time';
 const emit = defineEmits<{ open: [project: Project] }>();
 
 const version = ref('');
-const pythonVersion = ref('');
 const recents = ref<RecentProject[]>([]);
 const busy = ref(false);
 const error = ref('');
 
 onMounted(async () => {
+  // Starts the Python sidecar now, so the first project opens without waiting for it.
   window.api.python
     .info()
-    .then((info) => (pythonVersion.value = info.version))
     .catch((error) => console.error('Python sidecar unavailable:', error));
 
   [version.value, recents.value] = await Promise.all([
@@ -93,12 +92,7 @@ const openRecent = (recent: RecentProject) =>
         </button>
       </div>
 
-      <p class="version">
-        Version {{ version
-        }}<template v-if="pythonVersion">
-          · Python {{ pythonVersion }}</template
-        >
-      </p>
+      <p class="version">Version {{ version }}</p>
     </section>
 
     <section class="recents">

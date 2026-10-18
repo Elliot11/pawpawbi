@@ -130,7 +130,7 @@ It can change data sources (`source-tools.ts`):
 | `add_source`      | Adds a source: a connector and its non-secret settings. Always asked about               |
 | `edit_source`     | Renames a source or changes non-secret settings. Changing settings is always asked about |
 | `discover_tables` | Connects and lists the tables a source can load (doesn't change anything)                |
-| `load_source`     | Loads data, then rebuilds what's built from it. Can't be undone, and says so             |
+| `load_source`     | Loads data, then rebuilds what's built from it. Can't be undone (`permanent`)            |
 
 Secret settings (passwords, keys, tokens) are refused: the assistant adds the source without them
 and tells the user to enter them in the source's form. Settings are checked against the
@@ -176,7 +176,8 @@ JSON Schema for its input, `describe` (the few words the chat and approval card 
 "Previewing orders" or `Save the dataset revenue_by_month`) and `run`. A tool that changes the
 project sets `change: true` and makes its change through `ctx.change(...)` with the files it may
 touch and the areas (`sources`, `model`, `report`) whose screens should update (see below); one
-that can't be undone calls `ctx.changed(areas)` afterwards instead, and says so in `describe`.
+that can't be undone sets `permanent` (its approval card says so) and calls `ctx.changed(areas)`
+afterwards instead.
 Add the tool to `toolsFor` under its workflow step. Validate input: it comes from the model. A
 `describe` that throws (because the input is wrong) sends the error to the model without asking
 the user. Never return secrets.

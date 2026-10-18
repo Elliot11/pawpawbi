@@ -26,13 +26,14 @@ export interface LoopOptions {
   onToolEnd?: (call: ToolCall, ok: boolean) => void;
   /**
    * Asked before a tool that changes the project runs. Resolves true to go ahead. `always` is
-   * true when the user must be asked even if they've chosen not to be (the tool's `alwaysAsk`).
-   * Without it, changes run without asking.
+   * true when the user must be asked even if they've chosen not to be (the tool's `alwaysAsk`);
+   * `permanent` when the change can't be undone. Without it, changes run without asking.
    */
   approve?: (
     call: ToolCall,
     summary: string,
     always: boolean,
+    permanent: boolean,
   ) => Promise<boolean>;
   /** Each new turn (the model's replies and tool results), to save it. */
   onTurn: (turn: ReplyTurn) => Promise<void> | void;
@@ -137,7 +138,12 @@ export async function runAssistant(
         } catch {
           always = true; // If it can't tell, ask.
         }
-        const allowed = await options.approve(call, summary, always);
+        const allowed = await options.approve(
+          call,
+          summary,
+          always,
+          tool.permanent === true,
+        );
         if (signal.aborted) return 'stopped';
         if (!allowed) {
           await save({

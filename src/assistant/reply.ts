@@ -180,6 +180,7 @@ export async function reply(
           call: { id: string },
           summary: string,
           always: boolean,
+          permanent: boolean,
         ) => {
           summaries.set(call.id, summary);
           if (!always && (await getSettings()).permissions === 'allow')
@@ -193,6 +194,7 @@ export async function reply(
               id: call.id,
               summary,
               ...(always ? { always: true } : {}),
+              ...(permanent ? { permanent: true } : {}),
             });
           });
           controller.signal.removeEventListener('abort', onAbort);

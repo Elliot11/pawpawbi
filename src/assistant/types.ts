@@ -68,6 +68,8 @@ export interface ToolSpec {
    * without asking (e.g. a change to where a data source connects).
    */
   alwaysAsk?: (input: Record<string, unknown>) => boolean | Promise<boolean>;
+  /** For a change: true if it can't be undone (a data load). The approval card says so. */
+  permanent?: boolean;
 }
 
 export interface ModelRequest {

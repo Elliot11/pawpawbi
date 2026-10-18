@@ -391,9 +391,16 @@ export type AssistantEvent =
   | { type: 'message'; message: ChatMessage }
   /**
    * The assistant wants to make a change and is waiting for the user's answer. `always`: this
-   * kind of change is always asked about, so "allow all" doesn't apply to it.
+   * kind of change is always asked about, so "allow all" doesn't apply to it. `permanent`: it
+   * can't be undone.
    */
-  | { type: 'approval'; id: string; summary: string; always?: boolean }
+  | {
+      type: 'approval';
+      id: string;
+      summary: string;
+      always?: boolean;
+      permanent?: boolean;
+    }
   /** The project changed (a change or undo): screens showing these areas should reload. */
   | { type: 'changed'; areas: ChangeArea[] }
   /** Show a step of the workflow, and optionally a report page. */

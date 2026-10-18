@@ -34,7 +34,9 @@ const settings = ref<Settings | null>(null);
 const showSettings = ref(false);
 const scroller = ref<HTMLElement | null>(null);
 // Changes waiting for the user's approval.
-const approvals = ref<{ id: string; summary: string; always?: boolean }[]>([]);
+const approvals = ref<
+  { id: string; summary: string; always?: boolean; permanent?: boolean }[]
+>([]);
 // The assistant's changes to this project, by ID, to show Undo or "Undone".
 const changes = ref<Record<string, AssistantChange>>({});
 
@@ -105,6 +107,7 @@ onMounted(async () => {
         id: event.id,
         summary: event.summary,
         always: event.always,
+        permanent: event.permanent,
       });
     } else if (event.type === 'changed') {
       projectChanged.value++;
@@ -320,6 +323,7 @@ function onKeydown(event: KeyboardEvent) {
         <p class="approval-text">
           The assistant wants to: <strong>{{ a.summary }}</strong>
         </p>
+        <p v-if="a.permanent" class="approval-note">This can't be undone.</p>
         <p v-if="a.always" class="approval-note">
           You're always asked about this, because it changes where a data source
           connects or what it reads.

@@ -252,12 +252,13 @@ export function sourceTools(ctx: ToolContext): ToolSpec[] {
         additionalProperties: false,
       },
       change: true,
+      permanent: true,
       describe: async (input) => {
         const source = await sourceOf(input);
         const tables = Array.isArray(input.tables)
           ? input.tables.map(String)
           : source.resources;
-        return `Load data from "${source.name}"${tables.length ? ` (${tables.join(', ')})` : ''}. Loading can't be undone`;
+        return `Load data from "${source.name}"${tables.length ? ` (${tables.join(', ')})` : ''}`;
       },
       run: async (input) => {
         const source = await sourceOf(input);
