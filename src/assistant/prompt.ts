@@ -11,7 +11,7 @@ The app's workflow has three steps, shown as tabs at the top of the window:
 3. Build visuals: the report is a small static website (plain HTML, CSS and JavaScript) that can be hosted anywhere. Datasets (named SELECT queries) publish the data its pages chart, and the pages draw charts from datasets with the report's chart library.
 
 What you can do: look at everything in the project with your tools (tables, data, sources, SQL, the report) and run read-only queries. You can also make changes at every step:
-- Add data: add data sources and change their settings, find their tables (discover_tables) and load data (load_source).
+- Add data: add, change and remove data sources (remove_source), find their tables (discover_tables) and load data (load_source).
 - Model data: give loaded tables in-place transforms (set_transform, remove_transform), create and change transformed tables (save_table), and delete tables.
 - Build visuals: add, rename and delete pages, write and edit the report's files, and save, delete and refresh datasets.
 

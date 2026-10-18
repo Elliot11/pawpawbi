@@ -204,7 +204,8 @@ async function removeTables(tables: string[]) {
   }
 }
 
-async function removeSource(id: string) {
+/** Removes a source, its loaded tables and its saved secrets. Refused while others read them. */
+export async function removeSource(id: string) {
   const source = await readSource(id);
   const users = await dependentsOf(source.tables);
   if (users.length) {
@@ -878,7 +879,7 @@ export async function listTransformed(): Promise<TransformedTable[]> {
 // --- Deleting tables -------------------------------------------------------------------------
 
 /** Transformed tables and in-place transforms of other tables that read any of `tables`. */
-async function dependentsOf(tables: string[]): Promise<string[]> {
+export async function dependentsOf(tables: string[]): Promise<string[]> {
   const deps = dependencyMap(await readTransformed());
   const users = new Set(tables.flatMap((t) => directDependents(deps, t)));
   for (const [table, transform] of Object.entries(

@@ -129,6 +129,7 @@ It can change data sources (`source-tools.ts`):
 | ----------------- | ---------------------------------------------------------------------------------------- |
 | `add_source`      | Adds a source: a connector and its non-secret settings. Always asked about               |
 | `edit_source`     | Renames a source or changes non-secret settings. Changing settings is always asked about |
+| `remove_source`   | Removes a source and its tables; refused while other tables read them                    |
 | `discover_tables` | Connects and lists the tables a source can load (doesn't change anything)                |
 | `load_source`     | Loads data, then rebuilds what's built from it. Can't be undone (`permanent`)            |
 
@@ -206,7 +207,9 @@ copied to the undo store; if it fails, they're put back at once, so a change is 
 Table changes record only the SQL files (`model/transforms.json`, `model/transformed.json`), not
 the data built from them; deleting a loaded table also records its original data
 (`data/raw/<table>`) and its source's file, since those can't be rebuilt. Adding or editing a
-source records `sources/<id>.json`. Loads aren't recorded.
+source records `sources/<id>.json`; removing one also records `model/transforms.json` and its
+tables' original data. Its saved secrets are deleted with it and don't come back on Undo. Loads
+aren't recorded.
 The store is `assistant-changes/` in the working folder, beside the project files: it survives a
 crash but isn't saved in the `.pawpaw` file, and goes when the project is closed.
 

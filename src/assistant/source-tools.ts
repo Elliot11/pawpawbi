@@ -1,5 +1,5 @@
-// The assistant's tools for data sources: adding and editing them, finding their tables, and
-// loading data. Passwords and keys are never handled here: the user types them into the
+// The assistant's tools for data sources: adding, editing and removing them, finding their
+// tables, and loading data. Passwords and keys are never handled here: the user types them into the
 // source's form. Adding a source or changing its settings is always asked about (`alwaysAsk`),
 // even when the user allows changes without asking, because a source's settings say where the
 // app connects and what it reads: a shared project's content mustn't be able to point a saved
@@ -7,9 +7,11 @@
 // Design: docs/assistant.md and docs/security.md
 import {
   connector,
+  dependentsOf,
   discover,
   load,
   readSource,
+  removeSource,
   saveSource,
   toDataSource,
 } from '../data';
@@ -232,6 +234,55 @@ export function sourceTools(ctx: ToolContext): ToolSpec[] {
             ? source.resources.includes(r.name)
             : r.selected,
         }));
+      },
+    },
+    {
+      name: 'remove_source',
+      description:
+        "Removes a data source with its loaded tables and their in-place transforms. Refused while other tables read its tables. Undo brings the source and its data back, but not its saved password or key, which the user would enter again in the source's form.",
+      parameters: {
+        type: 'object',
+        properties: {
+          source_id: { type: 'string', description: 'From list_sources.' },
+        },
+        required: ['source_id'],
+        additionalProperties: false,
+      },
+      change: true,
+      // Checked here so the user isn't asked about a removal that would be refused.
+      describe: async (input) => {
+        const source = await sourceOf(input);
+        const users = await dependentsOf(source.tables);
+        if (users.length) {
+          throw new Error(
+            `${users.join(', ')} ${users.length === 1 ? 'reads' : 'read'} tables from "${source.name}". Change or delete ${users.length === 1 ? 'it' : 'them'} first.`,
+          );
+        }
+        return `Remove the data source "${source.name}"${
+          source.tables.length
+            ? ` and its ${source.tables.length === 1 ? 'table' : 'tables'} ${source.tables.join(', ')}`
+            : ''
+        }`;
+      },
+      run: async (input, call) => {
+        const source = await sourceOf(input);
+        const { savedSecrets } = await toDataSource(source);
+        // A loaded table's data can't be rebuilt from SQL, so Undo keeps a copy of it.
+        await ctx.change(
+          call,
+          `Removed the data source ${source.name}`,
+          [
+            sourceFile(source.id),
+            { file: 'model/transforms.json' },
+            ...source.tables.map((t) => ({ dir: `data/raw/${t}` })),
+          ],
+          () => removeSource(source.id),
+          ['sources', 'model', 'report'],
+        );
+        ctx.show('data');
+        return savedSecrets.length
+          ? "Removed. Its saved password or key was deleted too: if this is undone, the user enters it again in the source's form."
+          : 'Removed.';
       },
     },
     {
