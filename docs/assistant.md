@@ -242,6 +242,9 @@ code, bold), always as text, never as HTML. Without a key it offers to set one u
 it offers **Try again**, which reruns the reply from the saved conversation without saving the
 message twice. The chat's file format is in [pawpaw-file-format.md](pawpaw-file-format.md).
 
+**After loading data**, the assistant says what loaded and asks what's next: load more data,
+model it, or describe the visuals wanted, so it models the data for them (system prompt).
+
 ## Trying it without a provider
 
 In development builds, `PAWPAW_ANTHROPIC_API`, `PAWPAW_OPENAI_API` or `PAWPAW_OLLAMA_API` points
