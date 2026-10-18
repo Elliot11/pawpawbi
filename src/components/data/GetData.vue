@@ -16,6 +16,7 @@ import type {
 } from '../../shared/types';
 import { timeAgo } from '../../time';
 import { projectChanged } from '../../ui-signals';
+import RunningTimer from '../RunningTimer.vue';
 import ConnectorGallery from './ConnectorGallery.vue';
 import SourceSetup from './SourceSetup.vue';
 import TablePreview from './TablePreview.vue';
@@ -39,9 +40,16 @@ const confirmingRemove = ref<string | null>(null);
 
 const QUICK_PICKS = ['local_files', 'postgres', 'google_sheets', 'rest_api'];
 
+// Sources whose load has its data and is processing it (it can't be stopped then).
+const processing = ref(new Set<string>());
+
 const unsubscribe = window.api.data.onProgress((p) => {
-  if (p.sourceId in refreshing.value)
-    refreshing.value = { ...refreshing.value, [p.sourceId]: p.message };
+  if (!(p.sourceId in refreshing.value)) return;
+  refreshing.value = { ...refreshing.value, [p.sourceId]: p.message };
+  const next = new Set(processing.value);
+  if (p.received) next.add(p.sourceId);
+  else next.delete(p.sourceId);
+  processing.value = next;
 });
 onBeforeUnmount(unsubscribe);
 
@@ -104,6 +112,9 @@ async function refresh(source: DataSource) {
   } finally {
     const { [source.id]: __, ...rest } = refreshing.value;
     refreshing.value = rest;
+    const next = new Set(processing.value);
+    next.delete(source.id);
+    processing.value = next;
   }
 }
 
@@ -119,6 +130,9 @@ async function remove(source: DataSource) {
     };
   }
 }
+
+/** Stops a source's load. Its refresh call then fails with "Stopped.". */
+const stopLoad = (source: DataSource) => window.api.data.stop(source.id);
 
 function edit(source: DataSource) {
   const connector = connectorFor(source.type);
@@ -227,9 +241,13 @@ async function previewFromSetup(table: string) {
                 <strong>{{ s.name }}</strong>
                 <small>
                   {{ connectorFor(s.type)?.name ?? s.type }} ·
-                  <template v-if="refreshing[s.id]">{{
-                    refreshing[s.id]
-                  }}</template>
+                  <template v-if="refreshing[s.id]"
+                    >{{ refreshing[s.id] }}
+                    <RunningTimer
+                      class="timer"
+                      :can-stop="!processing.has(s.id)"
+                      @stop="stopLoad(s)"
+                  /></template>
                   <template v-else-if="s.lastLoadedAt">
                     {{ s.tables.length }}
                     {{ s.tables.length === 1 ? 'table' : 'tables' }}, loaded
@@ -308,6 +326,10 @@ async function previewFromSetup(table: string) {
 </template>
 
 <style scoped>
+.timer {
+  margin-left: 8px;
+}
+
 .get-data {
   width: 100%;
   max-width: 1100px;

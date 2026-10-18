@@ -128,8 +128,11 @@ export async function markProjectChanged() {
  * Runs an operation that changes the open project as tracked background work, so saving waits
  * for it and closing waits for it or stops it (see background.ts).
  */
-export const tracked = <R>(label: string, operation: () => Promise<R>) =>
-  work.run(openProject().id, label, operation);
+export const tracked = <R>(
+  label: string,
+  operation: () => Promise<R>,
+  key?: string,
+) => work.run(openProject().id, label, operation, key);
 
 async function askToRecover(
   win: BrowserWindow,

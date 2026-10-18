@@ -40,6 +40,7 @@ const data: DataApi = {
   removeSource: (id) => ipcRenderer.invoke('data:remove-source', id),
   discover: (id) => ipcRenderer.invoke('data:discover', id),
   load: (id, resources) => ipcRenderer.invoke('data:load', id, resources),
+  stop: (id) => ipcRenderer.invoke('data:stop', id),
   listTables: () => ipcRenderer.invoke('data:list-tables'),
   describeTables: () => ipcRenderer.invoke('data:describe-tables'),
   loadDiagram: () => ipcRenderer.invoke('data:load-diagram'),

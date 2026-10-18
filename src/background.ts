@@ -8,13 +8,15 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 export class CancelledError extends Error {
   constructor() {
-    super('Stopped because the project was closed.');
+    super('Stopped.');
   }
 }
 
 interface Task {
   projectId: string;
   label: string;
+  /** Names the task so it can be stopped on its own (see stop), e.g. a data source's ID. */
+  key?: string;
   cancelled: boolean;
   /** Ways to stop the task's work, e.g. killing the process it started. */
   cancelers: Set<() => void>;
@@ -35,6 +37,7 @@ export class BackgroundWork {
     projectId: string,
     label: string,
     work: () => Promise<T>,
+    key?: string,
   ): Promise<T> {
     if (this.blocked.has(projectId)) {
       throw new Error('The project is saving or closing, so this can’t start.');
@@ -42,6 +45,7 @@ export class BackgroundWork {
     const task: Task = {
       projectId,
       label,
+      key,
       cancelled: false,
       cancelers: new Set(),
     };
@@ -92,13 +96,24 @@ export class BackgroundWork {
   cancel(projectId?: string) {
     for (const task of this.tasks) {
       if (projectId !== undefined && task.projectId !== projectId) continue;
-      task.cancelled = true;
-      for (const cancel of task.cancelers) {
-        try {
-          cancel();
-        } catch {
-          // Already finished.
-        }
+      this.stopTask(task);
+    }
+  }
+
+  /** Stops a project's running tasks with the given key (the user pressed Stop). */
+  stop(projectId: string, key: string) {
+    for (const task of this.tasks) {
+      if (task.projectId === projectId && task.key === key) this.stopTask(task);
+    }
+  }
+
+  private stopTask(task: Task) {
+    task.cancelled = true;
+    for (const cancel of task.cancelers) {
+      try {
+        cancel();
+      } catch {
+        // Already finished.
       }
     }
   }

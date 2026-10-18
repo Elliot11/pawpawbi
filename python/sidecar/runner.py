@@ -26,8 +26,10 @@ def emit(event: str, **data):
     _events.flush()
 
 
-def progress(message: str):
-    emit("progress", message=message)
+def progress(message: str, received: bool = False):
+    """A step of the job. `received`: the data has all arrived and is being written, so the job
+    shouldn't be stopped any more (that could leave tables half-written)."""
+    emit("progress", message=message, **({"received": True} if received else {}))
 
 
 def _resources(built) -> dict:
@@ -78,9 +80,9 @@ def load(job: dict, connector) -> dict:
     # Always a full reload: replace the tables and reset any incremental state.
     progress("Downloading data…")
     pipeline.extract(data, write_disposition="replace", refresh="drop_resources", loader_file_format="parquet")
-    progress("Preparing tables…")
+    progress("Preparing tables…", received=True)
     pipeline.normalize()
-    progress("Saving to the project…")
+    progress("Saving to the project…", received=True)
     pipeline.load()
 
     row_counts = pipeline.last_trace.last_normalize_info.row_counts

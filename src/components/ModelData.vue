@@ -11,6 +11,7 @@ import {
   type TransformedTable,
 } from '../shared/types';
 import { projectChanged } from '../ui-signals';
+import RunningTimer from './RunningTimer.vue';
 import TransformEditor from './TransformEditor.vue';
 
 defineEmits<{ addData: [] }>();
@@ -90,11 +91,15 @@ watch(projectChanged, load);
 
 const refreshing = ref(false);
 const refreshStatus = ref('');
+// True once a source's data has arrived: Refresh all then runs to the end.
+const refreshReceived = ref(false);
 const refreshResult = ref<{ ok: boolean; message: string } | null>(null);
 
 const unsubscribeProgress = window.api.data.onProgress((p) => {
-  if (refreshing.value && p.sourceId === ALL_SOURCES)
+  if (refreshing.value && p.sourceId === ALL_SOURCES) {
     refreshStatus.value = p.message;
+    refreshReceived.value = p.received === true;
+  }
 });
 onBeforeUnmount(unsubscribeProgress);
 
@@ -107,6 +112,7 @@ async function refreshAll() {
   refreshing.value = true;
   refreshResult.value = null;
   refreshStatus.value = 'Starting…';
+  refreshReceived.value = false;
   try {
     const result = await window.api.data.refreshAll();
     const problems = [
@@ -127,6 +133,9 @@ async function refreshAll() {
     await load();
   }
 }
+
+/** Stops Refresh all. Its call then fails with "Stopped.". */
+const stopRefreshAll = () => window.api.data.stop(ALL_SOURCES);
 
 /** Puts tables without a saved position in a grid below the ones that have one. */
 function placeNewTables() {
@@ -733,6 +742,11 @@ const showLegend = ref(true);
           </div>
           <p v-if="refreshing" class="refresh-status" aria-live="polite">
             {{ refreshStatus }}
+            <RunningTimer
+              class="timer"
+              :can-stop="!refreshReceived"
+              @stop="stopRefreshAll"
+            />
           </p>
           <p
             v-else-if="refreshResult"
@@ -816,6 +830,10 @@ const showLegend = ref(true);
 </template>
 
 <style scoped>
+.timer {
+  margin-left: 8px;
+}
+
 .model {
   position: relative;
   display: flex;

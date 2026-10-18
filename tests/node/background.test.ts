@@ -160,3 +160,40 @@ test('onChange fires when tasks start and finish', async () => {
   await work.run('p1', 'x', async () => {});
   assert.equal(changes, 2);
 });
+
+test('stop ends only the task with that key', async () => {
+  const work = new BackgroundWork();
+  const killed: string[] = [];
+  const a = gate();
+  const b = gate();
+  const loadA = work.run(
+    'p1',
+    'Loading data',
+    async () => {
+      work.onCancel(() => killed.push('a'));
+      await a.promise;
+      work.checkCancelled();
+      return 'a';
+    },
+    'source-a',
+  );
+  const loadB = work.run(
+    'p1',
+    'Loading data',
+    async () => {
+      work.onCancel(() => killed.push('b'));
+      await b.promise;
+      work.checkCancelled();
+      return 'b';
+    },
+    'source-b',
+  );
+
+  work.stop('p2', 'source-a'); // another project's task with that key: nothing
+  work.stop('p1', 'source-a');
+  assert.deepEqual(killed, ['a']);
+  a.open();
+  b.open();
+  await assert.rejects(loadA, { message: 'Stopped.' });
+  assert.equal(await loadB, 'b');
+});

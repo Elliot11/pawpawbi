@@ -216,6 +216,11 @@ export interface TablePreview {
 export interface DataProgress {
   sourceId: string;
   message: string;
+  /**
+   * The data has arrived and is being written and processed: the load can't be stopped any
+   * more, so Stop is hidden.
+   */
+  received?: boolean;
 }
 
 export interface DataApi {
@@ -228,6 +233,11 @@ export interface DataApi {
   discover: (id: string) => Promise<DiscoveredResource[]>;
   /** Loads the chosen resources (a full refresh) into the project. */
   load: (id: string, resources: string[]) => Promise<LoadedTable[]>;
+  /**
+   * Stops a source's connecting or loading (or, with ALL_SOURCES, Refresh all). Its call
+   * rejects with "Stopped.".
+   */
+  stop: (id: string) => Promise<void>;
   listTables: () => Promise<string[]>;
   /** Columns and row counts of every loaded table (read from metadata, so it's quick). */
   describeTables: () => Promise<TableSchema[]>;

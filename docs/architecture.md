@@ -111,6 +111,12 @@ too, so it's tracked per project (`src/background.ts`). Every data operation tha
 project runs through `tracked()` in `data.ts`, and the processes it starts register a way to stop
 them.
 
+- **Stop**: connecting to a source, loading it and Refresh all show how long they've been running
+  and, after 5 seconds, a Stop button (`RunningTimer.vue`). Those tasks are keyed by the source's
+  ID (or `ALL_SOURCES`), and `data:stop` stops just that one (`work.stop`), the same way closing
+  does. Once a load's data has arrived (the runner's progress says `received`), it shows "Data
+  loaded, now processing…", Stop goes and `data:stop` ignores it, so tables are never left
+  half-written; Refresh all stays that way from the first source's data on.
 - **Saving** waits until the project's work has finished, so it never zips half-written tables.
 - **Closing** (or quitting) with work running asks first:
   - **Wait** closes once the work finishes.

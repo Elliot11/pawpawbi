@@ -370,15 +370,33 @@ function runProcess(
 
 const runningJobs = new Set<string>();
 
+/** What a load says once its data has arrived (DataProgress.received). */
+const RECEIVED = 'Data loaded, now processing…';
+
+/** Loads (by source ID, or ALL_SOURCES) whose data has arrived: data:stop leaves them alone. */
+const processing = new Set<string>();
+
 function sendProgress(progress: DataProgress) {
+  if (progress.received) processing.add(progress.sourceId);
+  else processing.delete(progress.sourceId);
   for (const win of BrowserWindow.getAllWindows())
     win.webContents.send('data:progress', progress);
+}
+
+/** Runs a load, tracking whether it can still be stopped. */
+async function stopUntilReceived<T>(id: string, operation: () => Promise<T>) {
+  processing.delete(id);
+  try {
+    return await operation();
+  } finally {
+    processing.delete(id);
+  }
 }
 
 function runJob<T>(
   python: string,
   job: Record<string, unknown>,
-  onProgress: (message: string) => void,
+  onProgress: (message: string, received?: boolean) => void,
 ) {
   const project = openProject();
   return new Promise<T>((resolve, reject) => {
@@ -403,7 +421,11 @@ function runJob<T>(
       } catch {
         return;
       }
-      if (event.event === 'progress') onProgress(event.message);
+      if (event.event === 'progress')
+        onProgress(
+          event.received ? RECEIVED : event.message,
+          event.received === true,
+        );
       else if (event.event === 'result')
         outcome = { ok: true, value: event.result };
       else if (event.event === 'error') {
@@ -437,7 +459,8 @@ function runJob<T>(
 async function runSourceJob<T>(
   id: string,
   job: Record<string, unknown>,
-  onProgress = (message: string) => sendProgress({ sourceId: id, message }),
+  onProgress = (message: string, received?: boolean) =>
+    sendProgress({ sourceId: id, message, received }),
 ): Promise<T> {
   if (runningJobs.has(id)) throw new Error('This data source is already busy.');
   runningJobs.add(id);
@@ -463,7 +486,7 @@ async function runSourceJob<T>(
 async function loadSource(
   id: string,
   resources: string[],
-  onProgress?: (message: string) => void,
+  onProgress?: (message: string, received?: boolean) => void,
 ): Promise<LoadedTable[]> {
   const others = (await readAllSources()).filter((s) => s.id !== id);
   const transformedNames = Object.keys((await readTransformed()).tables);
@@ -505,8 +528,8 @@ export async function load(
   resources: string[],
 ): Promise<LoadedTable[]> {
   const loaded = await loadSource(id, resources);
-  const { inPlaceErrors } = await rebuildDerived((message) =>
-    sendProgress({ sourceId: id, message }),
+  const { inPlaceErrors } = await rebuildDerived(() =>
+    sendProgress({ sourceId: id, message: RECEIVED, received: true }),
   );
   return loaded.map((t) =>
     inPlaceErrors[t.name] ? { ...t, transformError: inPlaceErrors[t.name] } : t,
@@ -517,15 +540,19 @@ export async function load(
 async function refreshAll(): Promise<RefreshAllResult> {
   const sources = await readAllSources();
   const failedSources: RefreshAllResult['failedSources'] = [];
-  const progress = (message: string) =>
-    sendProgress({ sourceId: ALL_SOURCES, message });
+  // Once any source's data has arrived, Refresh all can't be stopped: the rebuild must follow.
+  let receivedAny = false;
+  const progress = (message: string, received?: boolean) => {
+    receivedAny ||= received === true;
+    sendProgress({ sourceId: ALL_SOURCES, message, received: receivedAny });
+  };
   for (const [i, source] of sources.entries()) {
     work.checkCancelled();
     const prefix = `${source.name} (${i + 1} of ${sources.length})`;
     progress(`${prefix}: starting…`);
     try {
-      await loadSource(source.id, source.resources, (message) =>
-        progress(`${prefix}: ${message}`),
+      await loadSource(source.id, source.resources, (message, received) =>
+        progress(`${prefix}: ${message}`, received),
       );
     } catch (error) {
       work.checkCancelled(); // Stopped, rather than failed: don't carry on.
@@ -535,7 +562,9 @@ async function refreshAll(): Promise<RefreshAllResult> {
       });
     }
   }
-  const { inPlaceErrors, transformedErrors } = await rebuildDerived(progress);
+  const { inPlaceErrors, transformedErrors } = await rebuildDerived(() =>
+    progress(RECEIVED, true),
+  );
   return {
     sourceCount: sources.length,
     failedSources,
@@ -1000,12 +1029,21 @@ export function registerDataHandlers() {
   ipcMain.handle('data:remove-source', (_event, id: string) =>
     tracked('Removing a data source', () => removeSource(id)),
   );
+  // Connecting and loading are keyed by the source's ID, and Refresh all by ALL_SOURCES, so
+  // data:stop can stop one of them.
   ipcMain.handle('data:discover', (_event, id: string) =>
-    tracked('Connecting to a data source', () => discover(id)),
+    tracked('Connecting to a data source', () => discover(id), id),
   );
   ipcMain.handle('data:load', (_event, id: string, resources: string[]) =>
-    tracked('Loading data', () => load(id, resources)),
+    tracked(
+      'Loading data',
+      () => stopUntilReceived(id, () => load(id, resources)),
+      id,
+    ),
   );
+  ipcMain.handle('data:stop', (_event, id: string) => {
+    if (!processing.has(String(id))) work.stop(openProject().id, String(id));
+  });
   ipcMain.handle('data:list-tables', () =>
     callPython<string[]>('list_tables', {
       data_dir: dataDir(),
@@ -1038,7 +1076,11 @@ export function registerDataHandlers() {
       tracked('Building a transformed table', () => saveTransformed(input)),
   );
   ipcMain.handle('data:refresh-all', () =>
-    tracked('Refreshing all data', () => refreshAll()),
+    tracked(
+      'Refreshing all data',
+      () => stopUntilReceived(ALL_SOURCES, refreshAll),
+      ALL_SOURCES,
+    ),
   );
   ipcMain.handle('data:apply-transform', (_event, table: string, sql: string) =>
     tracked('Applying a transform', () => applyTransform(table, sql)),

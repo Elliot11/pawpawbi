@@ -8,6 +8,7 @@ import type {
   DiscoveredResource,
   LoadedTable,
 } from '../../shared/types';
+import RunningTimer from '../RunningTimer.vue';
 import ConnectorFieldInput from './ConnectorFieldInput.vue';
 
 const props = defineProps<{
@@ -25,6 +26,8 @@ type Step = 'settings' | 'tables' | 'loading' | 'finished';
 const step = ref<Step>('settings');
 const busy = ref(false);
 const error = ref('');
+// True while connecting to the source to find its tables (after saving it), which can be stopped.
+const connecting = ref(false);
 const progress = ref('');
 const showAdvanced = ref(false);
 
@@ -76,8 +79,13 @@ const visibleResources = computed(() =>
 );
 const loaded = ref<LoadedTable[]>([]);
 
+// True once a load's data has arrived and is being processed: it can't be stopped then.
+const received = ref(false);
+
 const unsubscribe = window.api.data.onProgress((p) => {
-  if (p.sourceId === savedSource.value?.id) progress.value = p.message;
+  if (p.sourceId !== savedSource.value?.id) return;
+  progress.value = p.message;
+  received.value = p.received === true;
 });
 onBeforeUnmount(unsubscribe);
 
@@ -101,7 +109,12 @@ async function connect() {
     for (const f of props.connector.fields) if (f.secret) settings[f.key] = '';
 
     progress.value = 'Connecting…';
-    resources.value = await window.api.data.discover(savedSource.value.id);
+    connecting.value = true;
+    try {
+      resources.value = await window.api.data.discover(savedSource.value.id);
+    } finally {
+      connecting.value = false;
+    }
     const previous = savedSource.value.resources;
     chosen.value = new Set(
       resources.value
@@ -129,6 +142,7 @@ async function load() {
   step.value = 'loading';
   error.value = '';
   progress.value = 'Starting…';
+  received.value = false;
   try {
     loaded.value = await window.api.data.load(savedSource.value.id, [
       ...chosen.value,
@@ -138,6 +152,11 @@ async function load() {
     error.value = errorMessage(err);
     step.value = resources.value.length > 1 ? 'tables' : 'settings';
   }
+}
+
+/** Stops connecting or loading. The call that's running then fails with "Stopped.". */
+function stop() {
+  if (savedSource.value) window.api.data.stop(savedSource.value.id);
 }
 
 function toggle(name: string) {
@@ -251,6 +270,7 @@ const formatNumber = (n: number) => n.toLocaleString();
         >
           Cancel
         </button>
+        <RunningTimer v-if="connecting" @stop="stop" />
         <button type="submit" class="btn-primary" :disabled="busy">
           {{ busy ? progress || 'Connecting…' : 'Connect' }}
         </button>
@@ -300,6 +320,7 @@ const formatNumber = (n: number) => n.toLocaleString();
       <span class="spinner" aria-hidden="true"></span>
       <strong>Loading data</strong>
       <p>{{ progress }}</p>
+      <RunningTimer :can-stop="!received" @stop="stop" />
     </div>
 
     <!-- 4. Finished -->

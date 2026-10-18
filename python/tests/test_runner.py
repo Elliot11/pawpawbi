@@ -51,6 +51,9 @@ def test_local_files_load_csv_and_excel_sheets(run_job, project_data_dir, sales_
     }
     progress = [e["message"] for e in events if e["event"] == "progress"]
     assert progress == ["Connecting…", "Downloading data…", "Preparing tables…", "Saving to the project…"]
+    # Once the data has arrived, the app stops offering Stop.
+    received = [e.get("received", False) for e in events if e["event"] == "progress"]
+    assert received == [False, False, True, True]
     assert on_disk(project_data_dir) == {"budget_staff": 3, "budget_targets": 2, "monthly_sales": 4}
     assert list((project_data_dir / "raw" / "monthly_sales").glob("*.parquet"))
 
