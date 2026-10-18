@@ -36,6 +36,12 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
   SQL alongside the report guide, a tuned system prompt, and sample tasks run against both
   providers.
 - **Publish to S3 and CloudFront** from the app. Publish writes the site to a folder for now.
+- **Row-level security**: different viewers see different rows (e.g. each region manager only
+  their region). The report is a static site, so anyone who can reach it can read every
+  `data/*.json` file: filtering in the page's JavaScript isn't security. The approach: a copy
+  per audience. A rule per dataset (a column, and which values each audience may see); Publish
+  writes a copy of the site's data for each audience, filtered by those rules, and each copy sits
+  behind its own access control on the host (such as CloudFront signed cookies). No server.
 - **Update a report's copy of `charts.js`** when the app's version improves; each project keeps
   its own copy.
 - **More for the report:** stacked bars, area and scatter charts, filters within a page, dark
