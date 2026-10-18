@@ -241,26 +241,38 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   flex: 1;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 6px;
   min-width: max-content;
 }
 
 .publish-button {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border: 1px solid var(--accent);
+  gap: 7px;
+  padding: 6px 12px;
+  border: none;
   border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--accent);
+  background: var(--surface-muted);
+  color: var(--ink-muted);
+  font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
-.publish-button:hover,
+.publish-button:hover:not(.active) {
+  background: #e6e4de;
+}
+
 .publish-button.active {
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.publish-button .icon {
+  flex: none;
 }
 
 .save-area {
