@@ -39,8 +39,8 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
   [docs/pawpaw-server-api.md](docs/pawpaw-server-api.md), but it isn't built: accounts, reports
   and their versions, presigned S3 URLs, the viewer page (with its service worker), and limits.
   Until then
-  `SERVER_URL` in `src/account.ts` is empty, so packaged builds say publishing to PawpawBI isn't
-  available; development uses the stand-in (`npm run server:stub`, `PAWPAW_SERVER`).
+  `SERVER_URL` in `src/account.ts` is empty (set it to `https://api.pawpawbi.com/v1` once that's
+  live), so packaged builds say publishing to PawpawBI isn't available; development uses the stand-in (`npm run server:stub`, `PAWPAW_SERVER`).
 - **Publishing to PawpawBI, next steps:** unpublish (delete a hosted report), forgetting a
   project on Published projects, refreshing every project at once or on a schedule.
 - **Google and Microsoft sign-in** for PawpawBI accounts, alongside email and password: the

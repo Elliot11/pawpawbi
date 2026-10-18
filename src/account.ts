@@ -13,8 +13,8 @@ import {
 import type { AccountState } from './shared/types';
 
 /**
- * The PawpawBI server. There's none yet, so publishing to PawpawBI is unavailable in packaged
- * builds until this is set (TODO.md). In development, PAWPAW_SERVER points the app at one, such
+ * The PawpawBI server. It will be https://api.pawpawbi.com/v1; it isn't live yet, so this stays
+ * empty and publishing to PawpawBI is unavailable in packaged builds until it is (TODO.md). In development, PAWPAW_SERVER points the app at one, such
  * as the stand-in (npm run server:stub).
  */
 const SERVER_URL = '';

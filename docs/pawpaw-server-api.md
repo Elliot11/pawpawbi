@@ -8,7 +8,7 @@ for S3 as well. The real server isn't built yet ([TODO.md](../TODO.md)).
 
 ## Basics
 
-- Base URL: `https://<host>/v1`. All paths below are under it.
+- Base URL: `https://api.pawpawbi.com/v1`, for every API call. All paths below are under it.
 - Requests and responses are JSON (`Content-Type: application/json`).
 - Signed-in requests send `Authorization: Bearer <token>`. Tokens don't expire on their own;
   signing out revokes them.
