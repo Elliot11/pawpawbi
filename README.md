@@ -10,17 +10,28 @@ ordinary files and folders, defined in [docs/pawpaw-file-format.md](docs/pawpaw-
 
 ## Status
 
-Early development. Working: projects (create, open, save, crash recovery), 47 data connectors
-(the file connectors and SQLite are tested, the rest aren't yet: see
-[docs/connectors.md](docs/connectors.md)), the Model data canvas with dependency lines, SQL
-transforms of loaded tables, transformed tables built from other tables, refreshing
-everything in dependency order, and the report: a static website of charts (bars, lines, headline
-numbers, tables) that every new project starts with, fed by datasets and exportable for hosting
-anywhere, e.g. S3 ([docs/report-pages.md](docs/report-pages.md)). The assistant chats with Claude or ChatGPT using your own API key, or a local model in Ollama; it
-can look at everything in the project, add and load data sources, shape tables with SQL and
-build the report (pages, files and datasets), asking before each change, with Undo
-([docs/assistant.md](docs/assistant.md)). Not built yet: relationships between tables. Known issues and
-the backlog are in [TODO.md](TODO.md).
+Early development. Working:
+
+- **Projects:** create, open, save, crash recovery, rename and delete (Edit project).
+- **Data:** 47 data connectors (the file connectors and SQLite are tested, the rest aren't yet:
+  see [docs/connectors.md](docs/connectors.md)). Loads show how long they've been running and can
+  be stopped until their data has arrived.
+- **Model:** the Model data canvas with dependency lines, SQL transforms of loaded tables,
+  transformed tables built from other tables, and refreshing everything in dependency order.
+- **Report:** a static website of charts (bars, lines, headline numbers, tables) that every new
+  project starts with, fed by datasets, with a menu of its pages
+  ([docs/report-pages.md](docs/report-pages.md)).
+- **Publish:** to PawpawBI (an account with an email and password; the report is hosted at a
+  link, and its data can be refreshed later from the start screen's Published projects), or to a
+  folder for hosting anywhere, e.g. S3. The PawpawBI server's API is
+  [docs/pawpaw-server-api.md](docs/pawpaw-server-api.md); the server itself is a separate project.
+- **Assistant:** chats with Claude or ChatGPT using your own API key, or a local model in Ollama.
+  It can look at everything in the project, add, change, load and remove data sources, shape
+  tables with SQL and build the report (pages, files and datasets), asking before each change,
+  with Undo ([docs/assistant.md](docs/assistant.md)).
+
+Not built yet: relationships between tables. Known issues and the backlog are in
+[TODO.md](TODO.md).
 
 ## Getting started
 
@@ -50,29 +61,35 @@ pinned versions change.
 | `npm run make`              | Builds the Windows installer into `out/make/`.                                                                                                                           |
 | `npm run setup:python`      | Downloads Python and installs `python/requirements.txt` (runs automatically before start, package and make).                                                             |
 | `npm run lock:python`       | Reinstalls Python packages from scratch and rewrites `python/constraints.txt`. Run after editing `requirements.txt`.                                                     |
+| `npm run server:stub`       | Runs a stand-in PawpawBI server (and S3) on port 8790, for trying publishing; start the app with `PAWPAW_SERVER=http://127.0.0.1:8790/v1`.                               |
 
 ## Project layout
 
 ```
 src/                     Electron app (TypeScript)
   main.ts                  Main process: window, app lifecycle
-  projects.ts              Open, save, close, recent projects, chat files
+  projects.ts              Open, save, close, rename and delete projects, recent projects,
+                           chat files
   workspace.ts             Working folders and crash recovery
   pawpaw-archive.ts        Reading and writing .pawpaw ZIP files
   background.ts            Tracks background work so saving and closing can wait for it
   data.ts                  Data sources, connector environments, load jobs, transforms,
                            transformed tables and rebuilding them in order
   credentials.ts           Encrypted storage for data sources' passwords and API keys
+  published.ts             Publishing to PawpawBI, Published projects and refreshing them
+  account.ts               The PawpawBI account and its encrypted sign-in token
+  pawpaw-server.ts         The PawpawBI server's client (published-files.ts: published records)
   assistant/               The chat assistant: providers, tool loop, tools, instructions,
                            the change journal for Undo
-  report.ts, report-site.ts  The report site: serving it, datasets, export
+  report.ts, report-site.ts  The report site: serving it, datasets, publishing to a folder
   report-template/         The files a new report starts with (charts.js is the chart library)
   report-templates.ts      Bundles those files into the app
   python.ts                Starts and talks to the Python sidecar
   preload.ts               The window.api bridge between the page and the main process
   workflow.ts              The workflow steps and the assistant's welcome message
   shared/                  Types and helpers used by both sides (dependencies.ts: build
-                           order and circular-reference checks for transformed tables)
+                           order and circular-reference checks for transformed tables;
+                           site-menu.ts: the report's menu, in the app and when published)
   App.vue, views/, components/   The UI (Vue)
   chat-format.ts, ui-signals.ts, errors.ts, plain.ts   Small renderer helpers
 python/
@@ -90,8 +107,8 @@ python/
   tests/                   Python tests
   runtime/                 Downloaded Python (not in git)
 tests/node/              TypeScript tests
-scripts/                 Setup and test helper scripts
-.github/workflows/       CI (type-check and tests on Windows)
+scripts/                 Setup and test helper scripts, and the stand-in PawpawBI server
+.github/workflows/       CI (lint, type-check and tests on Windows)
 docs/                    Documentation (see below)
 assets/, public/         App icon and favicon
 ```
@@ -106,10 +123,11 @@ assets/, public/         App icon and favicon
 - [docs/pawpaw-file-format.md](docs/pawpaw-file-format.md): the `.pawpaw` project file format.
 - [docs/report-pages.md](docs/report-pages.md): writing report pages and datasets, and hosting the report.
 - [docs/assistant.md](docs/assistant.md): how the chat assistant works, and how to add a provider or a tool.
+- [docs/pawpaw-server-api.md](docs/pawpaw-server-api.md): the PawpawBI server's API, which publishing uses.
 - [CLAUDE.md](CLAUDE.md): conventions and gotchas, written for AI coding assistants but useful to anyone.
 - [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md): licences of everything the app ships.
 
 ## Licence
 
-`package.json` declares MIT (the project template's default). The licence isn't decided yet;
-see [TODO.md](TODO.md).
+MIT: see [LICENSE](LICENSE). The software PawpawBI ships with is under its own licences
+([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).

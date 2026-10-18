@@ -6,7 +6,7 @@
   "description": "Build business intelligence reports from your data, with an assistant.",
   "keywords": [],
   "license": "MIT",
-  "author": "Elliot",
+  "author": "PawpawBI",
   "main": ".vite/build/main.cjs",
   "scripts": {
     "start": "electron-forge start",

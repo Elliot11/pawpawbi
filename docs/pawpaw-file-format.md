@@ -111,7 +111,7 @@ Identifies the project and the format version. Required.
   "type": "file",
   "name": "Monthly Sales.csv",
   "options": {
-    "path": "C:/Users/Elliot/Documents/Monthly Sales.csv"
+    "path": "C:/Users/Ana/Documents/Monthly Sales.csv"
   },
   "resources": ["Monthly Sales"],
   "tables": ["monthly_sales"],

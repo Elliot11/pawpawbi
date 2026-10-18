@@ -1,6 +1,6 @@
 # To do
 
-Backlog and known issues. Move items to GitHub issues once the repository has a remote.
+Backlog and known issues. These could move to GitHub issues.
 Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
 
 ## Before the first release
@@ -10,13 +10,10 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
   - https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options
   - Microsoft Store and Azure Artifact Signing
   - Electron Forge guide: https://www.electronforge.io/guides/code-signing/code-signing-windows
-- **Decide the app's licence.** `package.json` says MIT, inherited from the template. Decide what
-  PawpawBI is licensed under (or mark it proprietary) and add a `LICENSE` file.
 - **Test the connectors against real accounts.** Only the file connectors and SQLite have loaded
   real data. Status is tracked in [docs/connectors.md](docs/connectors.md).
 - **Test the installer** on a clean Windows machine (see the release guide in
   [docs/maintenance.md](docs/maintenance.md)).
-- **Add a git remote** so CI (`.github/workflows/ci.yml`) runs.
 
 ## Features not built yet
 
@@ -35,12 +32,14 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
 - **The assistant's guides and evaluation tasks (phase 4).** Guides for adding data, modelling and
   SQL alongside the report guide, a tuned system prompt, and sample tasks run against both
   providers.
-- **The PawpawBI server.** The app publishes to it (`src/published.ts`, `src/account.ts`) per
-  [docs/pawpaw-server-api.md](docs/pawpaw-server-api.md), but it isn't built: accounts, reports
-  and their versions, presigned S3 URLs, the viewer page (with its service worker), and limits.
-  Until then
-  `SERVER_URL` in `src/account.ts` is empty (set it to `https://api.pawpawbi.com/v1` once that's
-  live), so packaged builds say publishing to PawpawBI isn't available; development uses the stand-in (`npm run server:stub`, `PAWPAW_SERVER`).
+- **Put the PawpawBI server live.** The server and the report viewer are built (the PawpawServer
+  project, per [docs/pawpaw-server-api.md](docs/pawpaw-server-api.md)) and pass the API checks
+  locally. Left to do there: deploy the API at `api.pawpawbi.com`; give the viewer a host of its
+  own (e.g. `reports.pawpawbi.com`) with the Cloudflare rewrite rule for `/r/…`; allow that host
+  in the reports bucket's CORS and the API's; point the server's `WEB_ORIGIN` (report links) at
+  it. Then set `SERVER_URL` in `src/account.ts` to `https://api.pawpawbi.com/v1` (empty until
+  then, so packaged builds say publishing to PawpawBI isn't available; development uses
+  `PAWPAW_SERVER`) and publish a real report through the app.
 - **Publishing to PawpawBI, next steps:** unpublish (delete a hosted report), forgetting a
   project on Published projects, refreshing every project at once or on a schedule.
 - **Google and Microsoft sign-in** for PawpawBI accounts, alongside email and password: the
@@ -53,11 +52,9 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
   per audience. A rule per dataset (a column, and which values each audience may see); Publish
   writes a copy of the site's data for each audience, filtered by those rules, and each copy sits
   behind its own access control on the host (such as CloudFront signed cookies). No server.
-- **Update a report's copy of `charts.js`** when the app's version improves; each project keeps
-  its own copy.
 - **More for the report:** stacked bars, area and scatter charts, filters within a page, dark
-  mode, printing a page, an editor with syntax highlighting, reordering pages, renaming the
-  report, and updating a report's copy of `charts.js` when the app's version improves.
+  mode, printing a page, an editor with syntax highlighting, reordering pages, and updating a
+  report's copy of `charts.js` when the app's version improves (each project keeps its own).
 - **Project thumbnails** (`thumbnail.png`) for the start screen.
 - **Incremental loading**: refresh only new or changed rows instead of reloading everything.
 - **A proper SQL editor** in the transform screen: syntax highlighting and autocomplete (e.g.
@@ -131,14 +128,17 @@ PawpawBI targets Windows. Before shipping Linux builds:
   checked by hand with a hostile page; an Electron-driven test would catch regressions.
 - **The in-place transform editor lists columns as currently shown**, so for a table that already
   has a transform it shows the transformed columns, though the query reads the original ones.
-- **Files outside projects are never cleaned up**: saved credentials, dlt state and working folders
-  of deleted projects, and connector environments no longer used.
+- **Some files outside projects are never cleaned up**: dlt state of deleted projects, saved
+  credentials and working folders of projects deleted outside the app, and connector environments
+  no longer used. (Deleting a project from Edit project removes its credentials and working
+  folder.)
 - **Some of the main process's logic has no automated tests**: rebuild orchestration, refusing
-  deletes, data sources, the recent list, and the assistant's `index.ts` (approval wiring, the
-  journal per project) and `report-tools.ts`, which import Electron modules. Tested: the archive
-  format, working folders and crash recovery, dependency ordering, background-work tracking, the
-  report site's files, the chart library's helpers, the assistant's tool loop, change journal,
-  history and provider adapters, and the Python side.
+  deletes, data sources, the recent list, publishing (`published.ts`, `account.ts`), renaming and
+  deleting projects, and the assistant's `reply.ts` (approval wiring), `undo.ts` and its tools,
+  which import Electron modules. Tested: the archive format, working folders and crash recovery,
+  dependency ordering, background-work tracking, the report site's files and menu, the chart
+  library's helpers, the PawpawBI server client against the stand-in, the assistant's tool loop,
+  change journal, history, settings checks and provider adapters, and the Python side.
 - **Python code isn't linted or formatted.** Add Ruff (development only) and run it from
   `npm run lint`.
 - **After choosing Wait when closing during a load**, only the top bar's "Working…" shows that a
