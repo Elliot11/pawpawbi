@@ -208,10 +208,10 @@ async function exportSite() {
   try {
     const folder = await window.api.report.exportSite();
     if (folder) {
-      notice.value = `Exported to ${folder}. Upload the folder's contents to your web host, such as an S3 bucket.`;
+      notice.value = `Published to ${folder}. Upload the folder's contents to your web host, such as an S3 bucket.`;
     }
   } catch (e) {
-    error.value = `Couldn't export the report. ${errorMessage(e)}`;
+    error.value = `Couldn't publish the report. ${errorMessage(e)}`;
   } finally {
     busy.value = '';
   }
@@ -423,9 +423,9 @@ function onEditorKey(event: KeyboardEvent) {
             @click="exportSite"
           >
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
+              <path d="M12 15V3M7 8l5-5 5 5M5 21h14" />
             </svg>
-            {{ busy === 'export' ? 'Exporting…' : 'Export' }}
+            {{ busy === 'export' ? 'Publishing…' : 'Publish' }}
           </button>
         </div>
       </header>

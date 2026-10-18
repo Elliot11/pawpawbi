@@ -3,7 +3,7 @@
 A project's report is a small static website in its `report/` folder: plain HTML, CSS and
 JavaScript, with the data it shows saved alongside as JSON. It needs nothing from PawpawBI, so
 the folder can be hosted anywhere, such as an S3 bucket behind a CDN. In the app, **Build
-visuals** shows it, edits its files and datasets, and **Export** writes it to a folder for
+visuals** shows it, edits its files and datasets, and **Publish** writes it to a folder for
 hosting. File layout: [pawpaw-file-format.md](pawpaw-file-format.md).
 
 Two parts work together:
@@ -200,9 +200,9 @@ Don't reorder them or add more; fold extra series into "Other" instead.
 
 ## Hosting
 
-**Export** refreshes every dataset and copies the folder into an empty folder you choose. Upload
+**Publish** refreshes every dataset and copies the folder into an empty folder you choose. Upload
 its contents as they are, e.g. `aws s3 sync <folder> s3://<bucket>/<prefix>` and, behind
-CloudFront, invalidate the old files. The hosted report is a snapshot: export again to update it.
+CloudFront, invalidate the old files. The hosted report is a snapshot: publish again to update it.
 Anyone who can reach the site can read its data files, so put private reports behind access
 control. Browsers won't load the data when `index.html` is opened straight from disk; use a web
 server.

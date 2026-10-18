@@ -223,7 +223,7 @@ Python.
   `TransformEditor.vue` for SQL: a loaded table's in-place transform, or a new or existing
   transformed table. **Build visuals** is `ReportCanvas.vue`: a tab per report page, the page shown in a
   sandboxed frame from `pawpaw-report://site/<path>`, and a side panel to edit the site's files
-  or its datasets (`report/DatasetsPanel.vue`). Export copies the site to a folder. A project
+  or its datasets (`report/DatasetsPanel.vue`). Publish copies the site to a folder. A project
   without a report is offered one. The report itself is plain HTML, CSS and JavaScript
   ([report-pages.md](report-pages.md)); no Vue.
 

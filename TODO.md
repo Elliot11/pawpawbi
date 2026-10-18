@@ -35,7 +35,7 @@ Connector-specific limitations are in [docs/connectors.md](docs/connectors.md).
 - **The assistant's guides and evaluation tasks (phase 4).** Guides for adding data, modelling and
   SQL alongside the report guide, a tuned system prompt, and sample tasks run against both
   providers.
-- **Publish to S3 and CloudFront** from the app. Export writes the site to a folder.
+- **Publish to S3 and CloudFront** from the app. Publish writes the site to a folder for now.
 - **Update a report's copy of `charts.js`** when the app's version improves; each project keeps
   its own copy.
 - **More for the report:** stacked bars, area and scatter charts, filters within a page, dark

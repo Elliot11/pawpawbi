@@ -256,8 +256,8 @@ export async function refreshDatasets(
 async function pickExportFolder(event: IpcMainInvokeEvent) {
   const win = BrowserWindow.fromWebContents(event.sender)!;
   const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-    title: 'Export the report',
-    buttonLabel: 'Export here',
+    title: 'Publish the report',
+    buttonLabel: 'Publish here',
     message: 'Choose an empty folder for the report’s files.',
     properties: ['openDirectory', 'createDirectory'],
   });
@@ -325,7 +325,7 @@ export function registerReportHandlers() {
   ipcMain.handle('report:export', async (event) => {
     const destination = await pickExportFolder(event);
     if (!destination) return null;
-    await tracked('Exporting the report', async () => {
+    await tracked('Publishing the report', async () => {
       await refreshDatasets();
       await exportSite(filesDir(), destination);
     });
